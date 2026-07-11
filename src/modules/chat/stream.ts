@@ -1,12 +1,13 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ
-// Версия: 4.0.2 - FIXED тип сообщения
+// Версия: 4.0.3 - EventBus-based
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { eventBus } from '@/core/event-bus';
 import type { UUID, TopicId } from '@types';
 
 let streamCallCounter = 0;
@@ -31,6 +32,7 @@ let streamCallCounter = 0;
   const uiRendererInstance = uiRenderer;
   const chatStoreInstance = chatStore;
   const userStoreInstance = userStore;
+  const eventBusInstance = eventBus;
 
   let msgDiv: HTMLElement | null = null;
   let accumulatedText = '';
@@ -168,19 +170,46 @@ let streamCallCounter = 0;
 
       const safeFinalText = typeof accumulatedText === 'string' ? accumulatedText : String(accumulatedText);
 
+      // ✅ ИСПРАВЛЕНО: data-атрибуты вместо onclick
       const act = document.createElement('div');
       act.className = 'msg-actions';
-      act.innerHTML = `
-        <button class="action-btn" data-tooltip="📋" onclick="window.chatSend.copyMsgText(this, '${generatedAiMsgId}')">📋</button>
-        <button class="action-btn" data-tooltip="🔗" onclick="window.chatSend.shareMsgText(this, '${generatedAiMsgId}')">🔗</button>
-        <button class="action-btn" onclick="window.chatSend.toggleFavoriteMsg(this, '${generatedAiMsgId}')"><span class="icon-heart">🤍</span></button>
-        <button class="action-btn" style="margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;" onclick="window.chatSend.deleteMessage('${generatedAiMsgId}')">🗑️</button>
-      `;
+      
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'action-btn';
+      copyBtn.dataset.action = 'copy-message';
+      copyBtn.dataset.msgId = generatedAiMsgId;
+      copyBtn.dataset.tooltip = '📋';
+      copyBtn.innerHTML = '<i data-lucide="copy"></i>';
+      act.appendChild(copyBtn);
+
+      const shareBtn = document.createElement('button');
+      shareBtn.className = 'action-btn';
+      shareBtn.dataset.action = 'share-message';
+      shareBtn.dataset.msgId = generatedAiMsgId;
+      shareBtn.dataset.tooltip = '🔗';
+      shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
+      act.appendChild(shareBtn);
+
+      const favBtn = document.createElement('button');
+      favBtn.className = 'action-btn';
+      favBtn.dataset.action = 'toggle-favorite';
+      favBtn.dataset.msgId = generatedAiMsgId;
+      favBtn.dataset.isFavorite = 'false';
+      favBtn.innerHTML = '<i data-lucide="heart"></i>';
+      act.appendChild(favBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'action-btn';
+      delBtn.dataset.action = 'delete-message';
+      delBtn.dataset.msgId = generatedAiMsgId;
+      delBtn.style.cssText = 'margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;';
+      delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+      act.appendChild(delBtn);
+
       msgDiv!.appendChild(act);
 
       console.log(`💾 [СТРИМ #${callId}] СОХРАНЕНИЕ В ЧАТ ${chatId}`);
 
-      // ✅ ИСПРАВЛЕНО: явно указываем тип ai-msg
       const aiMessage = {
         id: generatedAiMsgId,
         text: safeFinalText,
@@ -211,6 +240,12 @@ let streamCallCounter = 0;
       if (isAtBottom) {
         container.scrollTop = container.scrollHeight;
       }
+
+      // ✅ Уведомляем через EventBus
+      eventBusInstance.emit('chat:message_added', {
+        chatId: chatId,
+        message: aiMessage
+      });
 
       console.log(`🟢 [СТРИМ #${callId}] ФИНАЛИЗАЦИЯ ЗАВЕРШЕНА`);
     } else {
@@ -251,20 +286,47 @@ let streamCallCounter = 0;
 
       const safeFinalText = typeof disconnectNotice === 'string' ? disconnectNotice : String(disconnectNotice);
 
+      // ✅ data-атрибуты вместо onclick
       const act = document.createElement('div');
       act.className = 'msg-actions';
-      act.innerHTML = `
-        <button class="action-btn" data-tooltip="📋" onclick="window.chatSend.copyMsgText(this, '${generatedAiMsgId}')">📋</button>
-        <button class="action-btn" data-tooltip="🔗" onclick="window.chatSend.shareMsgText(this, '${generatedAiMsgId}')">🔗</button>
-        <button class="action-btn" onclick="window.chatSend.toggleFavoriteMsg(this, '${generatedAiMsgId}')"><span class="icon-heart">🤍</span></button>
-        <button class="action-btn" style="margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;" onclick="window.chatSend.deleteMessage('${generatedAiMsgId}')">🗑️</button>
-      `;
+      
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'action-btn';
+      copyBtn.dataset.action = 'copy-message';
+      copyBtn.dataset.msgId = generatedAiMsgId;
+      copyBtn.dataset.tooltip = '📋';
+      copyBtn.innerHTML = '<i data-lucide="copy"></i>';
+      act.appendChild(copyBtn);
+
+      const shareBtn = document.createElement('button');
+      shareBtn.className = 'action-btn';
+      shareBtn.dataset.action = 'share-message';
+      shareBtn.dataset.msgId = generatedAiMsgId;
+      shareBtn.dataset.tooltip = '🔗';
+      shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
+      act.appendChild(shareBtn);
+
+      const favBtn = document.createElement('button');
+      favBtn.className = 'action-btn';
+      favBtn.dataset.action = 'toggle-favorite';
+      favBtn.dataset.msgId = generatedAiMsgId;
+      favBtn.dataset.isFavorite = 'false';
+      favBtn.innerHTML = '<i data-lucide="heart"></i>';
+      act.appendChild(favBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'action-btn';
+      delBtn.dataset.action = 'delete-message';
+      delBtn.dataset.msgId = generatedAiMsgId;
+      delBtn.style.cssText = 'margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;';
+      delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+      act.appendChild(delBtn);
+
       msgDiv.appendChild(act);
 
       const found = chatStoreInstance.findChatById(chatId);
       if (found) {
         const targetChat = found.chat;
-        // ✅ ИСПРАВЛЕНО: явно указываем тип ai-msg
         const aiMessage = {
           id: generatedAiMsgId,
           text: safeFinalText,
@@ -278,6 +340,11 @@ let streamCallCounter = 0;
         if (userStoreInstance && !userStoreInstance.hasUnlimited()) {
           userStoreInstance.incrementUsage();
         }
+
+        eventBusInstance.emit('chat:message_added', {
+          chatId: chatId,
+          message: aiMessage
+        });
       } else {
         console.error(`❌ [СТРИМ #${callId}] Не удалось найти чат ${chatId} для сохранения частичного ответа`);
       }
@@ -288,4 +355,4 @@ let streamCallCounter = 0;
   }
 };
 
-console.log('✅ ChatStream v4.0.2 загружен (исправлен тип сообщения)');
+console.log('✅ ChatStream v4.0.3 загружен (EventBus-based)');
