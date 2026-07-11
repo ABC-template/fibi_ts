@@ -1,0 +1,105 @@
+<!DOCTYPE html> 
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>FIBI</title>
+    <link rel="stylesheet" href="/styles/style.css">
+    <link rel="stylesheet" href="/styles/add.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/eruda@3.4.1/eruda.min.js"></script>
+    <script>eruda.init();</script>
+</head>
+<body>
+
+<!-- ==========================================
+     HEADER
+========================================== -->
+<div id="header" class="hidden">
+    <div class="header-glass">
+        <img id="user-avatar" src="" alt="Аватар" class="header-avatar" onclick="window.openDrawer()">
+        <div class="coins-badge" onclick="window.goToTasks()">
+            <span class="coin-icon">🪙</span>
+            <span class="coin-amount" id="header-coins-amount">0</span>
+        </div>
+    </div>
+    <div class="header-center" id="header-center"></div>
+    <div class="header-right" id="header-right"></div>
+</div>
+
+<!-- ==========================================
+     GUEST SCREEN
+========================================== -->
+<div id="guest-screen" class="hidden">
+    <h1 id="error-title">Доступ ограничен</h1>
+    <p id="joke-text"></p>
+    <a href="https://t.me" class="btn" style="text-decoration:none; display:inline-block;"></a>
+</div>
+
+<!-- ==========================================
+     APP SCREEN
+========================================== -->
+<div id="app-screen" style="display:none;"></div>
+
+<!-- ==========================================
+     УНИВЕРСАЛЬНАЯ МОДАЛКА
+========================================== -->
+<div id="universal-modal" class="hidden" style="display:none;">
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-content" id="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Заголовок</h3>
+                <button id="modal-close" class="modal-close-btn">
+                    <i data-lucide="x" style="width:24px;height:24px;"></i>
+                </button>
+            </div>
+            <div id="modal-body" class="modal-body"></div>
+            <div id="modal-footer" class="modal-footer hidden"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================
+     SUPABASE CLIENT
+========================================== -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+
+<!-- ==========================================
+     ТОЧКА ВХОДА (TypeScript)
+========================================== -->
+<script type="module" src="/src/core/config.ts"></script>
+<script type="module" src="/src/core/locale.ts"></script>
+<script type="module" src="/src/core/app.ts"></script>
+
+<!-- ==========================================
+     ИНИЦИАЛИЗАЦИЯ
+========================================== -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Регистрация модулей происходит внутри app.ts
+        // Просто ждем загрузки
+        console.log('🚀 Приложение инициализируется...');
+    });
+</script>
+
+<!-- ==========================================
+     LUCIDE ИНИЦИАЛИЗАЦИЯ
+========================================== -->
+<script>
+    setTimeout(function() {
+        if (typeof lucide !== 'undefined') {
+            try {
+                lucide.createIcons();
+                console.log('✅ Lucide иконки созданы');
+            } catch(e) {
+                console.warn('⚠️ Ошибка создания иконок:', e);
+            }
+        }
+    }, 500);
+</script>
+
+</body>
+</html>

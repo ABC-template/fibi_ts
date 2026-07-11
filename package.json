@@ -1,0 +1,24 @@
+{
+  "name": "fibi-tma-ts",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "FIBI Telegram Mini App - TypeScript Migration",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.7",
+    "dompurify": "^3.0.6",
+    "lucide": "^0.263.0",
+    "marked": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.0"
+  }
+}
