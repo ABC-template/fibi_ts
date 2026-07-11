@@ -1,22 +1,69 @@
 // ============================================
 // src/modules/chat/send.ts
-// Отправка сообщений
-// Версия: 3.0.1 - FIXED TYPES
+// Отправка сообщений (EventBus-based)
+// Версия: 4.0.0 - подписка на события
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { eventBus } from '@/core/event-bus';
 import type { UUID } from '@types';
 
 export class ChatSend {
   private chatStore = chatStore;
   private userStore = userStore;
   private uiRenderer = uiRenderer;
+  private eventBus = eventBus;
   private isSending: boolean = false;
+  private _subscriptions: Array<() => void> = [];
 
   constructor() {
-    console.log('✅ ChatSend v3.0.1 загружен');
+    this._subscribeToEvents();
+    console.log('✅ ChatSend v4.0.0 загружен (EventBus-based)');
+  }
+
+  // ==========================================
+  // ПОДПИСКА НА СОБЫТИЯ
+  // ==========================================
+
+  private _subscribeToEvents(): void {
+    // Действия с сообщениями
+    const unsubFav = this.eventBus.on('chat:toggle-favorite', (data) => {
+      if (data?.msgId && data?.chatId) {
+        this.toggleFavoriteMsg(data.msgId, data.chatId);
+      }
+    }, this);
+    this._subscriptions.push(unsubFav);
+
+    const unsubDel = this.eventBus.on('chat:delete-message', (data) => {
+      if (data?.msgId) {
+        this.deleteMessage(data.msgId);
+      }
+    }, this);
+    this._subscriptions.push(unsubDel);
+
+    const unsubCopy = this.eventBus.on('chat:copy-message', (data) => {
+      if (data?.msgId && data?.btn) {
+        this.copyMsgText(data.btn, data.msgId);
+      }
+    }, this);
+    this._subscriptions.push(unsubCopy);
+
+    const unsubShare = this.eventBus.on('chat:share-message', (data) => {
+      if (data?.msgId && data?.btn) {
+        this.shareMsgText(data.btn, data.msgId);
+      }
+    }, this);
+    this._subscriptions.push(unsubShare);
+
+    // Отправка сообщения
+    const unsubSend = this.eventBus.on('chat:send-message', () => {
+      this.sendMessage();
+    }, this);
+    this._subscriptions.push(unsubSend);
+
+    console.log('📡 ChatSend подписан на события');
   }
 
   // ==========================================
@@ -195,7 +242,7 @@ export class ChatSend {
   // ИЗБРАННОЕ
   // ==========================================
 
-  async toggleFavoriteMsg(btn: HTMLElement, msgId: UUID): Promise<void> {
+  async toggleFavoriteMsg(msgId: UUID, chatId?: UUID): Promise<void> {
     if (!navigator.onLine) {
       if ((window as any).tg?.showAlert) {
         (window as any).tg.showAlert('Нет интернета. Изменения недоступны.');
@@ -203,35 +250,38 @@ export class ChatSend {
       return;
     }
 
-    const activeChat = this.chatStore.getActiveChat();
-    if (!activeChat) {
-      console.warn('⚠️ Нет активного чата');
-      return;
+    // Если chatId не передан, берем из активного чата
+    let effectiveChatId = chatId;
+    if (!effectiveChatId) {
+      const activeChat = this.chatStore.getActiveChat();
+      if (!activeChat) {
+        console.warn('⚠️ Нет активного чата');
+        return;
+      }
+      effectiveChatId = activeChat.id;
     }
 
     const { messageService } = await import('@/services/messages');
-    const result = await messageService.toggleFavorite(activeChat.id, msgId);
+    const result = await messageService.toggleFavorite(effectiveChatId, msgId);
 
     if (result) {
-      const heartIcon = btn.querySelector('.lucide-heart');
-      if (result.isFavorite) {
-        btn.classList.add('is-favorite');
-        if (heartIcon) {
-          heartIcon.setAttribute('data-lucide', 'heart');
-          if (typeof (window as any).lucide !== 'undefined') {
-            (window as any).lucide.createIcons();
+      // Находим все кнопки избранного для этого сообщения и обновляем
+      const favButtons = document.querySelectorAll(`[data-action="toggle-favorite"][data-msg-id="${msgId}"]`);
+      favButtons.forEach(btn => {
+        const icon = btn.querySelector('.lucide-heart, [data-lucide="heart"]');
+        if (result.isFavorite) {
+          btn.classList.add('is-favorite');
+          if (icon) {
+            icon.setAttribute('data-lucide', 'heart');
+          }
+        } else {
+          btn.classList.remove('is-favorite');
+          if (icon) {
+            icon.setAttribute('data-lucide', 'heart');
           }
         }
-      } else {
-        btn.classList.remove('is-favorite');
-        if (heartIcon) {
-          heartIcon.setAttribute('data-lucide', 'heart');
-          if (typeof (window as any).lucide !== 'undefined') {
-            (window as any).lucide.createIcons();
-          }
-        }
-      }
-      this.triggerTooltip(btn);
+      });
+      this.triggerTooltip(favButtons[0] as HTMLElement);
     }
   }
 
@@ -302,14 +352,30 @@ export class ChatSend {
   }
 
   private triggerTooltip(btn: HTMLElement): void {
+    if (!btn) return;
     btn.classList.add('show-tip');
     setTimeout(() => {
       btn.classList.remove('show-tip');
     }, 1200);
   }
+
+  // ==========================================
+  // ОЧИСТКА ПОДПИСОК
+  // ==========================================
+
+  destroy(): void {
+    for (const unsub of this._subscriptions) {
+      try {
+        unsub();
+      } catch (e) {
+        console.warn('Ошибка отписки ChatSend:', e);
+      }
+    }
+    this._subscriptions = [];
+    console.log('📡 ChatSend отписан от событий');
+  }
 }
 
-// Создаем экземпляр и экспортируем в глобальный объект
+// Создаем экземпляр
 export const chatSend = new ChatSend();
-(window as any).chatSend = chatSend;
-console.log('✅ ChatSend v3.0.1 загружен');
+console.log('✅ ChatSend v4.0.0 загружен (EventBus-based)');
