@@ -24,4 +24,3 @@ export * from './chat/media';
 // Вспомогательные
 export * from './trash';
 export * from './export-local';
-export * from './ui-footer';
