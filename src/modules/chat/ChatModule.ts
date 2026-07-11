@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.1.0 - с использованием конфига
+// Версия: 8.2.0 - делегирование событий через EventBus
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -44,9 +44,99 @@ export class ChatModule {
 
     (window as any).chatModule = this;
     this._subscribeToEvents();
+    this._setupDelegation();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.1.0 инициализирован');
+    console.log('✅ ChatModule v8.2.0 инициализирован');
+  }
+
+  // ==========================================
+  // ✅ ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
+  // ==========================================
+
+  private _setupDelegation(): void {
+    // Используем делегирование на весь контейнер
+    this.container.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      
+      // Проверяем кнопку с data-action
+      const btn = target.closest('[data-action]') as HTMLElement;
+      if (!btn) return;
+
+      const action = btn.dataset.action;
+      const msgId = btn.dataset.msgId as UUID;
+      const chatId = btn.dataset.chatId as UUID || this._chatId;
+
+      // Отправляем событие в EventBus
+      switch (action) {
+        case 'toggle-favorite':
+          this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
+          break;
+        case 'delete-message':
+          this.eventBus.emit('chat:delete-message', { msgId, chatId });
+          break;
+        case 'copy-message':
+          this.eventBus.emit('chat:copy-message', { msgId, btn });
+          break;
+        case 'share-message':
+          this.eventBus.emit('chat:share-message', { msgId, btn });
+          break;
+        default:
+          console.log(`ℹ️ Неизвестное действие: ${action}`);
+      }
+    });
+
+    console.log('📡 ChatModule: делегирование событий настроено');
+  }
+
+  // ==========================================
+  // ПОДПИСКА НА СОБЫТИЯ
+  // ==========================================
+
+  private _subscribeToEvents(): void {
+    const unsubMsg = this.eventBus.on('chat:message_added', (data) => {
+      if (data.chatId === this._chatId && this._isShowing) {
+        this._loadMessages();
+      }
+    }, this);
+    this._subscriptions.push(unsubMsg);
+
+    const unsubDel = this.eventBus.on('chat:message_deleted', (data) => {
+      if (data.chatId === this._chatId && this._isShowing) {
+        this._loadMessages();
+      }
+    }, this);
+    this._subscriptions.push(unsubDel);
+
+    const unsubFav = this.eventBus.on('chat:favorite_toggled', (data) => {
+      if (data.chatId === this._chatId && this._isShowing) {
+        this._loadMessages();
+      }
+    }, this);
+    this._subscriptions.push(unsubFav);
+
+    const unsubRename = this.eventBus.on('chat:renamed', (data) => {
+      if (data.chatId === this._chatId) {
+        this._updateHeader();
+      }
+    }, this);
+    this._subscriptions.push(unsubRename);
+
+    const unsubAll = this.eventBus.on('chat:all_updated', () => {
+      if (this._isShowing && this._chatId) {
+        this._loadMessages();
+      }
+    }, this);
+    this._subscriptions.push(unsubAll);
+
+    const unsubOpen = this.eventBus.on('navigation:open_chat', (data) => {
+      if (data.chatId && this._isShowing) {
+        this.update(data);
+      }
+    }, this);
+    this._subscriptions.push(unsubOpen);
+
+    console.log('📡 ChatModule подписан на события');
   }
 
   // ==========================================
@@ -407,14 +497,9 @@ export class ChatModule {
     }, 100);
   }
 
-  // ==========================================
-  // ✅ ИСПРАВЛЕНО: ПОКАЗ ПРИВЕТСТВИЯ (из конфига)
-  // ==========================================
-
   private _showWelcomeMessage(container: HTMLElement): void {
     const topic = this._topic || 'code';
     const welcomeText = getWelcomeText(topic);
-
     this.uiRenderer.renderWelcome(welcomeText);
   }
 
@@ -501,12 +586,11 @@ export class ChatModule {
       });
     }
 
+    // ✅ ИСПРАВЛЕНО: через EventBus
     const sendBtn = document.querySelector('.send-btn');
     if (sendBtn) {
       sendBtn.addEventListener('click', () => {
-        if ((window as any).chatSend) {
-          (window as any).chatSend.sendMessage();
-        }
+        this.eventBus.emit('chat:send-message');
       });
     }
 
@@ -515,9 +599,7 @@ export class ChatModule {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
-          if ((window as any).chatSend) {
-            (window as any).chatSend.sendMessage();
-          }
+          this.eventBus.emit('chat:send-message');
         }
       });
 
@@ -552,56 +634,6 @@ export class ChatModule {
         }
       });
     }
-  }
-
-  // ==========================================
-  // ПОДПИСКА НА СОБЫТИЯ
-  // ==========================================
-
-  private _subscribeToEvents(): void {
-    const unsubMsg = this.eventBus.on('chat:message_added', (data) => {
-      if (data.chatId === this._chatId && this._isShowing) {
-        this._loadMessages();
-      }
-    }, this);
-    this._subscriptions.push(unsubMsg);
-
-    const unsubDel = this.eventBus.on('chat:message_deleted', (data) => {
-      if (data.chatId === this._chatId && this._isShowing) {
-        this._loadMessages();
-      }
-    }, this);
-    this._subscriptions.push(unsubDel);
-
-    const unsubFav = this.eventBus.on('chat:favorite_toggled', (data) => {
-      if (data.chatId === this._chatId && this._isShowing) {
-        this._loadMessages();
-      }
-    }, this);
-    this._subscriptions.push(unsubFav);
-
-    const unsubRename = this.eventBus.on('chat:renamed', (data) => {
-      if (data.chatId === this._chatId) {
-        this._updateHeader();
-      }
-    }, this);
-    this._subscriptions.push(unsubRename);
-
-    const unsubAll = this.eventBus.on('chat:all_updated', () => {
-      if (this._isShowing && this._chatId) {
-        this._loadMessages();
-      }
-    }, this);
-    this._subscriptions.push(unsubAll);
-
-    const unsubOpen = this.eventBus.on('navigation:open_chat', (data) => {
-      if (data.chatId && this._isShowing) {
-        this.update(data);
-      }
-    }, this);
-    this._subscriptions.push(unsubOpen);
-
-    console.log('📡 ChatModule подписан на события');
   }
 
   // ==========================================
@@ -646,4 +678,4 @@ export class ChatModule {
 
 // Экспортируем класс в глобальный объект
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.1.0 загружен');
+console.log('✅ ChatModule v8.2.0 загружен (делегирование событий)');
