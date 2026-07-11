@@ -1,7 +1,7 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 5.0.3 - FIXED msg_type -> type
+// Версия: 5.0.4 - исправлен getActiveChat
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -73,144 +73,46 @@ export class ChatStore extends BaseStore<IChatStoreData> {
   }
 
   // ==========================================
-  // ✅ ИСПРАВЛЕНО: ПОЛНАЯ ЗАМЕНА ДАННЫХ
+  // ✅ ИСПРАВЛЕНО: getActiveChat ищет по ВСЕМ топикам
   // ==========================================
 
-  updateAllChats(cloudChats: IChat[]): void {
-    console.log(`📋 [updateAllChats] Полная замена данных: ${cloudChats?.length || 0} чатов...`);
-    
-    if (!cloudChats || !Array.isArray(cloudChats)) {
-      console.warn('⚠️ [updateAllChats] Нет данных для обновления');
-      return;
+  getActiveChat(topicId?: TopicId): IChat | null {
+    // Если topicId передан — ищем в конкретном топике
+    if (topicId) {
+      const chats = this.getChats(topicId);
+      const activeId = this._data.activeIds[topicId];
+      return chats.find(c => c.id === activeId) || null;
     }
 
-    const grouped: Record<TopicId, IChat[]> = {} as Record<TopicId, IChat[]>;
-    let totalMessages = 0;
-    
-    for (const chat of cloudChats) {
-      const chatTopic = chat.topic || 'fast';
-      if (!grouped[chatTopic]) {
-        grouped[chatTopic] = [];
-      }
-      
-      const localChat: IChat = {
-        id: chat.id,
-        title: chat.title || 'Без названия',
-        maxContext: chat.maxContext || 15,
-        language: chat.language || 'ru',
-        topic: chatTopic,
-        userRenamed: chat.userRenamed || false,
-        synced: true,
-        deleted_at: chat.deleted_at || null,
-        created_at: chat.created_at || new Date().toISOString(),
-        updated_at: chat.updated_at || new Date().toISOString(),
-        messages: (chat.messages || []).map(m => {
-          // ✅ ИСПРАВЛЕНО: правильное преобразование msg_type -> type
-          const msgType = (m as any).msg_type || m.type || 'user-msg';
-          return {
-            id: m.id,
-            text: m.text,
-            type: msgType as MessageType,
-            isFavorite: m.isFavorite || false,
-            deleted_at: m.deleted_at || null,
-            created_at: m.created_at || new Date().toISOString()
-          };
-        })
-      };
-      
-      localChat.messages.sort((a, b) => {
-        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-      });
-      
-      totalMessages += localChat.messages.length;
-      grouped[chatTopic].push(localChat);
-    }
-
-    const entries = Object.entries(grouped) as [TopicId, IChat[]][];
-    for (const [topicId, chats] of entries) {
-      this._data.histories[topicId] = chats;
-    }
-
-    const existingTopics = Object.keys(this._data.histories) as TopicId[];
-    for (const topicId of existingTopics) {
-      if (!grouped[topicId]) {
-        this._data.histories[topicId] = [];
-      }
-    }
-
-    const allTopics = Object.keys(this._data.histories) as TopicId[];
-    for (const topicId of allTopics) {
-      const chats = this._data.histories[topicId] || [];
-      const activeChat = chats.find(c => !c.deleted_at && c.messages && c.messages.length > 0);
-      if (activeChat) {
-        this._data.activeIds[topicId] = activeChat.id;
-      } else {
-        this._data.activeIds[topicId] = null;
-      }
-    }
-
-    this.save();
-    
-    console.log(`✅ [updateAllChats] Заменено ${cloudChats.length} чатов, ${totalMessages} сообщений`);
-    this._emitChange('chat:all_updated', {
-      totalChats: cloudChats.length,
-      totalMessages: totalMessages
-    });
-  }
-
-  // ==========================================
-  // ПОИСК
-  // ==========================================
-
-  findChatById(chatId: UUID): { chat: IChat; topic: TopicId } | null {
-    if (!chatId) return null;
-    
+    // ✅ Ищем по ВСЕМ топикам, если topicId не передан
     const entries = Object.entries(this._data.histories || {}) as [TopicId, IChat[]][];
     for (const [topic, chats] of entries) {
       if (!chats || !Array.isArray(chats)) continue;
-      
-      for (const chat of chats) {
-        if (chat.id === chatId) {
-          return { chat, topic: topic };
-        }
+      const activeId = this._data.activeIds[topic];
+      if (activeId) {
+        const found = chats.find(c => c.id === activeId && !c.deleted_at);
+        if (found) return found;
       }
     }
-    return null;
-  }
 
-  findChatByMessageId(messageId: UUID): { chat: IChat; topic: TopicId } | null {
-    if (!messageId) return null;
-    
-    const entries = Object.entries(this._data.histories || {}) as [TopicId, IChat[]][];
-    for (const [topic, chats] of entries) {
-      if (!chats || !Array.isArray(chats)) continue;
-      
-      for (const chat of chats) {
-        if (!chat.messages || !Array.isArray(chat.messages)) continue;
-        
-        const found = chat.messages.find(m => m.id === messageId);
-        if (found) {
-          return { chat, topic: topic };
-        }
-      }
+    // Если ничего не нашли — пробуем найти в currentTopic
+    const currentChats = this.getChats(this._data.currentTopic);
+    const currentActiveId = this._data.activeIds[this._data.currentTopic];
+    if (currentActiveId) {
+      const found = currentChats.find(c => c.id === currentActiveId && !c.deleted_at);
+      if (found) return found;
     }
+
     return null;
   }
 
   // ==========================================
-  // РАБОТА С ЧАТАМИ
+  // ОСТАЛЬНЫЕ МЕТОДЫ (без изменений)
   // ==========================================
 
   getChats(topicId?: TopicId): IChat[] {
     if (!topicId) topicId = this._data.currentTopic;
     return this._data.histories[topicId] || [];
-  }
-
-  getActiveChat(topicId?: TopicId): IChat | null {
-    if (!topicId) topicId = this._data.currentTopic;
-    const chats = this.getChats(topicId);
-    const activeId = this._data.activeIds[topicId];
-    return chats.find(c => c.id === activeId) || null;
   }
 
   setActiveChat(topicId: TopicId, chatId: UUID | null): void {
@@ -271,6 +173,41 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     });
     this.save();
     return newChat;
+  }
+
+  findChatById(chatId: UUID): { chat: IChat; topic: TopicId } | null {
+    if (!chatId) return null;
+    
+    const entries = Object.entries(this._data.histories || {}) as [TopicId, IChat[]][];
+    for (const [topic, chats] of entries) {
+      if (!chats || !Array.isArray(chats)) continue;
+      
+      for (const chat of chats) {
+        if (chat.id === chatId) {
+          return { chat, topic: topic };
+        }
+      }
+    }
+    return null;
+  }
+
+  findChatByMessageId(messageId: UUID): { chat: IChat; topic: TopicId } | null {
+    if (!messageId) return null;
+    
+    const entries = Object.entries(this._data.histories || {}) as [TopicId, IChat[]][];
+    for (const [topic, chats] of entries) {
+      if (!chats || !Array.isArray(chats)) continue;
+      
+      for (const chat of chats) {
+        if (!chat.messages || !Array.isArray(chat.messages)) continue;
+        
+        const found = chat.messages.find(m => m.id === messageId);
+        if (found) {
+          return { chat, topic: topic };
+        }
+      }
+    }
+    return null;
   }
 
   renameChat(chatId: UUID, newTitle: string): boolean {
@@ -393,10 +330,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return true;
   }
 
-  // ==========================================
-  // РАБОТА С СООБЩЕНИЯМИ
-  // ==========================================
-
   deleteMessage(chatId: UUID, messageId: UUID): boolean {
     const found = this.findChatById(chatId);
     if (!found) {
@@ -446,10 +379,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return msg;
   }
 
-  // ==========================================
-  // ✅ ИСПРАВЛЕНО: getFavorites() с правильным типом
-  // ==========================================
-
   getFavorites(): IFavoriteItem[] {
     const favorites: IFavoriteItem[] = [];
 
@@ -463,7 +392,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 
         for (const msg of chat.messages) {
           if (msg.isFavorite && !msg.deleted_at) {
-            // ✅ Убеждаемся, что тип правильный
             const msgType = msg.type || 'user-msg';
             favorites.push({
               ...msg,
@@ -493,10 +421,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return messages.slice(-maxContext);
   }
 
-  // ==========================================
-  // ✅ ИСПРАВЛЕНО: addMessage с правильным типом
-  // ==========================================
-
   addMessage(
     chatId: UUID,
     text: string,
@@ -507,8 +431,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     if (!found) return null;
 
     const { chat } = found;
-
-    // ✅ Убеждаемся, что тип правильный
     const msgType = type || 'user-msg';
 
     const newMsg: IMessage = {
@@ -543,11 +465,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return newMsg;
   }
 
-  // ==========================================
-  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-  // ==========================================
-
-  // ✅ ИСПРАВЛЕНО: hasRealMessages с правильной проверкой
   hasRealMessages(chat: IChat): boolean {
     if (!chat || !chat.messages) return false;
     return chat.messages.some(m =>
@@ -619,9 +536,86 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return chat;
   }
 
-  // ==========================================
-  // ПРОГРЕСС ЗАГРУЗКИ
-  // ==========================================
+  updateAllChats(cloudChats: IChat[]): void {
+    console.log(`📋 [updateAllChats] Полная замена данных: ${cloudChats?.length || 0} чатов...`);
+    
+    if (!cloudChats || !Array.isArray(cloudChats)) {
+      console.warn('⚠️ [updateAllChats] Нет данных для обновления');
+      return;
+    }
+
+    const grouped: Record<TopicId, IChat[]> = {} as Record<TopicId, IChat[]>;
+    let totalMessages = 0;
+    
+    for (const chat of cloudChats) {
+      const chatTopic = chat.topic || 'fast';
+      if (!grouped[chatTopic]) {
+        grouped[chatTopic] = [];
+      }
+      
+      const localChat: IChat = {
+        id: chat.id,
+        title: chat.title || 'Без названия',
+        maxContext: chat.maxContext || 15,
+        language: chat.language || 'ru',
+        topic: chatTopic,
+        userRenamed: chat.userRenamed || false,
+        synced: true,
+        deleted_at: chat.deleted_at || null,
+        created_at: chat.created_at || new Date().toISOString(),
+        updated_at: chat.updated_at || new Date().toISOString(),
+        messages: (chat.messages || []).map(m => {
+          const msgType = (m as any).msg_type || m.type || 'user-msg';
+          return {
+            id: m.id,
+            text: m.text,
+            type: msgType as MessageType,
+            isFavorite: m.isFavorite || false,
+            deleted_at: m.deleted_at || null,
+            created_at: m.created_at || new Date().toISOString()
+          };
+        })
+      };
+      
+      localChat.messages.sort((a, b) => {
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      });
+      
+      totalMessages += localChat.messages.length;
+      grouped[chatTopic].push(localChat);
+    }
+
+    const entries = Object.entries(grouped) as [TopicId, IChat[]][];
+    for (const [topicId, chats] of entries) {
+      this._data.histories[topicId] = chats;
+    }
+
+    const existingTopics = Object.keys(this._data.histories) as TopicId[];
+    for (const topicId of existingTopics) {
+      if (!grouped[topicId]) {
+        this._data.histories[topicId] = [];
+      }
+    }
+
+    const allTopics = Object.keys(this._data.histories) as TopicId[];
+    for (const topicId of allTopics) {
+      const chats = this._data.histories[topicId] || [];
+      const activeChat = chats.find(c => !c.deleted_at && c.messages && c.messages.length > 0);
+      if (activeChat) {
+        this._data.activeIds[topicId] = activeChat.id;
+      } else {
+        this._data.activeIds[topicId] = null;
+      }
+    }
+
+    this.save();
+    
+    console.log(`✅ [updateAllChats] Заменено ${cloudChats.length} чатов, ${totalMessages} сообщений`);
+    this._emitChange('chat:all_updated', {
+      totalChats: cloudChats.length,
+      totalMessages: totalMessages
+    });
+  }
 
   isUploadInProgress(): boolean {
     return localStorage.getItem('upload_in_progress') === 'true';
@@ -667,6 +661,5 @@ export class ChatStore extends BaseStore<IChatStoreData> {
   }
 }
 
-// Создаем экземпляр
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v5.0.3 загружен (исправлен msg_type -> type)');
+console.log('✅ ChatStore v5.0.4 загружен (исправлен getActiveChat)');
