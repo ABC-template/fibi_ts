@@ -1,7 +1,7 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.1.0 - исправлены типы chatSend
+// Версия: 2.2.0 - добавлен InputManager
 // ============================================
 
 import type { TopicId, TopicFilter, UUID } from '@types/index';
@@ -83,7 +83,6 @@ declare global {
             chatId: UUID
         ) => Promise<boolean>;
         
-        // ✅ ИСПРАВЛЕНО: сигнатура соответствует ChatSend
         chatSend: {
             sendMessage: () => Promise<void>;
             copyMsgText: (btn: HTMLElement, msgId: UUID) => void;
@@ -105,11 +104,17 @@ declare global {
         currentAttachedImageBase64: string | null;
 
         // ==========================================
-        // INPUT
+        // INPUT (InputManager)
         // ==========================================
-        expandInputArea: () => void;
-        collapseInputArea: () => void;
-        clearUserText: (e?: Event) => void;
+        inputManager: {
+            expandInputArea: () => void;
+            collapseInputArea: () => void;
+            clearUserText: (e?: Event) => void;
+            isExpanded: () => boolean;
+            getInputText: () => string;
+            setInputText: (text: string) => void;
+            destroy: () => void;
+        };
 
         // ==========================================
         // EXPORT
@@ -131,7 +136,7 @@ declare global {
         updateTrashCount: () => void;
 
         // ==========================================
-        // MODULES CORE
+        // CORE
         // ==========================================
         moduleLoader: any;
         navigationState: any;
