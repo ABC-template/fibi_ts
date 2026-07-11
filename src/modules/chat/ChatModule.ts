@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.2.0 - делегирование событий через EventBus
+// Версия: 8.3.0 - _setupDelegation() в show() с удалением старого обработчика
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -34,6 +34,9 @@ export class ChatModule {
   private _subscriptions: Array<() => void> = [];
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
+  
+  // ✅ Храним ссылку на обработчик для удаления
+  private _delegationHandler: ((e: Event) => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -44,48 +47,58 @@ export class ChatModule {
 
     (window as any).chatModule = this;
     this._subscribeToEvents();
-    this._setupDelegation();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.2.0 инициализирован');
+    console.log('✅ ChatModule v8.3.0 инициализирован');
   }
 
   // ==========================================
-  // ✅ ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
+  // ✅ ДЕЛЕГИРОВАНИЕ СОБЫТИЙ (вызывается в show)
   // ==========================================
 
   private _setupDelegation(): void {
-    this.container.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        const btn = target.closest('[data-action]') as HTMLElement;
-        if (!btn) return;
+    // ✅ Удаляем старый обработчик, если он есть
+    if (this._delegationHandler) {
+      this.container.removeEventListener('click', this._delegationHandler);
+      this._delegationHandler = null;
+      console.log('🧹 Старый обработчик делегирования удален');
+    }
 
-        const action = btn.dataset.action;
-        const msgId = btn.dataset.msgId as UUID;
-        const chatId = btn.dataset.chatId as UUID || this._chatId;
+    // ✅ Создаем новый обработчик
+    this._delegationHandler = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const btn = target.closest('[data-action]') as HTMLElement;
+      if (!btn) return;
 
-        switch (action) {
-            case 'toggle-favorite':
-                this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
-                break;
-            case 'delete-message':
-                this.eventBus.emit('chat:delete-message', { msgId, chatId });
-                break;
-            case 'copy-message':
-                this.eventBus.emit('chat:copy-message', { msgId, btn });
-                break;
-            case 'share-message':
-                this.eventBus.emit('chat:share-message', { msgId, btn });
-                break;
-            // ✅ ДОБАВЛЕНО
-            case 'expand-input':
-                this.eventBus.emit('input:expand');
-                break;
-            default:
-                console.log(`ℹ️ Неизвестное действие: ${action}`);
-        }
-    });
-}
+      const action = btn.dataset.action;
+      const msgId = btn.dataset.msgId as UUID;
+      const chatId = btn.dataset.chatId as UUID || this._chatId;
+
+      switch (action) {
+        case 'toggle-favorite':
+          this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
+          break;
+        case 'delete-message':
+          this.eventBus.emit('chat:delete-message', { msgId, chatId });
+          break;
+        case 'copy-message':
+          this.eventBus.emit('chat:copy-message', { msgId, btn });
+          break;
+        case 'share-message':
+          this.eventBus.emit('chat:share-message', { msgId, btn });
+          break;
+        case 'expand-input':
+          this.eventBus.emit('input:expand');
+          break;
+        default:
+          console.log(`ℹ️ Неизвестное действие: ${action}`);
+      }
+    };
+
+    // ✅ Вешаем новый обработчик
+    this.container.addEventListener('click', this._delegationHandler);
+    console.log('✅ Обработчик делегирования повешен на контейнер');
+  }
 
   // ==========================================
   // ПОДПИСКА НА СОБЫТИЯ
@@ -148,21 +161,22 @@ export class ChatModule {
 
     if (chatId) {
       this._openChat(chatId, topic);
-      return;
-    }
-
-    const activeChat = this.chatStore.getActiveChat();
-    if (activeChat && this.chatStore.hasRealMessages(activeChat)) {
-      this._openChat(activeChat.id, activeChat.topic || this.chatStore.currentTopic);
-      return;
-    }
-
-    const newChat = this.chatStore.createTempChat(this.chatStore.currentTopic);
-    if (newChat) {
-      this._openChat(newChat.id, newChat.topic || this.chatStore.currentTopic);
     } else {
-      console.error('❌ Не удалось создать чат');
+      const activeChat = this.chatStore.getActiveChat();
+      if (activeChat && this.chatStore.hasRealMessages(activeChat)) {
+        this._openChat(activeChat.id, activeChat.topic || this.chatStore.currentTopic);
+      } else {
+        const newChat = this.chatStore.createTempChat(this.chatStore.currentTopic);
+        if (newChat) {
+          this._openChat(newChat.id, newChat.topic || this.chatStore.currentTopic);
+        } else {
+          console.error('❌ Не удалось создать чат');
+        }
+      }
     }
+
+    // ✅ КАЖДЫЙ РАЗ ПРИ ПОКАЗЕ перевешиваем обработчик
+    this._setupDelegation();
   }
 
   // ==========================================
@@ -584,7 +598,6 @@ export class ChatModule {
       });
     }
 
-    // ✅ ИСПРАВЛЕНО: через EventBus
     const sendBtn = document.querySelector('.send-btn');
     if (sendBtn) {
       sendBtn.addEventListener('click', () => {
@@ -617,9 +630,7 @@ export class ChatModule {
 
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && input.value.trim().length === 0) {
-          if ((window as any).collapseInputArea) {
-            (window as any).collapseInputArea();
-          }
+          this.eventBus.emit('input:collapse');
         }
       });
     }
@@ -627,9 +638,7 @@ export class ChatModule {
     const clearBtn = document.getElementById('clear-input-btn');
     if (clearBtn) {
       clearBtn.addEventListener('click', () => {
-        if ((window as any).clearUserText) {
-          (window as any).clearUserText();
-        }
+        this.eventBus.emit('input:clear');
       });
     }
   }
@@ -656,6 +665,13 @@ export class ChatModule {
   destroy(): void {
     console.log('🗑️ ChatModule.destroy()');
 
+    // ✅ Удаляем обработчик делегирования
+    if (this._delegationHandler) {
+      this.container.removeEventListener('click', this._delegationHandler);
+      this._delegationHandler = null;
+      console.log('🧹 Обработчик делегирования удален при destroy');
+    }
+
     (window as any).chatModule = null;
 
     for (const unsub of this._subscriptions) {
@@ -676,4 +692,4 @@ export class ChatModule {
 
 // Экспортируем класс в глобальный объект
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.2.0 загружен (делегирование событий)');
+console.log('✅ ChatModule v8.3.0 загружен (делегирование в show)');
