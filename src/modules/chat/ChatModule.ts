@@ -56,55 +56,66 @@ export class ChatModule {
   // ==========================================
 
   private _setupDelegation(): void {
-       console.log('🔧 _setupDelegation вызван');
+    console.log('🔧 _setupDelegation вызван');
     console.log('🔧 this.container:', this.container);
     console.log('🔧 this.container.id:', this.container?.id);
     console.log('🔧 #module-chat:', document.getElementById('module-chat'));
     console.log('🔧 Совпадают?', this.container === document.getElementById('module-chat'));
+
     // ✅ Удаляем старый обработчик
-    console.log('🔴 ОБРАБОТЧИК СРАБОТАЛ!', e.target);
-console.log('🔴 closest([data-action]):', e.target.closest('[data-action]'));
     if (this._delegationHandler) {
-      this.container.removeEventListener('click', this._delegationHandler);
-      this._delegationHandler = null;
-      console.log('🧹 Старый обработчик делегирования удален');
+        this.container.removeEventListener('click', this._delegationHandler);
+        this._delegationHandler = null;
+        console.log('🧹 Старый обработчик делегирования удален');
     }
 
     // ✅ Создаем новый обработчик
-    this._delegationHandler = (e: Event) => {
-      const target = e.target as HTMLElement;
-      const btn = target.closest('[data-action]') as HTMLElement;
-      if (!btn) return;
+    this._delegationHandler = (event: Event) => {
+        // ✅ ЛОГИ ВНУТРИ ОБРАБОТЧИКА - здесь event определен!
+        console.log('🔴 ОБРАБОТЧИК СРАБОТАЛ!', event.target);
+        
+        const target = event.target as HTMLElement;
+        const btn = target.closest('[data-action]') as HTMLElement;
+        
+        console.log('🔴 closest([data-action]):', btn);
+        
+        if (!btn) {
+            console.log('⚠️ Нет кнопки с data-action');
+            return;
+        }
 
-      const action = btn.dataset.action;
-      const msgId = btn.dataset.msgId as UUID;
-      const chatId = btn.dataset.chatId as UUID || this._chatId;
+        const action = btn.dataset.action;
+        const msgId = btn.dataset.msgId as UUID;
+        const chatId = btn.dataset.chatId as UUID || this._chatId;
 
-      switch (action) {
-        case 'toggle-favorite':
-          this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
-          break;
-        case 'delete-message':
-          this.eventBus.emit('chat:delete-message', { msgId, chatId });
-          break;
-        case 'copy-message':
-          this.eventBus.emit('chat:copy-message', { msgId, btn });
-          break;
-        case 'share-message':
-          this.eventBus.emit('chat:share-message', { msgId, btn });
-          break;
-        case 'expand-input':
-          this.eventBus.emit('input:expand');
-          break;
-        default:
-          console.log(`ℹ️ Неизвестное действие: ${action}`);
-      }
+        console.log(`🔴 Действие: ${action}, msgId: ${msgId}`);
+
+        switch (action) {
+            case 'toggle-favorite':
+                this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
+                break;
+            case 'delete-message':
+                this.eventBus.emit('chat:delete-message', { msgId, chatId });
+                break;
+            case 'copy-message':
+                this.eventBus.emit('chat:copy-message', { msgId, btn });
+                break;
+            case 'share-message':
+                this.eventBus.emit('chat:share-message', { msgId, btn });
+                break;
+            case 'expand-input':
+                console.log('🔴 ВЫЗЫВАЕМ input:expand!');
+                this.eventBus.emit('input:expand');
+                break;
+            default:
+                console.log(`ℹ️ Неизвестное действие: ${action}`);
+        }
     };
 
     // ✅ Вешаем новый обработчик
     this.container.addEventListener('click', this._delegationHandler);
     console.log('✅ Обработчик делегирования повешен на контейнер');
-  }
+}
 
   // ==========================================
   // ПОДПИСКА НА СОБЫТИЯ
