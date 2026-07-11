@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.3.0 - _setupDelegation() в show() с удалением старого обработчика
+// Версия: 8.4.0 - исправлен currentTopic + делегирование
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -35,7 +35,6 @@ export class ChatModule {
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
   
-  // ✅ Храним ссылку на обработчик для удаления
   private _delegationHandler: ((e: Event) => void) | null = null;
 
   constructor(container: HTMLElement) {
@@ -49,15 +48,15 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.3.0 инициализирован');
+    console.log('✅ ChatModule v8.4.0 инициализирован');
   }
 
   // ==========================================
-  // ✅ ДЕЛЕГИРОВАНИЕ СОБЫТИЙ (вызывается в show)
+  // ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
   // ==========================================
 
   private _setupDelegation(): void {
-    // ✅ Удаляем старый обработчик, если он есть
+    // ✅ Удаляем старый обработчик
     if (this._delegationHandler) {
       this.container.removeEventListener('click', this._delegationHandler);
       this._delegationHandler = null;
@@ -175,7 +174,7 @@ export class ChatModule {
       }
     }
 
-    // ✅ КАЖДЫЙ РАЗ ПРИ ПОКАЗЕ перевешиваем обработчик
+    // ✅ Перевешиваем обработчик при каждом показе
     this._setupDelegation();
   }
 
@@ -193,6 +192,12 @@ export class ChatModule {
 
     this._chatId = chatId;
     this._topic = topic || this.chatStore.currentTopic;
+
+    // ✅ КРИТИЧЕСКИ ВАЖНО: синхронизируем currentTopic с Store!
+    if (this._topic) {
+      this.chatStore.currentTopic = this._topic;
+      console.log(`🔄 currentTopic установлен в: ${this._topic}`);
+    }
 
     if (!this._rendered) {
       this._render();
@@ -212,9 +217,9 @@ export class ChatModule {
     this._loadMessages();
 
     this._isShowing = true;
-    this.chatStore.setActiveChat(this._topic, this._chatId);
+    this.chatStore.setActiveChat(this._topic!, this._chatId);
 
-    console.log(`✅ Чат ${this._chatId} открыт`);
+    console.log(`✅ Чат ${this._chatId} открыт (topic: ${this._topic})`);
   }
 
   // ==========================================
@@ -665,7 +670,6 @@ export class ChatModule {
   destroy(): void {
     console.log('🗑️ ChatModule.destroy()');
 
-    // ✅ Удаляем обработчик делегирования
     if (this._delegationHandler) {
       this.container.removeEventListener('click', this._delegationHandler);
       this._delegationHandler = null;
@@ -690,6 +694,5 @@ export class ChatModule {
   }
 }
 
-// Экспортируем класс в глобальный объект
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.3.0 загружен (делегирование в show)');
+console.log('✅ ChatModule v8.4.0 загружен');
