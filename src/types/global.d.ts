@@ -1,7 +1,7 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.0.0 - ПОЛНАЯ ВЕРСИЯ
+// Версия: 2.1.0 - исправлены типы chatSend
 // ============================================
 
 import type { TopicId, TopicFilter, UUID } from '@types/index';
@@ -82,14 +82,17 @@ declare global {
             attachedImage: string | null,
             chatId: UUID
         ) => Promise<boolean>;
+        
+        // ✅ ИСПРАВЛЕНО: сигнатура соответствует ChatSend
         chatSend: {
             sendMessage: () => Promise<void>;
             copyMsgText: (btn: HTMLElement, msgId: UUID) => void;
             shareMsgText: (btn: HTMLElement, msgId: UUID) => void;
-            toggleFavoriteMsg: (btn: HTMLElement, msgId: UUID) => Promise<void>;
+            toggleFavoriteMsg: (msgId: UUID, chatId?: UUID) => Promise<void>;
             deleteMessage: (msgId: UUID) => void;
             clearUserText: (e?: Event) => void;
         };
+        
         isVoiceRecording: boolean;
         isExpressVoiceTarget: boolean;
         toggleVoiceRecording: (btn: HTMLElement) => Promise<void>;
