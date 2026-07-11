@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.4.0 - исправлен currentTopic + делегирование
+// Версия: 8.5.0 - убраны inline styles у input-area
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -48,7 +48,7 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.4.0 инициализирован');
+    console.log('✅ ChatModule v8.5.0 инициализирован');
   }
 
   // ==========================================
@@ -62,60 +62,56 @@ export class ChatModule {
     console.log('🔧 #module-chat:', document.getElementById('module-chat'));
     console.log('🔧 Совпадают?', this.container === document.getElementById('module-chat'));
 
-    // ✅ Удаляем старый обработчик
     if (this._delegationHandler) {
-        this.container.removeEventListener('click', this._delegationHandler);
-        this._delegationHandler = null;
-        console.log('🧹 Старый обработчик делегирования удален');
+      this.container.removeEventListener('click', this._delegationHandler);
+      this._delegationHandler = null;
+      console.log('🧹 Старый обработчик делегирования удален');
     }
 
-    // ✅ Создаем новый обработчик
     this._delegationHandler = (event: Event) => {
-        // ✅ ЛОГИ ВНУТРИ ОБРАБОТЧИКА - здесь event определен!
-        console.log('🔴 ОБРАБОТЧИК СРАБОТАЛ!', event.target);
-        
-        const target = event.target as HTMLElement;
-        const btn = target.closest('[data-action]') as HTMLElement;
-        
-        console.log('🔴 closest([data-action]):', btn);
-        
-        if (!btn) {
-            console.log('⚠️ Нет кнопки с data-action');
-            return;
-        }
+      console.log('🔴 ОБРАБОТЧИК СРАБОТАЛ!', event.target);
+      
+      const target = event.target as HTMLElement;
+      const btn = target.closest('[data-action]') as HTMLElement;
+      
+      console.log('🔴 closest([data-action]):', btn);
+      
+      if (!btn) {
+        console.log('⚠️ Нет кнопки с data-action');
+        return;
+      }
 
-        const action = btn.dataset.action;
-        const msgId = btn.dataset.msgId as UUID;
-        const chatId = btn.dataset.chatId as UUID || this._chatId;
+      const action = btn.dataset.action;
+      const msgId = btn.dataset.msgId as UUID;
+      const chatId = btn.dataset.chatId as UUID || this._chatId;
 
-        console.log(`🔴 Действие: ${action}, msgId: ${msgId}`);
+      console.log(`🔴 Действие: ${action}, msgId: ${msgId}`);
 
-        switch (action) {
-            case 'toggle-favorite':
-                this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
-                break;
-            case 'delete-message':
-                this.eventBus.emit('chat:delete-message', { msgId, chatId });
-                break;
-            case 'copy-message':
-                this.eventBus.emit('chat:copy-message', { msgId, btn });
-                break;
-            case 'share-message':
-                this.eventBus.emit('chat:share-message', { msgId, btn });
-                break;
-            case 'expand-input':
-                console.log('🔴 ВЫЗЫВАЕМ input:expand!');
-                this.eventBus.emit('input:expand');
-                break;
-            default:
-                console.log(`ℹ️ Неизвестное действие: ${action}`);
-        }
+      switch (action) {
+        case 'toggle-favorite':
+          this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
+          break;
+        case 'delete-message':
+          this.eventBus.emit('chat:delete-message', { msgId, chatId });
+          break;
+        case 'copy-message':
+          this.eventBus.emit('chat:copy-message', { msgId, btn });
+          break;
+        case 'share-message':
+          this.eventBus.emit('chat:share-message', { msgId, btn });
+          break;
+        case 'expand-input':
+          console.log('🔴 ВЫЗЫВАЕМ input:expand!');
+          this.eventBus.emit('input:expand');
+          break;
+        default:
+          console.log(`ℹ️ Неизвестное действие: ${action}`);
+      }
     };
 
-    // ✅ Вешаем новый обработчик
     this.container.addEventListener('click', this._delegationHandler);
     console.log('✅ Обработчик делегирования повешен на контейнер');
-}
+  }
 
   // ==========================================
   // ПОДПИСКА НА СОБЫТИЯ
@@ -192,7 +188,6 @@ export class ChatModule {
       }
     }
 
-    // ✅ Перевешиваем обработчик при каждом показе
     this._setupDelegation();
   }
 
@@ -211,7 +206,6 @@ export class ChatModule {
     this._chatId = chatId;
     this._topic = topic || this.chatStore.currentTopic;
 
-    // ✅ КРИТИЧЕСКИ ВАЖНО: синхронизируем currentTopic с Store!
     if (this._topic) {
       this.chatStore.currentTopic = this._topic;
       console.log(`🔄 currentTopic установлен в: ${this._topic}`);
@@ -262,7 +256,7 @@ export class ChatModule {
   }
 
   // ==========================================
-  // РЕНДЕРИНГ
+  // РЕНДЕРИНГ (убраны inline styles у input-area)
   // ==========================================
 
   private _render(): void {
@@ -309,41 +303,10 @@ export class ChatModule {
           <i data-lucide="chevron-up" style="width:26px;height:26px;"></i>
         </button>
 
-        <div id="input-overlay" class="hidden" style="
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100dvh;
-          background: rgba(0,0,0,0.25);
-          backdrop-filter: blur(6px);
-          -webkit-backdrop-filter: blur(6px);
-          z-index: 98;
-          transition: opacity 0.3s;
-          opacity: 0;
-          pointer-events: none;
-        "></div>
+        <div id="input-overlay" class="hidden"></div>
 
-        <div id="input-area" style="
-          display: none;
-          position: fixed;
-          bottom: calc(var(--tg-safe-bottom, 0px) + 16px);
-          left: 16px;
-          right: 16px;
-          background: var(--app-bg-secondary);
-          border-radius: 16px;
-          padding: 12px 16px;
-          box-shadow: 0 -2px 20px rgba(0,0,0,0.06);
-          border: 1px solid var(--app-border-color-light);
-          z-index: 99;
-          flex-direction: column;
-          gap: 8px;
-          opacity: 0;
-          visibility: hidden;
-          pointer-events: none;
-          transform: translateY(150dvh);
-          transition: all 0.3s cubic-bezier(0.1,0.8,0.25,1);
-        ">
+        <!-- ✅ УБРАНЫ INLINE STYLES - теперь только CSS -->
+        <div id="input-area" class="input-area-hidden">
           <div style="position:relative;width:100%;display:flex;align-items:flex-start;">
             <textarea id="user-input" placeholder="Ваш вопрос..." rows="1" style="
               width: 100%;
@@ -578,23 +541,6 @@ export class ChatModule {
   }
 
   // ==========================================
-  // ВОЗВРАТ В СПИСОК ЧАТОВ
-  // ==========================================
-
-  private _goBackToList(): void {
-    console.log('🔙 Возврат в ChatListModule');
-    this.hide();
-
-    if (this.moduleLoader) {
-      this.moduleLoader.load('chat-list', {}, { replace: true });
-    } else if (this.navigationState) {
-      this.navigationState.goToChatList();
-    } else {
-      this.eventBus.emit('navigation:go_back');
-    }
-  }
-
-  // ==========================================
   // ФУТЕР
   // ==========================================
 
@@ -713,4 +659,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.4.0 загружен');
+console.log('✅ ChatModule v8.5.0 загружен');
