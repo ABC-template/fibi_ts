@@ -62,6 +62,8 @@ export class ChatModule {
     console.log('🔧 #module-chat:', document.getElementById('module-chat'));
     console.log('🔧 Совпадают?', this.container === document.getElementById('module-chat'));
     // ✅ Удаляем старый обработчик
+    console.log('🔴 ОБРАБОТЧИК СРАБОТАЛ!', e.target);
+console.log('🔴 closest([data-action]):', e.target.closest('[data-action]'));
     if (this._delegationHandler) {
       this.container.removeEventListener('click', this._delegationHandler);
       this._delegationHandler = null;
