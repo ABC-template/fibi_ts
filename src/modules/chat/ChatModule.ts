@@ -56,6 +56,11 @@ export class ChatModule {
   // ==========================================
 
   private _setupDelegation(): void {
+       console.log('🔧 _setupDelegation вызван');
+    console.log('🔧 this.container:', this.container);
+    console.log('🔧 this.container.id:', this.container?.id);
+    console.log('🔧 #module-chat:', document.getElementById('module-chat'));
+    console.log('🔧 Совпадают?', this.container === document.getElementById('module-chat'));
     // ✅ Удаляем старый обработчик
     if (this._delegationHandler) {
       this.container.removeEventListener('click', this._delegationHandler);
