@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/ui/renderer.ts
 // Базовый рендеринг UI-элементов
-// Версия: 3.0.1 - FIXED TYPES
+// Версия: 4.0.0 - EventBus-based
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -17,12 +17,8 @@ export class UIRenderer {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ UIRenderer v3.0.1 загружен');
+    console.log('✅ UIRenderer v4.0.0 загружен (EventBus-based)');
   }
-
-  // ==========================================
-  // ПОДПИСКА НА СОБЫТИЯ
-  // ==========================================
 
   private _subscribeToEvents(): void {
     const unsubBalance = this.eventBus.on('tasks:balance_changed', (data) => {
@@ -47,10 +43,6 @@ export class UIRenderer {
 
     console.log('📡 UIRenderer подписан на события');
   }
-
-  // ==========================================
-  // ОБНОВЛЕНИЕ ОТОБРАЖЕНИЙ
-  // ==========================================
 
   private _updateCoinDisplay(balance: number): void {
     document.querySelectorAll('.coin-amount').forEach(el => {
@@ -91,7 +83,7 @@ export class UIRenderer {
   }
 
   // ==========================================
-  // РЕНДЕРИНГ СООБЩЕНИЙ
+  // РЕНДЕРИНГ СООБЩЕНИЙ (с data-атрибутами)
   // ==========================================
 
   renderMessage(
@@ -118,6 +110,10 @@ export class UIRenderer {
     container.scrollTop = container.scrollHeight;
     return msgDiv;
   }
+
+  // ==========================================
+  // AI СООБЩЕНИЕ (с data-атрибутами вместо onclick)
+  // ==========================================
 
   renderAIMessage(container: HTMLElement, text: string, msgId: UUID, isFavorite: boolean): void {
     const contentDiv = document.createElement('div');
@@ -161,43 +157,28 @@ export class UIRenderer {
 
     const isWelcome = text.includes('Привет') || text.includes('Welcome');
     if (!isWelcome) {
-      const actions = this.createMessageActions(msgId, isFavorite);
+      // ✅ ИСПРАВЛЕНО: data-атрибуты вместо onclick
+      const actions = this._createMessageActions(msgId, isFavorite);
       container.appendChild(actions);
     }
   }
+
+  // ==========================================
+  // USER СООБЩЕНИЕ (с data-атрибутами)
+  // ==========================================
 
   renderUserMessage(container: HTMLElement, text: string, msgId: UUID): void {
     const textSpan = document.createElement('span');
     textSpan.textContent = text;
     container.appendChild(textSpan);
 
+    // ✅ ИСПРАВЛЕНО: data-атрибуты вместо onclick
     const delBtn = document.createElement('button');
-    delBtn.className = 'action-btn';
+    delBtn.className = 'action-btn msg-delete-btn';
+    delBtn.dataset.action = 'delete-message';
+    delBtn.dataset.msgId = msgId;
     delBtn.style.cssText = 'background:transparent; border:none; outline:none; cursor:pointer; margin-left:8px; opacity:0.4; padding:0; vertical-align:middle;';
     delBtn.innerHTML = '<i data-lucide="trash-2" style="width:16px;height:16px;"></i>';
-    delBtn.onclick = () => {
-      const containerEl = document.getElementById('chat-container');
-      const wasAtBottom = containerEl && containerEl.scrollTop + containerEl.clientHeight >= containerEl.scrollHeight - 50;
-
-      const activeChat = this.chatStore.getActiveChat();
-      if (activeChat && (window as any).messageService) {
-        (window as any).messageService.deleteMessage(activeChat.id, msgId);
-      }
-
-      if (wasAtBottom && containerEl) {
-        setTimeout(() => {
-          containerEl.scrollTop = containerEl.scrollHeight;
-        }, 50);
-      }
-
-      const domBlock = document.getElementById(`msg-block-${msgId}`);
-      if (domBlock) {
-        domBlock.style.transition = 'all 0.25s ease';
-        domBlock.style.opacity = '0';
-        domBlock.style.transform = 'scale(0.95)';
-        setTimeout(() => domBlock.remove(), 250);
-      }
-    };
     container.appendChild(delBtn);
 
     setTimeout(() => {
@@ -207,23 +188,49 @@ export class UIRenderer {
     }, 50);
   }
 
-  createMessageActions(msgId: UUID, isFavorite: boolean): HTMLElement {
+  // ==========================================
+  // ✅ ИСПРАВЛЕНО: data-атрибуты вместо onclick
+  // ==========================================
+
+  private _createMessageActions(msgId: UUID, isFavorite: boolean): HTMLElement {
     const actions = document.createElement('div');
     actions.className = 'msg-actions';
-    actions.innerHTML = `
-      <button class="action-btn" data-tooltip="📋" onclick="window.chatSend.copyMsgText(this, '${msgId}')">
-        <i data-lucide="copy"></i>
-      </button>
-      <button class="action-btn" data-tooltip="🔗" onclick="window.chatSend.shareMsgText(this, '${msgId}')">
-        <i data-lucide="share-2"></i>
-      </button>
-      <button class="action-btn ${isFavorite ? 'is-favorite' : ''}" onclick="window.chatSend.toggleFavoriteMsg(this, '${msgId}')">
-        <i data-lucide="${isFavorite ? 'heart' : 'heart'}"></i>
-      </button>
-      <button class="action-btn" style="margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;" onclick="window.chatSend.deleteMessage('${msgId}')">
-        <i data-lucide="trash-2"></i>
-      </button>
-    `;
+    
+    // Кнопка копирования
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'action-btn';
+    copyBtn.dataset.action = 'copy-message';
+    copyBtn.dataset.msgId = msgId;
+    copyBtn.dataset.tooltip = '📋';
+    copyBtn.innerHTML = '<i data-lucide="copy"></i>';
+    actions.appendChild(copyBtn);
+
+    // Кнопка шаринга
+    const shareBtn = document.createElement('button');
+    shareBtn.className = 'action-btn';
+    shareBtn.dataset.action = 'share-message';
+    shareBtn.dataset.msgId = msgId;
+    shareBtn.dataset.tooltip = '🔗';
+    shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
+    actions.appendChild(shareBtn);
+
+    // Кнопка избранного
+    const favBtn = document.createElement('button');
+    favBtn.className = `action-btn ${isFavorite ? 'is-favorite' : ''}`;
+    favBtn.dataset.action = 'toggle-favorite';
+    favBtn.dataset.msgId = msgId;
+    favBtn.dataset.isFavorite = String(isFavorite);
+    favBtn.innerHTML = `<i data-lucide="${isFavorite ? 'heart' : 'heart'}"></i>`;
+    actions.appendChild(favBtn);
+
+    // Кнопка удаления
+    const delBtn = document.createElement('button');
+    delBtn.className = 'action-btn';
+    delBtn.dataset.action = 'delete-message';
+    delBtn.dataset.msgId = msgId;
+    delBtn.style.cssText = 'margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;';
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+    actions.appendChild(delBtn);
 
     setTimeout(() => {
       if (typeof (window as any).lucide !== 'undefined') {
@@ -373,4 +380,4 @@ export class UIRenderer {
 
 // Создаем экземпляр
 export const uiRenderer = new UIRenderer();
-console.log('✅ UIRenderer v3.0.1 загружен');
+console.log('✅ UIRenderer v4.0.0 загружен');
