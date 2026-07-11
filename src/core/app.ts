@@ -9,6 +9,7 @@ import { moduleLoader } from './module-loader';
 import { navigationState } from './navigation-state';
 import { navigation } from './navigation';
 import { backButtonManager } from './back-button-manager';
+import { inputManager } from './input-manager';
 import { modalManager } from './modal-manager';
 import { headerManager } from './header-manager';
 import { themeManager } from './theme-manager';
@@ -93,6 +94,7 @@ function bindUIToWindow(): void {
     window.backButtonManager = backButtonManager;
     window.modalManager = modalManager;
     window.headerManager = headerManager;
+    window.inputManager = inputManager;
     window.themeManager = themeManager;
     window.eventBus = eventBus;
     
