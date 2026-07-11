@@ -1,7 +1,7 @@
 // ============================================
 // src/core/input-manager.ts
 // Управление капсулой ввода
-// Версия: 2.0.0 - Без кеширования DOM-элементов
+// Версия: 2.1.0 - принудительное переопределение стилей
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -13,7 +13,7 @@ export class InputManager {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ InputManager v2.0.0 инициализирован (без кеширования)');
+    console.log('✅ InputManager v2.1.0 инициализирован');
   }
 
   // ==========================================
@@ -21,28 +21,24 @@ export class InputManager {
   // ==========================================
 
   private _subscribeToEvents(): void {
-    // Открыть капсулу
     const unsubExpand = this.eventBus.on('input:expand', () => {
       console.log('📡 InputManager: получено событие input:expand');
       this.expandInputArea();
     }, this);
     this._subscriptions.push(unsubExpand);
 
-    // Закрыть капсулу
     const unsubCollapse = this.eventBus.on('input:collapse', () => {
       console.log('📡 InputManager: получено событие input:collapse');
       this.collapseInputArea();
     }, this);
     this._subscriptions.push(unsubCollapse);
 
-    // Очистить поле
     const unsubClear = this.eventBus.on('input:clear', () => {
       console.log('📡 InputManager: получено событие input:clear');
       this.clearUserText();
     }, this);
     this._subscriptions.push(unsubClear);
 
-    // Фокус на поле
     const unsubFocus = this.eventBus.on('input:focus', () => {
       console.log('📡 InputManager: получено событие input:focus');
       this.focusInput();
@@ -53,7 +49,7 @@ export class InputManager {
   }
 
   // ==========================================
-  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ (всегда ищут элементы заново)
+  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
   // ==========================================
 
   private _getElements(): {
@@ -119,11 +115,20 @@ export class InputManager {
 
     console.log('🔧 Все элементы найдены, открываем капсулу');
 
+    // Скрываем FAB
     fabBtn.style.opacity = '0';
     fabBtn.style.pointerEvents = 'none';
 
+    // Показываем оверлей
     overlay.classList.remove('hidden');
+
+    // ✅ ПРИНУДИТЕЛЬНО ПЕРЕОПРЕДЕЛЯЕМ СТИЛИ (решение проблемы с inline styles)
     inputArea.classList.add('active');
+    inputArea.style.display = 'flex';
+    inputArea.style.opacity = '1';
+    inputArea.style.visibility = 'visible';
+    inputArea.style.transform = 'translateY(0)';
+    inputArea.style.pointerEvents = 'auto';
 
     if (clearBtn) {
       if (userInput.value.length > 0) {
@@ -158,7 +163,6 @@ export class InputManager {
       return;
     }
 
-    // Не закрываем, если идет запись голоса
     if ((window as any).isVoiceRecording) {
       console.log('⚠️ Идет запись голоса, капсула не закрывается');
       return;
@@ -174,6 +178,12 @@ export class InputManager {
     if (inputArea) {
       inputArea.classList.remove('active');
       inputArea.classList.remove('keyboard-up');
+      // ✅ Возвращаем скрытое состояние
+      inputArea.style.display = '';
+      inputArea.style.opacity = '';
+      inputArea.style.visibility = '';
+      inputArea.style.transform = '';
+      inputArea.style.pointerEvents = '';
     }
 
     if (overlay) {
@@ -185,7 +195,6 @@ export class InputManager {
       fabBtn.style.pointerEvents = 'auto';
     }
 
-    // Показываем нижнюю навигацию
     const nav = document.getElementById('bottom-nav');
     if (nav) {
       nav.style.display = 'flex';
@@ -285,15 +294,10 @@ export class InputManager {
   }
 }
 
-// Создаем экземпляр
 export const inputManager = new InputManager();
-
-// ==========================================
-// ✅ ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
-// ==========================================
 
 (window as any).expandInputArea = inputManager.expandInputArea.bind(inputManager);
 (window as any).collapseInputArea = inputManager.collapseInputArea.bind(inputManager);
 (window as any).clearUserText = inputManager.clearUserText.bind(inputManager);
 
-console.log('✅ InputManager v2.0.0 загружен');
+console.log('✅ InputManager v2.1.0 загружен');
