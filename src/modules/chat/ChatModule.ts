@@ -55,39 +55,37 @@ export class ChatModule {
   // ==========================================
 
   private _setupDelegation(): void {
-    // Используем делегирование на весь контейнер
     this.container.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      
-      // Проверяем кнопку с data-action
-      const btn = target.closest('[data-action]') as HTMLElement;
-      if (!btn) return;
+        const target = e.target as HTMLElement;
+        const btn = target.closest('[data-action]') as HTMLElement;
+        if (!btn) return;
 
-      const action = btn.dataset.action;
-      const msgId = btn.dataset.msgId as UUID;
-      const chatId = btn.dataset.chatId as UUID || this._chatId;
+        const action = btn.dataset.action;
+        const msgId = btn.dataset.msgId as UUID;
+        const chatId = btn.dataset.chatId as UUID || this._chatId;
 
-      // Отправляем событие в EventBus
-      switch (action) {
-        case 'toggle-favorite':
-          this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
-          break;
-        case 'delete-message':
-          this.eventBus.emit('chat:delete-message', { msgId, chatId });
-          break;
-        case 'copy-message':
-          this.eventBus.emit('chat:copy-message', { msgId, btn });
-          break;
-        case 'share-message':
-          this.eventBus.emit('chat:share-message', { msgId, btn });
-          break;
-        default:
-          console.log(`ℹ️ Неизвестное действие: ${action}`);
-      }
+        switch (action) {
+            case 'toggle-favorite':
+                this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
+                break;
+            case 'delete-message':
+                this.eventBus.emit('chat:delete-message', { msgId, chatId });
+                break;
+            case 'copy-message':
+                this.eventBus.emit('chat:copy-message', { msgId, btn });
+                break;
+            case 'share-message':
+                this.eventBus.emit('chat:share-message', { msgId, btn });
+                break;
+            // ✅ ДОБАВЛЕНО
+            case 'expand-input':
+                this.eventBus.emit('input:expand');
+                break;
+            default:
+                console.log(`ℹ️ Неизвестное действие: ${action}`);
+        }
     });
-
-    console.log('📡 ChatModule: делегирование событий настроено');
-  }
+}
 
   // ==========================================
   // ПОДПИСКА НА СОБЫТИЯ
@@ -254,7 +252,7 @@ export class ChatModule {
           -webkit-overflow-scrolling: touch;
         "></div>
 
-        <button id="fab-open-input" onclick="window.expandInputArea()" style="
+        <button id="fab-open-input" data-action="expand-input" style="
           position: fixed;
           bottom: calc(var(--tg-safe-bottom, 0px) + 80px);
           right: 16px;
