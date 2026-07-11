@@ -1,9 +1,9 @@
 // ============================================
 // src/core/index.ts
 // Единый экспорт ядра
+// Версия: 6.0.0 - добавлен InputManager
 // ============================================
 
-// ✅ ИСПРАВЛЕНО: убираем импорт config как модуль
 import './config';
 
 export * from './event-bus';
@@ -15,6 +15,7 @@ export * from './modal-manager';
 export * from './module-loader';
 export * from './theme-manager';
 export * from './locale';
+export * from './input-manager';
 
 // Экспорты экземпляров
 export { eventBus } from './event-bus';
@@ -25,3 +26,4 @@ export { backButtonManager } from './back-button-manager';
 export { modalManager } from './modal-manager';
 export { moduleLoader } from './module-loader';
 export { themeManager } from './theme-manager';
+export { inputManager } from './input-manager';
