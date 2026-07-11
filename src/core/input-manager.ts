@@ -1,7 +1,7 @@
 // ============================================
 // src/core/input-manager.ts
 // Управление капсулой ввода
-// Версия: 1.0.0 - EventBus-based
+// Версия: 2.0.0 - Без кеширования DOM-элементов
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -9,101 +9,11 @@ import { eventBus } from './event-bus';
 export class InputManager {
   private eventBus = eventBus;
   private _subscriptions: Array<() => void> = [];
-  
-  // DOM-элементы
-  private userInput: HTMLTextAreaElement | null = null;
-  private inputArea: HTMLElement | null = null;
-  private chatContainer: HTMLElement | null = null;
-  private fabBtn: HTMLElement | null = null;
-  private overlay: HTMLElement | null = null;
-  private clearBtn: HTMLElement | null = null;
-  
   private _isExpanded: boolean = false;
 
   constructor() {
-    // Ждем DOM перед инициализацией
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => this._init());
-    } else {
-      this._init();
-    }
     this._subscribeToEvents();
-    console.log('✅ InputManager v1.0.0 инициализирован');
-  }
-
-  // ==========================================
-  // ИНИЦИАЛИЗАЦИЯ
-  // ==========================================
-
-  private _init(): void {
-    // Находим DOM-элементы
-    this.userInput = document.getElementById('user-input') as HTMLTextAreaElement;
-    this.inputArea = document.getElementById('input-area');
-    this.chatContainer = document.getElementById('chat-container');
-    this.fabBtn = document.getElementById('fab-open-input');
-    this.overlay = document.getElementById('input-overlay');
-    this.clearBtn = document.getElementById('clear-input-btn');
-
-    if (!this.userInput || !this.inputArea || !this.chatContainer || !this.fabBtn || !this.overlay || !this.clearBtn) {
-      console.warn('⚠️ InputManager: не все DOM-элементы найдены');
-      return;
-    }
-
-    // Настройка виртуальной клавиатуры
-    if ((navigator as any).virtualKeyboard) {
-      (navigator as any).virtualKeyboard.overlaysContent = false;
-    }
-
-    // Авто-высота текстового поля
-    this.userInput.addEventListener('input', () => {
-      this._resizeTextArea();
-    });
-
-    // Закрытие по клику на оверлей
-    this.overlay.addEventListener('click', () => {
-      this.collapseInputArea();
-    });
-
-    // Клик по капсуле — не закрывать
-    this.inputArea.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-
-    // Кнопка очистки
-    this.clearBtn.addEventListener('click', () => {
-      this.clearUserText();
-    });
-
-    // Отправка по Enter
-    this.userInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.eventBus.emit('chat:send-message');
-      }
-      if (e.key === 'Escape' && this.userInput?.value.trim().length === 0) {
-        this.collapseInputArea();
-      }
-    });
-
-    // Настройка Telegram viewport
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg) {
-      try {
-        tg.onEvent('viewportChanged', () => {
-          if (!this._isExpanded) return;
-          const isKeyboardOpen = window.innerHeight < tg.viewportStableHeight;
-          if (isKeyboardOpen) {
-            this.inputArea?.classList.add('keyboard-up');
-          } else {
-            this.inputArea?.classList.remove('keyboard-up');
-          }
-        });
-      } catch (err) {
-        console.error('Ошибка контроля вьюпорта в InputManager:', err);
-      }
-    }
-
-    console.log('🔧 InputManager: DOM-элементы инициализированы');
+    console.log('✅ InputManager v2.0.0 инициализирован (без кеширования)');
   }
 
   // ==========================================
@@ -113,25 +23,29 @@ export class InputManager {
   private _subscribeToEvents(): void {
     // Открыть капсулу
     const unsubExpand = this.eventBus.on('input:expand', () => {
+      console.log('📡 InputManager: получено событие input:expand');
       this.expandInputArea();
     }, this);
     this._subscriptions.push(unsubExpand);
 
     // Закрыть капсулу
     const unsubCollapse = this.eventBus.on('input:collapse', () => {
+      console.log('📡 InputManager: получено событие input:collapse');
       this.collapseInputArea();
     }, this);
     this._subscriptions.push(unsubCollapse);
 
     // Очистить поле
     const unsubClear = this.eventBus.on('input:clear', () => {
+      console.log('📡 InputManager: получено событие input:clear');
       this.clearUserText();
     }, this);
     this._subscriptions.push(unsubClear);
 
     // Фокус на поле
     const unsubFocus = this.eventBus.on('input:focus', () => {
-      this.userInput?.focus();
+      console.log('📡 InputManager: получено событие input:focus');
+      this.focusInput();
     }, this);
     this._subscriptions.push(unsubFocus);
 
@@ -139,20 +53,38 @@ export class InputManager {
   }
 
   // ==========================================
-  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ (всегда ищут элементы заново)
   // ==========================================
 
-  private _resizeTextArea(): void {
-    if (!this.userInput) return;
-    
-    this.userInput.style.height = 'auto';
-    this.userInput.style.height = (this.userInput.scrollHeight) + 'px';
+  private _getElements(): {
+    userInput: HTMLTextAreaElement | null;
+    inputArea: HTMLElement | null;
+    chatContainer: HTMLElement | null;
+    fabBtn: HTMLElement | null;
+    overlay: HTMLElement | null;
+    clearBtn: HTMLElement | null;
+  } {
+    return {
+      userInput: document.getElementById('user-input') as HTMLTextAreaElement,
+      inputArea: document.getElementById('input-area'),
+      chatContainer: document.getElementById('chat-container'),
+      fabBtn: document.getElementById('fab-open-input'),
+      overlay: document.getElementById('input-overlay'),
+      clearBtn: document.getElementById('clear-input-btn')
+    };
+  }
 
-    if (this.clearBtn) {
-      if (this.userInput.value.trim().length > 0) {
-        this.clearBtn.classList.remove('hidden');
+  private _resizeTextArea(userInput: HTMLTextAreaElement, clearBtn: HTMLElement | null): void {
+    if (!userInput) return;
+    
+    userInput.style.height = 'auto';
+    userInput.style.height = (userInput.scrollHeight) + 'px';
+
+    if (clearBtn) {
+      if (userInput.value.trim().length > 0) {
+        clearBtn.classList.remove('hidden');
       } else {
-        this.clearBtn.classList.add('hidden');
+        clearBtn.classList.add('hidden');
       }
     }
   }
@@ -165,25 +97,44 @@ export class InputManager {
    * Открыть капсулу ввода
    */
   expandInputArea(): void {
-    if (this._isExpanded) return;
-    if (!this.fabBtn || !this.overlay || !this.inputArea) return;
+    console.log('🔧 expandInputArea() вызван');
+    
+    if (this._isExpanded) {
+      console.log('⚠️ Капсула уже открыта');
+      return;
+    }
 
-    this.fabBtn.style.opacity = '0';
-    this.fabBtn.style.pointerEvents = 'none';
+    const elements = this._getElements();
+    const { fabBtn, overlay, inputArea, userInput, clearBtn } = elements;
 
-    this.overlay.classList.remove('hidden');
-    this.inputArea.classList.add('active');
+    if (!fabBtn || !overlay || !inputArea || !userInput) {
+      console.warn('⚠️ expandInputArea: не все элементы найдены', {
+        fabBtn: !!fabBtn,
+        overlay: !!overlay,
+        inputArea: !!inputArea,
+        userInput: !!userInput
+      });
+      return;
+    }
 
-    if (this.clearBtn) {
-      if (this.userInput?.value.length > 0) {
-        this.clearBtn.classList.remove('hidden');
+    console.log('🔧 Все элементы найдены, открываем капсулу');
+
+    fabBtn.style.opacity = '0';
+    fabBtn.style.pointerEvents = 'none';
+
+    overlay.classList.remove('hidden');
+    inputArea.classList.add('active');
+
+    if (clearBtn) {
+      if (userInput.value.length > 0) {
+        clearBtn.classList.remove('hidden');
       } else {
-        this.clearBtn.classList.add('hidden');
+        clearBtn.classList.add('hidden');
       }
     }
 
-    this._resizeTextArea();
-    this.userInput?.focus();
+    this._resizeTextArea(userInput, clearBtn);
+    userInput.focus();
 
     // Скрываем нижнюю навигацию
     const nav = document.getElementById('bottom-nav');
@@ -193,23 +144,45 @@ export class InputManager {
 
     this._isExpanded = true;
     this.eventBus.emit('input:state_changed', { isExpanded: true });
+    console.log('✅ Капсула открыта');
   }
 
   /**
    * Закрыть капсулу ввода
    */
   collapseInputArea(): void {
-    if (!this._isExpanded) return;
-    if ((window as any).isVoiceRecording) return;
+    console.log('🔧 collapseInputArea() вызван');
+    
+    if (!this._isExpanded) {
+      console.log('⚠️ Капсула уже закрыта');
+      return;
+    }
 
-    this.userInput?.blur();
-    this.inputArea?.classList.remove('active');
-    this.inputArea?.classList.remove('keyboard-up');
-    this.overlay?.classList.add('hidden');
+    // Не закрываем, если идет запись голоса
+    if ((window as any).isVoiceRecording) {
+      console.log('⚠️ Идет запись голоса, капсула не закрывается');
+      return;
+    }
 
-    if (this.fabBtn) {
-      this.fabBtn.style.opacity = '1';
-      this.fabBtn.style.pointerEvents = 'auto';
+    const elements = this._getElements();
+    const { userInput, inputArea, overlay, fabBtn } = elements;
+
+    if (userInput) {
+      userInput.blur();
+    }
+
+    if (inputArea) {
+      inputArea.classList.remove('active');
+      inputArea.classList.remove('keyboard-up');
+    }
+
+    if (overlay) {
+      overlay.classList.add('hidden');
+    }
+
+    if (fabBtn) {
+      fabBtn.style.opacity = '1';
+      fabBtn.style.pointerEvents = 'auto';
     }
 
     // Показываем нижнюю навигацию
@@ -220,6 +193,7 @@ export class InputManager {
 
     this._isExpanded = false;
     this.eventBus.emit('input:state_changed', { isExpanded: false });
+    console.log('✅ Капсула закрыта');
   }
 
   /**
@@ -228,15 +202,31 @@ export class InputManager {
   clearUserText(e?: Event): void {
     if (e) e.stopPropagation();
     
-    if (this.userInput) {
-      this.userInput.value = '';
-      this.userInput.style.height = 'auto';
+    console.log('🔧 clearUserText() вызван');
+    
+    const elements = this._getElements();
+    const { userInput, clearBtn } = elements;
+
+    if (userInput) {
+      userInput.value = '';
+      userInput.style.height = 'auto';
+      userInput.focus();
     }
-    if (this.clearBtn) {
-      this.clearBtn.classList.add('hidden');
+
+    if (clearBtn) {
+      clearBtn.classList.add('hidden');
     }
-    if (this.userInput) {
-      this.userInput.focus();
+  }
+
+  /**
+   * Установить фокус на поле ввода
+   */
+  focusInput(): void {
+    console.log('🔧 focusInput() вызван');
+    
+    const userInput = document.getElementById('user-input') as HTMLTextAreaElement;
+    if (userInput) {
+      userInput.focus();
     }
   }
 
@@ -251,20 +241,28 @@ export class InputManager {
    * Получить текст из поля ввода
    */
   getInputText(): string {
-    return this.userInput?.value?.trim() || '';
+    const userInput = document.getElementById('user-input') as HTMLTextAreaElement;
+    return userInput?.value?.trim() || '';
   }
 
   /**
    * Установить текст в поле ввода
    */
   setInputText(text: string): void {
-    if (!this.userInput) return;
-    this.userInput.value = text;
-    this._resizeTextArea();
-    if (text.trim().length > 0) {
-      this.clearBtn?.classList.remove('hidden');
-    } else {
-      this.clearBtn?.classList.add('hidden');
+    console.log('🔧 setInputText() вызван');
+    
+    const elements = this._getElements();
+    const { userInput, clearBtn } = elements;
+
+    if (!userInput) return;
+    
+    userInput.value = text;
+    this._resizeTextArea(userInput, clearBtn);
+    
+    if (text.trim().length > 0 && clearBtn) {
+      clearBtn.classList.remove('hidden');
+    } else if (clearBtn) {
+      clearBtn.classList.add('hidden');
     }
   }
 
@@ -272,6 +270,8 @@ export class InputManager {
    * Уничтожение (отписка)
    */
   destroy(): void {
+    console.log('🗑️ InputManager.destroy()');
+    
     for (const unsub of this._subscriptions) {
       try {
         unsub();
@@ -280,6 +280,7 @@ export class InputManager {
       }
     }
     this._subscriptions = [];
+    this._isExpanded = false;
     console.log('📡 InputManager отписан от событий');
   }
 }
@@ -291,9 +292,8 @@ export const inputManager = new InputManager();
 // ✅ ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
 // ==========================================
 
-// Оставляем для старого кода (постепенно уберем)
 (window as any).expandInputArea = inputManager.expandInputArea.bind(inputManager);
 (window as any).collapseInputArea = inputManager.collapseInputArea.bind(inputManager);
 (window as any).clearUserText = inputManager.clearUserText.bind(inputManager);
 
-console.log('✅ InputManager v1.0.0 загружен');
+console.log('✅ InputManager v2.0.0 загружен');
