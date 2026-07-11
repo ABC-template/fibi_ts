@@ -77,6 +77,8 @@ function bindUIToWindow(): void {
     window.organizerStore = organizerStore;
     window.tasksStore = tasksStore;
     
+    window.chatSend = chatSend;
+    
     // Service экземпляры
     window.authService = authService;
     window.chatService = chatService;
