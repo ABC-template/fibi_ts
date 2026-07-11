@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // Инициализация приложения
-// Версия: 8.4.0 - ДОБАВЛЕНА РЕГИСТРАЦИЯ МОДУЛЕЙ
+// Версия: 8.5.0 - ДОБАВЛЕН chatSend в window
 // ============================================
 
 import './config';
@@ -26,6 +26,9 @@ import { chatUI } from '@/modules/ui/chat-ui';
 import { profileUI } from '@/modules/ui/profile-ui';
 import { organizerUI } from '@/modules/ui/organizer-ui';
 
+// ✅ ИМПОРТ chatSend (исправление ошибки)
+import { chatSend } from '@/modules/chat/send';
+
 // ✅ ИМПОРТ ВСЕХ МОДУЛЕЙ ДЛЯ РЕГИСТРАЦИИ
 import { DashboardModule } from '@/modules/dashboard/DashboardModule';
 import { ChatListModule } from '@/modules/chat-list/ChatListModule';
@@ -38,7 +41,7 @@ import { GamesModule } from '@/modules/games/GamesModule';
 // ✅ ТИПЫ
 import type { TopicId, IChat } from '@types';
 
-console.log('🚀 App v8.4.0 начал загрузку');
+console.log('🚀 App v8.5.0 начал загрузку');
 
 // ==========================================
 // ✅ 1. РЕГИСТРАЦИЯ ВСЕХ МОДУЛЕЙ
@@ -77,15 +80,13 @@ function bindUIToWindow(): void {
     window.organizerStore = organizerStore;
     window.tasksStore = tasksStore;
     
-    window.chatSend = chatSend;
-    
     // Service экземпляры
     window.authService = authService;
     window.chatService = chatService;
     window.messageService = messageService;
     window.syncService = syncService;
     
-    // Core экземпляры (уже есть, но на всякий случай)
+    // ✅ Core экземпляры
     window.moduleLoader = moduleLoader;
     window.navigationState = navigationState;
     window.navigation = navigation;
@@ -94,6 +95,9 @@ function bindUIToWindow(): void {
     window.headerManager = headerManager;
     window.themeManager = themeManager;
     window.eventBus = eventBus;
+    
+    // ✅ chatSend (исправление ошибки)
+    window.chatSend = chatSend;
     
     console.log('✅ UI привязан к window');
 }
@@ -153,7 +157,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 8.4.0
+                    Версия 8.5.0
                 </div>
             </div>
         `;
@@ -870,7 +874,7 @@ window.appendDrawerNav = function(container: HTMLElement): void {
         <div class="drawer-nav-item" id="drawer-clear-cache" style="display: flex; align-items: center; gap: 14px; padding: 8px 20px; color: var(--app-text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; border: none; background: transparent; width: 100%; text-align: left; font-family: var(--app-font-family, -apple-system, sans-serif); -webkit-tap-highlight-color: transparent;">
             <i data-lucide="trash" style="width:20px;height:20px;"></i> Очистить кэш
         </div>
-        <div style="padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;">Версия 8.4.0</div>
+        <div style="padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;">Версия 8.5.0</div>
     `;
 
     container.appendChild(nav);
@@ -1573,7 +1577,7 @@ async function initApp(): Promise<void> {
     const currentTheme = themeManager.getCurrentTheme();
     window.updateThemeLabel(currentTheme);
 
-    console.log('✅ Приложение v8.4.0 успешно загружено');
+    console.log('✅ Приложение v8.5.0 успешно загружено');
 }
 
 // ==========================================
@@ -1639,4 +1643,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v8.4.0 полностью загружен');
+console.log('✅ app.ts v8.5.0 полностью загружен');
