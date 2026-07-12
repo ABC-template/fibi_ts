@@ -1,7 +1,7 @@
 // ============================================
 // src/core/back-button-manager.ts
 // Управление системной кнопкой «Назад» Telegram
-// Версия: 6.0.0 - TypeScript
+// Версия: 6.1.0 - обновлена логика
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -28,31 +28,26 @@ export class BackButtonManager {
     this.tg.BackButton.hide();
     this._isVisible = false;
 
-    // Подписываемся на изменения состояния навигации
     const unsub1 = this.eventBus.on('navigation:state_changed', () => {
       this._update();
     }, this);
     this._subscriptions.push(unsub1);
 
-    // Подписка на загрузку модулей
     const unsub2 = this.eventBus.on('module:loaded', () => {
       this._update();
     }, this);
     this._subscriptions.push(unsub2);
 
-    // Подписка на состояние сайдбара
     const unsub3 = this.eventBus.on('drawer:state_changed', () => {
       this._update();
     }, this);
     this._subscriptions.push(unsub3);
 
-    // Подписка на состояние игр
     const unsub4 = this.eventBus.on('games:mode_changed', () => {
       this._update();
     }, this);
     this._subscriptions.push(unsub4);
 
-    // Подписка на закрытие модалок через кнопку "Назад"
     const unsub5 = this.eventBus.on('modal:state_changed', (data) => {
       if (data && data.action === 'back') {
         this._update();
@@ -60,7 +55,12 @@ export class BackButtonManager {
     }, this);
     this._subscriptions.push(unsub5);
 
-    // Обработка нажатия
+    // ✅ Подписка на состояние капсулы
+    const unsub6 = this.eventBus.on('input:state_changed', () => {
+      this._update();
+    }, this);
+    this._subscriptions.push(unsub6);
+
     this.tg.BackButton.offClick();
     this.tg.BackButton.onClick(() => {
       this._handleBackPress();
@@ -68,7 +68,7 @@ export class BackButtonManager {
 
     setTimeout(() => this._update(), 100);
 
-    console.log('✅ BackButtonManager v6.0.0 инициализирован');
+    console.log('✅ BackButtonManager v6.1.0 инициализирован');
   }
 
   private _update(): void {
@@ -155,6 +155,5 @@ export class BackButtonManager {
   }
 }
 
-// Создаем экземпляр
 export const backButtonManager = new BackButtonManager();
-console.log('✅ BackButtonManager v6.0.0 загружен');
+console.log('✅ BackButtonManager v6.1.0 загружен');
