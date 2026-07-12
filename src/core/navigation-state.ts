@@ -1,10 +1,11 @@
 // ============================================
 // src/core/navigation-state.ts
 // Единое состояние навигации
-// Версия: 7.2.0 - FIXED
+// Версия: 7.3.0 - добавлена проверка капсулы
 // ============================================
 
 import { eventBus } from './event-bus';
+import { inputManager } from './input-manager';
 
 export interface INavigationState {
   module: string;
@@ -39,7 +40,7 @@ export class NavigationState {
 
   constructor() {
     this._subscribe();
-    console.log('✅ NavigationState v7.2.0 инициализирован');
+    console.log('✅ NavigationState v7.3.0 инициализирован');
   }
 
   private get moduleLoader(): any {
@@ -84,7 +85,18 @@ export class NavigationState {
       module: this._state.module
     });
 
-    // 1. ПРОВЕРЯЕМ МОДАЛКИ
+    // ==========================================
+    // ✅ 1. ПРОВЕРЯЕМ КАПСУЛУ (самый высокий приоритет!)
+    // ==========================================
+    if (inputManager.isExpanded()) {
+      console.log('📱 Капсула открыта → закрываем и остаемся в чате');
+      inputManager.collapseInputArea();
+      return;
+    }
+
+    // ==========================================
+    // 2. ПРОВЕРЯЕМ МОДАЛКИ
+    // ==========================================
     if (this._state.modalStack.length > 0) {
       const lastModal = this._state.modalStack.pop();
       console.log(`📱 Закрываем модалку: ${lastModal}`);
@@ -102,13 +114,15 @@ export class NavigationState {
       return;
     }
 
-    // 2. ПРОВЕРЯЕМ САЙДБАР
+    // ==========================================
+    // 3. ПРОВЕРЯЕМ САЙДБАР
+    // ==========================================
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('drawer-overlay');
     const isDrawerPhysicallyOpen = drawer?.classList.contains('active') || false;
 
     if (isDrawerPhysicallyOpen || this._state.isDrawerOpen) {
-      console.log('📂 Закрываем сайдбар через closeDrawer()');
+      console.log('📂 Закрываем сайдбар');
 
       if ((window as any).closeDrawer) {
         (window as any).closeDrawer();
@@ -132,11 +146,12 @@ export class NavigationState {
       this._state.isDrawerOpen = false;
       this._updateBackButton();
       this.eventBus.emit('drawer:state_changed', { isOpen: false });
-
       return;
     }
 
-    // 3. ПРОВЕРЯЕМ МОДУЛИ
+    // ==========================================
+    // 4. ПРОВЕРЯЕМ МОДУЛИ
+    // ==========================================
     if (this._state.module === 'chat') {
       this.goToChatList();
       return;
@@ -156,7 +171,9 @@ export class NavigationState {
       return;
     }
 
-    // 4. ИСТОРИЯ ИЛИ ГЛАВНАЯ
+    // ==========================================
+    // 5. ИСТОРИЯ ИЛИ ГЛАВНАЯ
+    // ==========================================
     if (this._state.history.length > 0) {
       const prev = this._state.history.pop();
       if (prev) {
@@ -258,9 +275,15 @@ export class NavigationState {
   openChat(chatId: string, topic: string): void {
     console.log(`📂 NavigationState.openChat: ${chatId}, ${topic}`);
 
+    // Закрываем капсулу если открыта
+    if (inputManager.isExpanded()) {
+      console.log('📱 Закрываем капсулу перед открытием чата');
+      inputManager.collapseInputArea();
+    }
+
     const drawer = document.getElementById('drawer');
     if (drawer?.classList.contains('active')) {
-      console.log('📂 Сайдбар открыт, закрываем через closeDrawer()');
+      console.log('📂 Сайдбар открыт, закрываем');
       if ((window as any).closeDrawer) {
         (window as any).closeDrawer();
       } else {
@@ -281,6 +304,11 @@ export class NavigationState {
   // ==========================================
 
   goToChatList(): void {
+    // Закрываем капсулу если открыта
+    if (inputManager.isExpanded()) {
+      console.log('📱 Закрываем капсулу перед выходом в список чатов');
+      inputManager.collapseInputArea();
+    }
     this.navigate('chat-list', {}, { replace: true });
   }
 
@@ -291,9 +319,15 @@ export class NavigationState {
   openProfile(): void {
     console.log('👤 NavigationState.openProfile');
 
+    // Закрываем капсулу если открыта
+    if (inputManager.isExpanded()) {
+      console.log('📱 Закрываем капсулу перед открытием профиля');
+      inputManager.collapseInputArea();
+    }
+
     const drawer = document.getElementById('drawer');
     if (drawer?.classList.contains('active')) {
-      console.log('📂 Сайдбар открыт, закрываем через closeDrawer()');
+      console.log('📂 Сайдбар открыт, закрываем');
       if ((window as any).closeDrawer) {
         (window as any).closeDrawer();
       } else {
@@ -360,7 +394,7 @@ export class NavigationState {
   }
 
   // ==========================================
-  // ОБНОВЛЕНИЕ КНОПКИ НАЗАД (ПУБЛИЧНЫЙ МЕТОД!)
+  // ОБНОВЛЕНИЕ КНОПКИ НАЗАД
   // ==========================================
 
   refreshBackButton(): void {
@@ -453,10 +487,15 @@ export class NavigationState {
       this._updateBackButton();
     });
 
+    this.eventBus.on('input:state_changed', (data) => {
+      console.log('📡 Состояние капсулы изменилось:', data);
+      // При открытии/закрытии капсулы обновляем кнопку "Назад"
+      this._updateBackButton();
+    });
+
     console.log('📡 NavigationState подписан на события');
   }
 }
 
-// Создаем экземпляр
 export const navigationState = new NavigationState();
-console.log('✅ NavigationState v7.2.0 загружен');
+console.log('✅ NavigationState v7.3.0 загружен');
