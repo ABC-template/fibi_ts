@@ -1,7 +1,7 @@
 // ============================================
 // src/core/input-manager.ts
 // Управление капсулой ввода
-// Версия: 2.1.0 - принудительное переопределение стилей
+// Версия: 2.2.0 - добавлен isExpanded и обработчик оверлея
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -10,10 +10,38 @@ export class InputManager {
   private eventBus = eventBus;
   private _subscriptions: Array<() => void> = [];
   private _isExpanded: boolean = false;
+  private _isInitialized: boolean = false;
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ InputManager v2.1.0 инициализирован');
+    // Инициализация после загрузки DOM
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this._init());
+    } else {
+      this._init();
+    }
+    console.log('✅ InputManager v2.2.0 инициализирован');
+  }
+
+  // ==========================================
+  // ИНИЦИАЛИЗАЦИЯ (постоянные обработчики)
+  // ==========================================
+
+  private _init(): void {
+    if (this._isInitialized) return;
+    
+    const overlay = document.getElementById('input-overlay');
+    if (overlay) {
+      overlay.addEventListener('click', () => {
+        console.log('🔧 Оверлей нажат, закрываем капсулу');
+        this.collapseInputArea();
+      });
+      console.log('✅ Обработчик оверлея повешен');
+    } else {
+      console.warn('⚠️ input-overlay не найден при инициализации');
+    }
+
+    this._isInitialized = true;
   }
 
   // ==========================================
@@ -115,14 +143,11 @@ export class InputManager {
 
     console.log('🔧 Все элементы найдены, открываем капсулу');
 
-    // Скрываем FAB
     fabBtn.style.opacity = '0';
     fabBtn.style.pointerEvents = 'none';
 
-    // Показываем оверлей
     overlay.classList.remove('hidden');
 
-    // ✅ ПРИНУДИТЕЛЬНО ПЕРЕОПРЕДЕЛЯЕМ СТИЛИ (решение проблемы с inline styles)
     inputArea.classList.add('active');
     inputArea.style.display = 'flex';
     inputArea.style.opacity = '1';
@@ -141,7 +166,6 @@ export class InputManager {
     this._resizeTextArea(userInput, clearBtn);
     userInput.focus();
 
-    // Скрываем нижнюю навигацию
     const nav = document.getElementById('bottom-nav');
     if (nav) {
       nav.style.display = 'none';
@@ -178,7 +202,6 @@ export class InputManager {
     if (inputArea) {
       inputArea.classList.remove('active');
       inputArea.classList.remove('keyboard-up');
-      // ✅ Возвращаем скрытое состояние
       inputArea.style.display = '';
       inputArea.style.opacity = '';
       inputArea.style.visibility = '';
@@ -203,6 +226,13 @@ export class InputManager {
     this._isExpanded = false;
     this.eventBus.emit('input:state_changed', { isExpanded: false });
     console.log('✅ Капсула закрыта');
+  }
+
+  /**
+   * Проверить, открыта ли капсула
+   */
+  isExpanded(): boolean {
+    return this._isExpanded;
   }
 
   /**
@@ -237,13 +267,6 @@ export class InputManager {
     if (userInput) {
       userInput.focus();
     }
-  }
-
-  /**
-   * Проверить, открыта ли капсула
-   */
-  isExpanded(): boolean {
-    return this._isExpanded;
   }
 
   /**
@@ -290,6 +313,7 @@ export class InputManager {
     }
     this._subscriptions = [];
     this._isExpanded = false;
+    this._isInitialized = false;
     console.log('📡 InputManager отписан от событий');
   }
 }
@@ -300,4 +324,4 @@ export const inputManager = new InputManager();
 (window as any).collapseInputArea = inputManager.collapseInputArea.bind(inputManager);
 (window as any).clearUserText = inputManager.clearUserText.bind(inputManager);
 
-console.log('✅ InputManager v2.1.0 загружен');
+console.log('✅ InputManager v2.2.0 загружен');
