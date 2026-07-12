@@ -1,7 +1,7 @@
 // ============================================
 // src/core/input-manager.ts
 // Управление капсулой ввода
-// Версия: 2.2.0 - добавлен isExpanded и обработчик оверлея
+// Версия: 2.3.0 - динамический обработчик оверлея
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -10,38 +10,11 @@ export class InputManager {
   private eventBus = eventBus;
   private _subscriptions: Array<() => void> = [];
   private _isExpanded: boolean = false;
-  private _isInitialized: boolean = false;
+  private _overlayHandler: ((e: Event) => void) | null = null;
 
   constructor() {
     this._subscribeToEvents();
-    // Инициализация после загрузки DOM
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => this._init());
-    } else {
-      this._init();
-    }
-    console.log('✅ InputManager v2.2.0 инициализирован');
-  }
-
-  // ==========================================
-  // ИНИЦИАЛИЗАЦИЯ (постоянные обработчики)
-  // ==========================================
-
-  private _init(): void {
-    if (this._isInitialized) return;
-    
-    const overlay = document.getElementById('input-overlay');
-    if (overlay) {
-      overlay.addEventListener('click', () => {
-        console.log('🔧 Оверлей нажат, закрываем капсулу');
-        this.collapseInputArea();
-      });
-      console.log('✅ Обработчик оверлея повешен');
-    } else {
-      console.warn('⚠️ input-overlay не найден при инициализации');
-    }
-
-    this._isInitialized = true;
+    console.log('✅ InputManager v2.3.0 инициализирован');
   }
 
   // ==========================================
@@ -114,6 +87,43 @@ export class InputManager {
   }
 
   // ==========================================
+  // УПРАВЛЕНИЕ ОБРАБОТЧИКОМ ОВЕРЛЕЯ
+  // ==========================================
+
+  private _attachOverlayHandler(overlay: HTMLElement): void {
+    // Удаляем старый обработчик, если есть
+    if (this._overlayHandler) {
+      const oldOverlay = document.getElementById('input-overlay');
+      if (oldOverlay) {
+        oldOverlay.removeEventListener('click', this._overlayHandler);
+        console.log('🧹 Старый обработчик оверлея удален');
+      }
+      this._overlayHandler = null;
+    }
+
+    // Создаем новый обработчик
+    this._overlayHandler = (e: Event) => {
+      e.stopPropagation();
+      console.log('🔧 Оверлей нажат, закрываем капсулу');
+      this.collapseInputArea();
+    };
+
+    overlay.addEventListener('click', this._overlayHandler);
+    console.log('✅ Обработчик оверлея повешен');
+  }
+
+  private _detachOverlayHandler(): void {
+    if (this._overlayHandler) {
+      const overlay = document.getElementById('input-overlay');
+      if (overlay) {
+        overlay.removeEventListener('click', this._overlayHandler);
+        console.log('🧹 Обработчик оверлея удален');
+      }
+      this._overlayHandler = null;
+    }
+  }
+
+  // ==========================================
   // ПУБЛИЧНЫЕ МЕТОДЫ
   // ==========================================
 
@@ -142,6 +152,9 @@ export class InputManager {
     }
 
     console.log('🔧 Все элементы найдены, открываем капсулу');
+
+    // ✅ Вешаем обработчик на оверлей ДО того, как показываем капсулу
+    this._attachOverlayHandler(overlay);
 
     fabBtn.style.opacity = '0';
     fabBtn.style.pointerEvents = 'none';
@@ -191,6 +204,9 @@ export class InputManager {
       console.log('⚠️ Идет запись голоса, капсула не закрывается');
       return;
     }
+
+    // ✅ Удаляем обработчик с оверлея
+    this._detachOverlayHandler();
 
     const elements = this._getElements();
     const { userInput, inputArea, overlay, fabBtn } = elements;
@@ -304,6 +320,9 @@ export class InputManager {
   destroy(): void {
     console.log('🗑️ InputManager.destroy()');
     
+    // Удаляем обработчик оверлея
+    this._detachOverlayHandler();
+    
     for (const unsub of this._subscriptions) {
       try {
         unsub();
@@ -313,7 +332,6 @@ export class InputManager {
     }
     this._subscriptions = [];
     this._isExpanded = false;
-    this._isInitialized = false;
     console.log('📡 InputManager отписан от событий');
   }
 }
@@ -324,4 +342,4 @@ export const inputManager = new InputManager();
 (window as any).collapseInputArea = inputManager.collapseInputArea.bind(inputManager);
 (window as any).clearUserText = inputManager.clearUserText.bind(inputManager);
 
-console.log('✅ InputManager v2.2.0 загружен');
+console.log('✅ InputManager v2.3.0 загружен');
