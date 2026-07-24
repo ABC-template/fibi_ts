@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.5.0 - убраны inline styles у input-area
+// Версия: 8.6.0 - исправлена обработка кнопок через делегирование
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -48,69 +48,104 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.5.0 инициализирован');
+    console.log('✅ ChatModule v8.6.0 инициализирован');
   }
 
   // ==========================================
-  // ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
+  // ✅ ИСПРАВЛЕНО: ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
   // ==========================================
 
   private _setupDelegation(): void {
-    console.log('🔧 _setupDelegation вызван');
-    console.log('🔧 this.container:', this.container);
-    console.log('🔧 this.container.id:', this.container?.id);
-    console.log('🔧 #module-chat:', document.getElementById('module-chat'));
-    console.log('🔧 Совпадают?', this.container === document.getElementById('module-chat'));
-
     if (this._delegationHandler) {
       this.container.removeEventListener('click', this._delegationHandler);
       this._delegationHandler = null;
-      console.log('🧹 Старый обработчик делегирования удален');
     }
 
     this._delegationHandler = (event: Event) => {
-      console.log('🔴 ОБРАБОТЧИК СРАБОТАЛ!', event.target);
-      
       const target = event.target as HTMLElement;
-      const btn = target.closest('[data-action]') as HTMLElement;
       
-      console.log('🔴 closest([data-action]):', btn);
-      
-      if (!btn) {
-        console.log('⚠️ Нет кнопки с data-action');
+      // ==========================================
+      // 1. КНОПКА МИКРОФОНА (.voice-btn)
+      // ==========================================
+      const voiceBtn = target.closest('.voice-btn') as HTMLElement;
+      if (voiceBtn) {
+        console.log('🎙️ Делегирование: нажата кнопка микрофона');
+        if ((window as any).toggleVoiceRecording) {
+          (window as any).toggleVoiceRecording(voiceBtn);
+        }
         return;
       }
 
-      const action = btn.dataset.action;
-      const msgId = btn.dataset.msgId as UUID;
-      const chatId = btn.dataset.chatId as UUID || this._chatId;
-
-      console.log(`🔴 Действие: ${action}, msgId: ${msgId}`);
-
-      switch (action) {
-        case 'toggle-favorite':
-          this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn });
-          break;
-        case 'delete-message':
-          this.eventBus.emit('chat:delete-message', { msgId, chatId });
-          break;
-        case 'copy-message':
-          this.eventBus.emit('chat:copy-message', { msgId, btn });
-          break;
-        case 'share-message':
-          this.eventBus.emit('chat:share-message', { msgId, btn });
-          break;
-        case 'expand-input':
-          console.log('🔴 ВЫЗЫВАЕМ input:expand!');
-          this.eventBus.emit('input:expand');
-          break;
-        default:
-          console.log(`ℹ️ Неизвестное действие: ${action}`);
+      // ==========================================
+      // 2. КНОПКА МЕДИА (.media-btn)
+      // ==========================================
+      const mediaBtn = target.closest('.media-btn') as HTMLElement;
+      if (mediaBtn) {
+        console.log('📎 Делегирование: нажата кнопка медиа');
+        if ((window as any).triggerMediaSelector) {
+          (window as any).triggerMediaSelector();
+        }
+        return;
       }
+
+      // ==========================================
+      // 3. КНОПКА ОТПРАВКИ (.send-btn)
+      // ==========================================
+      const sendBtn = target.closest('.send-btn') as HTMLElement;
+      if (sendBtn) {
+        console.log('📤 Делегирование: нажата кнопка отправки');
+        this.eventBus.emit('chat:send-message');
+        return;
+      }
+
+      // ==========================================
+      // 4. КНОПКА РАСШИРЕНИЯ ВВОДА (#fab-open-input)
+      // ==========================================
+      const fabBtn = target.closest('#fab-open-input') as HTMLElement;
+      if (fabBtn) {
+        console.log('🔧 Делегирование: нажата FAB кнопка');
+        this.eventBus.emit('input:expand');
+        return;
+      }
+
+      // ==========================================
+      // 5. DATA-ACTION КНОПКИ (избранное, копирование, удаление, шаринг)
+      // ==========================================
+      const actionBtn = target.closest('[data-action]') as HTMLElement;
+      if (actionBtn) {
+        const action = actionBtn.dataset.action;
+        const msgId = actionBtn.dataset.msgId as UUID;
+        const chatId = actionBtn.dataset.chatId as UUID || this._chatId;
+
+        console.log(`🔴 Действие: ${action}, msgId: ${msgId}`);
+
+        switch (action) {
+          case 'toggle-favorite':
+            this.eventBus.emit('chat:toggle-favorite', { msgId, chatId, btn: actionBtn });
+            break;
+          case 'delete-message':
+            this.eventBus.emit('chat:delete-message', { msgId, chatId });
+            break;
+          case 'copy-message':
+            this.eventBus.emit('chat:copy-message', { msgId, btn: actionBtn });
+            break;
+          case 'share-message':
+            this.eventBus.emit('chat:share-message', { msgId, btn: actionBtn });
+            break;
+          default:
+            console.log(`ℹ️ Неизвестное действие: ${action}`);
+        }
+        return;
+      }
+
+      // ==========================================
+      // 6. ВСЕ ОСТАЛЬНЫЕ КЛИКИ — ПРОПУСКАЕМ
+      // ==========================================
+      // Без лога, чтобы не спамить в консоль
     };
 
     this.container.addEventListener('click', this._delegationHandler);
-    console.log('✅ Обработчик делегирования повешен на контейнер');
+    console.log('✅ Обработчик делегирования настроен');
   }
 
   // ==========================================
@@ -256,7 +291,7 @@ export class ChatModule {
   }
 
   // ==========================================
-  // РЕНДЕРИНГ (убраны inline styles у input-area)
+  // РЕНДЕРИНГ
   // ==========================================
 
   private _render(): void {
@@ -283,7 +318,7 @@ export class ChatModule {
           -webkit-overflow-scrolling: touch;
         "></div>
 
-        <button id="fab-open-input" data-action="expand-input" style="
+        <button id="fab-open-input" style="
           position: fixed;
           bottom: calc(var(--tg-safe-bottom, 0px) + 80px);
           right: 16px;
@@ -305,7 +340,6 @@ export class ChatModule {
 
         <div id="input-overlay" class="hidden"></div>
 
-        <!-- ✅ УБРАНЫ INLINE STYLES - теперь только CSS -->
         <div id="input-area" class="input-area-hidden">
           <div style="position:relative;width:100%;display:flex;align-items:flex-start;">
             <textarea id="user-input" placeholder="Ваш вопрос..." rows="1" style="
@@ -423,7 +457,7 @@ export class ChatModule {
       </div>
     `;
 
-    this._initFooter();
+    // ✅ УБРАН _initFooter() — теперь вся логика в делегированном обработчике
     this._rendered = true;
   }
 
@@ -541,78 +575,6 @@ export class ChatModule {
   }
 
   // ==========================================
-  // ФУТЕР
-  // ==========================================
-
-  private _initFooter(): void {
-    if ((window as any).initMediaAttachment) {
-      (window as any).initMediaAttachment();
-    }
-
-    const mediaBtn = document.querySelector('.media-btn');
-    if (mediaBtn) {
-      mediaBtn.addEventListener('click', () => {
-        if ((window as any).triggerMediaSelector) {
-          (window as any).triggerMediaSelector();
-        }
-      });
-    }
-
-    const voiceBtn = document.querySelector('.voice-btn');
-    if (voiceBtn) {
-      voiceBtn.addEventListener('click', () => {
-        if ((window as any).toggleVoiceRecording) {
-          (window as any).toggleVoiceRecording(voiceBtn);
-        }
-      });
-    }
-
-    const sendBtn = document.querySelector('.send-btn');
-    if (sendBtn) {
-      sendBtn.addEventListener('click', () => {
-        this.eventBus.emit('chat:send-message');
-      });
-    }
-
-    const input = document.getElementById('user-input') as HTMLTextAreaElement;
-    if (input) {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          this.eventBus.emit('chat:send-message');
-        }
-      });
-
-      input.addEventListener('input', () => {
-        input.style.height = 'auto';
-        input.style.height = (input.scrollHeight) + 'px';
-
-        const clearBtn = document.getElementById('clear-input-btn');
-        if (clearBtn) {
-          if (input.value.trim().length > 0) {
-            clearBtn.classList.remove('hidden');
-          } else {
-            clearBtn.classList.add('hidden');
-          }
-        }
-      });
-
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && input.value.trim().length === 0) {
-          this.eventBus.emit('input:collapse');
-        }
-      });
-    }
-
-    const clearBtn = document.getElementById('clear-input-btn');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        this.eventBus.emit('input:clear');
-      });
-    }
-  }
-
-  // ==========================================
   // СКРЫТЬ МОДУЛЬ
   // ==========================================
 
@@ -659,4 +621,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.5.0 загружен');
+console.log('✅ ChatModule v8.6.0 загружен');
