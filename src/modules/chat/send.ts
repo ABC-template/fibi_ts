@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based)
-// Версия: 4.0.0 - подписка на события
+// Версия: 5.0.0 - с динамической загрузкой stream.ts
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -16,11 +16,50 @@ export class ChatSend {
   private uiRenderer = uiRenderer;
   private eventBus = eventBus;
   private isSending: boolean = false;
+  private _streamLoaded: boolean = false;
   private _subscriptions: Array<() => void> = [];
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v4.0.0 загружен (EventBus-based)');
+    console.log('✅ ChatSend v5.0.0 загружен (EventBus-based)');
+  }
+
+  // ==========================================
+  // ✅ НОВЫЙ МЕТОД: ГАРАНТИРУЕТ ЗАГРУЗКУ stream.ts
+  // ==========================================
+
+  private async _ensureStreamFunction(): Promise<void> {
+    // Если функция уже определена — просто выходим
+    if (typeof (window as any).streamAiResponse === 'function') {
+      console.log('✅ streamAiResponse уже определена');
+      return;
+    }
+
+    // Если уже загружали, но функция почему-то не появилась — пробуем снова
+    if (this._streamLoaded) {
+      console.warn('⚠️ stream.ts загружался, но функция не определена. Пробуем повторно...');
+    }
+
+    console.log('📦 Динамическая загрузка stream.ts...');
+
+    try {
+      // Динамически импортируем stream.ts
+      await import('./stream');
+      
+      // Даем микро-тик для завершения регистрации
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Проверяем, что функция появилась
+      if (typeof (window as any).streamAiResponse !== 'function') {
+        throw new Error('streamAiResponse не определена после импорта');
+      }
+
+      this._streamLoaded = true;
+      console.log('✅ stream.ts успешно загружен динамически');
+    } catch (err) {
+      console.error('❌ Ошибка загрузки stream.ts:', err);
+      throw new Error(`Не удалось загрузить stream.ts: ${(err as Error).message}`);
+    }
   }
 
   // ==========================================
@@ -67,7 +106,7 @@ export class ChatSend {
   }
 
   // ==========================================
-  // ОТПРАВКА СООБЩЕНИЯ
+  // ✅ ИСПРАВЛЕНО: ОТПРАВКА СООБЩЕНИЯ
   // ==========================================
 
   async sendMessage(): Promise<void> {
@@ -164,6 +203,10 @@ export class ChatSend {
         });
       }
 
+      // ✅ ГАРАНТИРУЕМ ЗАГРУЗКУ stream.ts ПЕРЕД ВЫЗОВОМ
+      await this._ensureStreamFunction();
+
+      // ✅ ТЕПЕРЬ МОЖНО БЕЗОПАСНО ВЫЗЫВАТЬ
       if (typeof (window as any).streamAiResponse === 'function') {
         await (window as any).streamAiResponse(
           cleanHistoryMessages,
@@ -173,7 +216,8 @@ export class ChatSend {
           chatId
         );
       } else {
-        throw new Error('streamAiResponse not defined');
+        // Этого не должно случиться, но на всякий случай
+        throw new Error('streamAiResponse не определена после загрузки');
       }
     } catch (error) {
       this.uiRenderer.hideSkeleton();
@@ -378,4 +422,4 @@ export class ChatSend {
 
 // Создаем экземпляр
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v4.0.0 загружен (EventBus-based)');
+console.log('✅ ChatSend v5.0.0 загружен (EventBus-based)');
