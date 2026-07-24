@@ -16,7 +16,6 @@ export class ChatSend {
   private uiRenderer = uiRenderer;
   private eventBus = eventBus;
   private isSending: boolean = false;
-  private _streamLoaded: boolean = false;
   private _subscriptions: Array<() => void> = [];
 
   constructor() {
@@ -25,41 +24,17 @@ export class ChatSend {
   }
 
   // ==========================================
-  // ✅ НОВЫЙ МЕТОД: ГАРАНТИРУЕТ ЗАГРУЗКУ stream.ts
+  // ГАРАНТИРУЕТ ЗАГРУЗКУ stream.ts
   // ==========================================
 
   private async _ensureStreamFunction(): Promise<void> {
-    // Если функция уже определена — просто выходим
     if (typeof (window as any).streamAiResponse === 'function') {
-      console.log('✅ streamAiResponse уже определена');
       return;
     }
 
-    // Если уже загружали, но функция почему-то не появилась — пробуем снова
-    if (this._streamLoaded) {
-      console.warn('⚠️ stream.ts загружался, но функция не определена. Пробуем повторно...');
-    }
-
-    console.log('📦 Динамическая загрузка stream.ts...');
-
-    try {
-      // Динамически импортируем stream.ts
-      await import('./stream');
-      
-      // Даем микро-тик для завершения регистрации
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // Проверяем, что функция появилась
-      if (typeof (window as any).streamAiResponse !== 'function') {
-        throw new Error('streamAiResponse не определена после импорта');
-      }
-
-      this._streamLoaded = true;
-      console.log('✅ stream.ts успешно загружен динамически');
-    } catch (err) {
-      console.error('❌ Ошибка загрузки stream.ts:', err);
-      throw new Error(`Не удалось загрузить stream.ts: ${(err as Error).message}`);
-    }
+    console.log('📦 Загрузка stream.ts...');
+    await import('./stream');
+    console.log('✅ stream.ts загружен');
   }
 
   // ==========================================
@@ -67,7 +42,6 @@ export class ChatSend {
   // ==========================================
 
   private _subscribeToEvents(): void {
-    // Действия с сообщениями
     const unsubFav = this.eventBus.on('chat:toggle-favorite', (data) => {
       if (data?.msgId && data?.chatId) {
         this.toggleFavoriteMsg(data.msgId, data.chatId);
@@ -96,7 +70,6 @@ export class ChatSend {
     }, this);
     this._subscriptions.push(unsubShare);
 
-    // Отправка сообщения
     const unsubSend = this.eventBus.on('chat:send-message', () => {
       this.sendMessage();
     }, this);
@@ -106,7 +79,7 @@ export class ChatSend {
   }
 
   // ==========================================
-  // ✅ ИСПРАВЛЕНО: ОТПРАВКА СООБЩЕНИЯ
+  // ОТПРАВКА СООБЩЕНИЯ
   // ==========================================
 
   async sendMessage(): Promise<void> {
@@ -138,7 +111,9 @@ export class ChatSend {
     if (!text) return;
 
     if (!this.userStore.hasUnlimited() && !this.userStore.hasRemainingQuota()) {
-      if ((window as any).tg?.showAlert) (window as any).tg.showAlert('Ежедневный лимит запросов исчерпан!');
+      if ((window as any).tg?.showAlert) {
+        (window as any).tg.showAlert('Ежедневный лимит запросов исчерпан!');
+      }
       return;
     }
 
@@ -203,22 +178,14 @@ export class ChatSend {
         });
       }
 
-      // ✅ ГАРАНТИРУЕМ ЗАГРУЗКУ stream.ts ПЕРЕД ВЫЗОВОМ
       await this._ensureStreamFunction();
-
-      // ✅ ТЕПЕРЬ МОЖНО БЕЗОПАСНО ВЫЗЫВАТЬ
-      if (typeof (window as any).streamAiResponse === 'function') {
-        await (window as any).streamAiResponse(
-          cleanHistoryMessages,
-          chatTopic,
-          userLang,
-          mediaToAttach,
-          chatId
-        );
-      } else {
-        // Этого не должно случиться, но на всякий случай
-        throw new Error('streamAiResponse не определена после загрузки');
-      }
+      await (window as any).streamAiResponse(
+        cleanHistoryMessages,
+        chatTopic,
+        userLang,
+        mediaToAttach,
+        chatId
+      );
     } catch (error) {
       this.uiRenderer.hideSkeleton();
       console.error('Send error:', error);
@@ -253,7 +220,9 @@ export class ChatSend {
     navigator.clipboard.writeText(msg.text).then(() => {
       this.triggerTooltip(btn);
     }).catch(() => {
-      if ((window as any).tg?.showAlert) (window as any).tg.showAlert('Ошибка копирования');
+      if ((window as any).tg?.showAlert) {
+        (window as any).tg.showAlert('Ошибка копирования');
+      }
     });
   }
 
@@ -294,7 +263,6 @@ export class ChatSend {
       return;
     }
 
-    // Если chatId не передан, берем из активного чата
     let effectiveChatId = chatId;
     if (!effectiveChatId) {
       const activeChat = this.chatStore.getActiveChat();
@@ -309,7 +277,6 @@ export class ChatSend {
     const result = await messageService.toggleFavorite(effectiveChatId, msgId);
 
     if (result) {
-      // Находим все кнопки избранного для этого сообщения и обновляем
       const favButtons = document.querySelectorAll(`[data-action="toggle-favorite"][data-msg-id="${msgId}"]`);
       favButtons.forEach(btn => {
         const icon = btn.querySelector('.lucide-heart, [data-lucide="heart"]');
@@ -347,9 +314,7 @@ export class ChatSend {
       return;
     }
 
-    const { chat } = found;
     const activeChat = this.chatStore.getActiveChat();
-
     if (!activeChat) {
       console.warn('⚠️ Нет активного чата');
       return;
@@ -420,6 +385,5 @@ export class ChatSend {
   }
 }
 
-// Создаем экземпляр
 export const chatSend = new ChatSend();
 console.log('✅ ChatSend v5.0.0 загружен (EventBus-based)');
