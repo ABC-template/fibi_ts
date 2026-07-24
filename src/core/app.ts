@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // Инициализация приложения
-// Версия: 8.5.0 - ДОБАВЛЕН chatSend в window
+// Версия: 8.7.0 - ПОЛНАЯ ВЕРСИЯ + КАСТОМНАЯ ЗАСТАВКА
 // ============================================
 
 import './config';
@@ -27,7 +27,7 @@ import { chatUI } from '@/modules/ui/chat-ui';
 import { profileUI } from '@/modules/ui/profile-ui';
 import { organizerUI } from '@/modules/ui/organizer-ui';
 
-// ✅ ИМПОРТ chatSend (исправление ошибки)
+// ✅ ИМПОРТЫ ДЛЯ ДИНАМИЧЕСКОЙ ЗАГРУЗКИ
 import { chatSend } from '@/modules/chat/send';
 
 // ✅ ИМПОРТ ВСЕХ МОДУЛЕЙ ДЛЯ РЕГИСТРАЦИИ
@@ -42,7 +42,7 @@ import { GamesModule } from '@/modules/games/GamesModule';
 // ✅ ТИПЫ
 import type { TopicId, IChat } from '@types';
 
-console.log('🚀 App v8.5.0 начал загрузку');
+console.log('🚀 App v8.7.0 начал загрузку');
 
 // ==========================================
 // ✅ 1. РЕГИСТРАЦИЯ ВСЕХ МОДУЛЕЙ
@@ -87,7 +87,7 @@ function bindUIToWindow(): void {
     window.messageService = messageService;
     window.syncService = syncService;
     
-    // ✅ Core экземпляры
+    // Core экземпляры
     window.moduleLoader = moduleLoader;
     window.navigationState = navigationState;
     window.navigation = navigation;
@@ -98,10 +98,76 @@ function bindUIToWindow(): void {
     window.themeManager = themeManager;
     window.eventBus = eventBus;
     
-    // ✅ chatSend (исправление ошибки)
+    // chatSend
     window.chatSend = chatSend;
     
     console.log('✅ UI привязан к window');
+}
+
+// ==========================================
+// ✅ 3. УПРАВЛЕНИЕ ЗАСТАВКОЙ
+// ==========================================
+
+let splashScreen: HTMLElement | null = null;
+let progressBar: HTMLElement | null = null;
+let statusText: HTMLElement | null = null;
+
+const SPLASH_STATUSES = [
+    '🔮 Инициализация...',
+    '⚡ Загрузка модулей...',
+    '🎨 Настройка интерфейса...',
+    '🧠 Активация нейросетей...',
+    '📊 Подготовка данных...',
+    '✨ Почти готово...',
+];
+
+function initSplash(): void {
+    splashScreen = document.getElementById('splash-screen');
+    progressBar = document.getElementById('splash-progress-bar');
+    statusText = document.getElementById('splash-status-text');
+    
+    console.log('🎬 Заставка инициализирована');
+}
+
+function updateSplashProgress(percent: number, status?: string): void {
+    if (progressBar) {
+        const clamped = Math.min(Math.max(percent, 0), 100);
+        progressBar.style.width = `${clamped}%`;
+    }
+    
+    if (status && statusText) {
+        statusText.textContent = status;
+    }
+}
+
+function updateSplashStatus(index: number): void {
+    if (statusText && index < SPLASH_STATUSES.length) {
+        statusText.textContent = SPLASH_STATUSES[index];
+    }
+}
+
+function hideSplash(): void {
+    if (!splashScreen) return;
+    
+    // Используем Telegram API, чтобы скрыть нативный спиннер
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+        try {
+            tg.hideLoading();
+        } catch (e) {
+            console.log('ℹ️ hideLoading не поддерживается');
+        }
+    }
+    
+    splashScreen.classList.add('hidden');
+    
+    setTimeout(() => {
+        if (splashScreen) {
+            splashScreen.style.display = 'none';
+        }
+    }, 600);
+    
+    console.log('✅ Заставка скрыта');
 }
 
 // ==========================================
@@ -128,6 +194,13 @@ function showTelegramRequiredScreen(): void {
     const header = document.getElementById('header');
     if (header) header.classList.add('hidden');
     if (appScreen) appScreen.style.display = 'none';
+
+    // Скрываем заставку
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+        splash.classList.add('hidden');
+        splash.style.display = 'none';
+    }
 
     let wrapper = document.getElementById('telegram-required-wrapper');
     if (!wrapper) {
@@ -159,7 +232,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 8.5.0
+                    Версия 8.7.0
                 </div>
             </div>
         `;
@@ -188,6 +261,13 @@ window.showGuest = function(data: { msg: string; joke: string }): void {
     }
     if (errorTitle) errorTitle.textContent = `⚠️ ${data.msg || 'Доступ ограничен'}`;
     if (jokeText) jokeText.textContent = data.joke || 'Пожалуйста, подпишитесь на канал для доступа.';
+    
+    // Скрываем заставку если показана
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+        splash.classList.add('hidden');
+        splash.style.display = 'none';
+    }
 };
 
 window.refreshSyncToken = async function(): Promise<string | null> {
@@ -869,14 +949,15 @@ window.appendDrawerNav = function(container: HTMLElement): void {
         </div>
         <div style="height: 1px; background: rgba(212,175,55,0.08); margin: 4px 20px;"></div>
         <div class="drawer-nav-item" id="drawer-profile" style="display: flex; align-items: center; gap: 14px; padding: 8px 20px; color: var(--app-text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; border: none; background: transparent; width: 100%; text-align: left; font-family: var(--app-font-family, -apple-system, sans-serif); -webkit-tap-highlight-color: transparent;">
-            <i data-lucide="settings" style="width:20px;height:20px;"></i> Настройки    </div>
+            <i data-lucide="settings" style="width:20px;height:20px;"></i> Настройки
+        </div>
         <div class="drawer-nav-item" id="drawer-theme-toggle" style="display: flex; align-items: center; gap: 14px; padding: 8px 20px; color: var(--app-text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; border: none; background: transparent; width: 100%; text-align: left; font-family: var(--app-font-family, -apple-system, sans-serif); -webkit-tap-highlight-color: transparent;">
             <i data-lucide="palette" style="width:20px;height:20px;"></i> Тема: <span id="drawer-theme-label" style="color: var(--app-text-primary);">Светлая</span>
         </div>
         <div class="drawer-nav-item" id="drawer-clear-cache" style="display: flex; align-items: center; gap: 14px; padding: 8px 20px; color: var(--app-text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; border: none; background: transparent; width: 100%; text-align: left; font-family: var(--app-font-family, -apple-system, sans-serif); -webkit-tap-highlight-color: transparent;">
             <i data-lucide="trash" style="width:20px;height:20px;"></i> Очистить кэш
         </div>
-        <div style="padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;">Версия 8.5.0</div>
+        <div style="padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;">Версия 8.7.0</div>
     `;
 
     container.appendChild(nav);
@@ -1300,31 +1381,50 @@ function setupGlobalEventSubscriptions(): void {
 }
 
 // ==========================================
-// ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ
+// ✅ ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ (С ЗАСТАВКОЙ)
 // ==========================================
 
 async function initApp(): Promise<void> {
     console.log('🔧 Начало инициализации приложения...');
+    
+    // ✅ ПОКАЗЫВАЕМ ЗАСТАВКУ
+    initSplash();
+    updateSplashProgress(0, '🔮 Инициализация...');
 
     if (!isTelegramWebApp()) {
         console.log('🚫 Приложение открыто вне Telegram → показываем заглушку');
         showTelegramRequiredScreen();
+        // Скрываем заставку
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            splash.classList.add('hidden');
+            splash.style.display = 'none';
+        }
         return;
     }
 
-    // ✅ РЕГИСТРИРУЕМ МОДУЛИ
+    // ✅ ШАГ 1: РЕГИСТРИРУЕМ МОДУЛИ
+    updateSplashProgress(10, '📦 Регистрация модулей...');
     registerModules();
 
-    // ✅ ПРИВЯЗЫВАЕМ UI К WINDOW
+    // ✅ ШАГ 2: ПРИВЯЗЫВАЕМ UI К WINDOW
+    updateSplashProgress(20, '🔗 Привязка UI...');
     bindUIToWindow();
 
+    // ✅ ШАГ 3: НАСТРАИВАЕМ ПОДПИСКИ
+    updateSplashProgress(25, '📡 Настройка событий...');
     setupGlobalEventSubscriptions();
 
+    // ✅ ШАГ 4: TELEGRAM WEBAPP
     const tg = window.Telegram?.WebApp;
     if (tg) {
         try {
             tg.ready();
             tg.expand();
+            
+            // ✅ ПОКАЗЫВАЕМ НАТИВНЫЙ СПИННЕР TELEGRAM
+            tg.showLoading();
+            
             if (tg.themeParams && tg.themeParams.bg_color) {
                 tg.setHeaderColor(tg.themeParams.bg_color);
             }
@@ -1333,6 +1433,8 @@ async function initApp(): Promise<void> {
         }
     }
 
+    // ✅ ШАГ 5: НАСТРАИВАЕМ ОТСТУПЫ
+    updateSplashProgress(30, '📐 Настройка отступов...');
     function setTelegramInsets(): void {
         const root = document.documentElement;
         try {
@@ -1365,6 +1467,8 @@ async function initApp(): Promise<void> {
     setTimeout(setTelegramInsets, 150);
     setTimeout(setTelegramInsets, 450);
 
+    // ✅ ШАГ 6: ИНИЦИАЛИЗИРУЕМ САЙДБАР
+    updateSplashProgress(40, '📂 Инициализация сайдбара...');
     initDrawer();
     window.updateDrawerUserInfo();
 
@@ -1378,6 +1482,8 @@ async function initApp(): Promise<void> {
         if (avatarEl) avatarEl.src = avatarUrl;
     }
 
+    // ✅ ШАГ 7: ЗАГРУЗКА ХРАНИЛИЩ
+    updateSplashProgress(50, '💾 Загрузка данных...');
     chatStoreInstance.load();
     userStoreInstance.load();
     organizerStore.load();
@@ -1395,6 +1501,15 @@ async function initApp(): Promise<void> {
             appScreen.classList.remove('hidden');
             if (appScreen.style.display === 'none') appScreen.style.display = 'flex';
         }
+        // Скрываем заставку
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            splash.classList.add('hidden');
+            splash.style.display = 'none';
+        }
+        if (tg) {
+            try { tg.hideLoading(); } catch (e) {}
+        }
         return;
     }
 
@@ -1411,14 +1526,20 @@ async function initApp(): Promise<void> {
         headerManager.reset();
     }
 
+    // ✅ ШАГ 8: АУТЕНТИФИКАЦИЯ
+    updateSplashProgress(60, '🔐 Авторизация...');
     if (authService) {
         try {
             const result = await authService.checkSubscription();
+            updateSplashProgress(70, '🔐 Проверка подписки...');
+            
             const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
 
             const needFullReload = authService.needFullReload(result.syncToken);
 
             window.updateDrawerRole(result.role);
+
+            updateSplashProgress(75, '📂 Загрузка чатов...');
 
             if (needFullReload) {
                 console.log('🔄 [initApp] sync_token не совпадает → полная перезапись');
@@ -1432,6 +1553,8 @@ async function initApp(): Promise<void> {
             } else {
                 console.log('✅ [initApp] sync_token совпадает → используем кеш');
             }
+
+            updateSplashProgress(85, '🎨 Обновление интерфейса...');
 
             window.renderChatsInDrawer();
             window.updateDrawerUserInfo();
@@ -1493,6 +1616,8 @@ async function initApp(): Promise<void> {
                 }
             }
 
+            updateSplashProgress(95, '🎬 Завершение...');
+
         } catch (err) {
             console.error('Ошибка проверки подписки:', err);
         }
@@ -1500,6 +1625,7 @@ async function initApp(): Promise<void> {
         console.warn('AuthService не найден, работа в офлайн-режиме');
     }
 
+    // ✅ ШАГ 9: PUSH-ПОДПИСКА
     if (tg) {
         tg.onEvent('message', async (message: any) => {
             console.log('📨 ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ БОТА:', message);
@@ -1515,14 +1641,15 @@ async function initApp(): Promise<void> {
         console.log('📨 Push-подписка активирована');
     }
 
-    // ✅ ЗАГРУЖАЕМ СТАРТОВЫЙ МОДУЛЬ
+    // ✅ ШАГ 10: ЗАГРУЗКА СТАРТОВОГО МОДУЛЯ
+    updateSplashProgress(98, '🚀 Загрузка интерфейса...');
     if (moduleLoader) {
         await moduleLoader.load('chat-list', {}, { silent: true });
     } else {
         console.error('❌ ModuleLoader не найден');
     }
 
-    // ✅ ИНИЦИАЛИЗИРУЕМ НИЖНЮЮ НАВИГАЦИЮ
+    // ✅ ШАГ 11: НАВИГАЦИЯ
     if (navigation) {
         navigation.render();
     }
@@ -1579,7 +1706,14 @@ async function initApp(): Promise<void> {
     const currentTheme = themeManager.getCurrentTheme();
     window.updateThemeLabel(currentTheme);
 
-    console.log('✅ Приложение v8.5.0 успешно загружено');
+    // ✅ ✅ ✅ ФИНАЛ: СКРЫВАЕМ ЗАСТАВКУ
+    updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
+    
+    // Даем время показать 100% и статус "Готово"
+    setTimeout(() => {
+        hideSplash();
+        console.log('✅ Приложение v8.7.0 успешно загружено');
+    }, 500);
 }
 
 // ==========================================
@@ -1589,9 +1723,24 @@ async function initApp(): Promise<void> {
 document.addEventListener('DOMContentLoaded', () => {
     if (!isTelegramWebApp()) {
         showTelegramRequiredScreen();
+        // Скрываем заставку
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            splash.classList.add('hidden');
+            splash.style.display = 'none';
+        }
+        return;
     }
     initApp().catch(err => {
         console.error('❌ Критический сбой инициализации:', err);
+        
+        // Скрываем заставку при ошибке
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            splash.classList.add('hidden');
+            splash.style.display = 'none';
+        }
+        
         const appScreen = document.getElementById('app-screen');
         if (appScreen) {
             appScreen.innerHTML = `
@@ -1609,6 +1758,15 @@ document.addEventListener('DOMContentLoaded', () => {
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
     setTimeout(() => {
         if (document.getElementById('app-screen')) {
+            if (!isTelegramWebApp()) {
+                showTelegramRequiredScreen();
+                const splash = document.getElementById('splash-screen');
+                if (splash) {
+                    splash.classList.add('hidden');
+                    splash.style.display = 'none';
+                }
+                return;
+            }
             initApp().catch(err => console.error('❌ Критический сбой инициализации:', err));
         }
     }, 100);
@@ -1645,4 +1803,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v8.5.0 полностью загружен');
+console.log('✅ app.ts v8.7.0 полностью загружен');
