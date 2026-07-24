@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.6.0 - исправлена обработка кнопок через делегирование
+// Версия: 8.7.0 - динамическая загрузка voice.ts
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -34,6 +34,7 @@ export class ChatModule {
   private _subscriptions: Array<() => void> = [];
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
+  private _voiceLoaded: boolean = false;
   
   private _delegationHandler: ((e: Event) => void) | null = null;
 
@@ -48,11 +49,44 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.6.0 инициализирован');
+    console.log('✅ ChatModule v8.7.0 инициализирован');
   }
 
   // ==========================================
-  // ✅ ИСПРАВЛЕНО: ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
+  // ✅ НОВЫЙ МЕТОД: ГАРАНТИРУЕТ ЗАГРУЗКУ voice.ts
+  // ==========================================
+
+  private async _ensureVoiceFunction(): Promise<void> {
+    if (typeof (window as any).toggleVoiceRecording === 'function') {
+      return;
+    }
+
+    if (this._voiceLoaded) {
+      console.warn('⚠️ voice.ts загружался, но функция не определена. Пробуем повторно...');
+    }
+
+    console.log('📦 Динамическая загрузка voice.ts...');
+
+    try {
+      await import('./voice');
+      
+      // Даем микро-тик для завершения регистрации
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      if (typeof (window as any).toggleVoiceRecording !== 'function') {
+        throw new Error('toggleVoiceRecording не определена после импорта');
+      }
+
+      this._voiceLoaded = true;
+      console.log('✅ voice.ts успешно загружен динамически');
+    } catch (err) {
+      console.error('❌ Ошибка загрузки voice.ts:', err);
+      // Не выбрасываем ошибку, чтобы приложение не падало
+    }
+  }
+
+  // ==========================================
+  // ДЕЛЕГИРОВАНИЕ СОБЫТИЙ
   // ==========================================
 
   private _setupDelegation(): void {
@@ -61,7 +95,7 @@ export class ChatModule {
       this._delegationHandler = null;
     }
 
-    this._delegationHandler = (event: Event) => {
+    this._delegationHandler = async (event: Event) => {
       const target = event.target as HTMLElement;
       
       // ==========================================
@@ -70,8 +104,17 @@ export class ChatModule {
       const voiceBtn = target.closest('.voice-btn') as HTMLElement;
       if (voiceBtn) {
         console.log('🎙️ Делегирование: нажата кнопка микрофона');
+        
+        // ✅ ГАРАНТИРУЕМ ЗАГРУЗКУ voice.ts ПЕРЕД ВЫЗОВОМ
+        await this._ensureVoiceFunction();
+        
         if ((window as any).toggleVoiceRecording) {
           (window as any).toggleVoiceRecording(voiceBtn);
+        } else {
+          console.error('❌ toggleVoiceRecording не определена после загрузки');
+          if ((window as any).tg?.showAlert) {
+            (window as any).tg.showAlert('Голосовой ввод временно недоступен. Попробуйте позже.');
+          }
         }
         return;
       }
@@ -141,7 +184,6 @@ export class ChatModule {
       // ==========================================
       // 6. ВСЕ ОСТАЛЬНЫЕ КЛИКИ — ПРОПУСКАЕМ
       // ==========================================
-      // Без лога, чтобы не спамить в консоль
     };
 
     this.container.addEventListener('click', this._delegationHandler);
@@ -457,7 +499,6 @@ export class ChatModule {
       </div>
     `;
 
-    // ✅ УБРАН _initFooter() — теперь вся логика в делегированном обработчике
     this._rendered = true;
   }
 
@@ -621,4 +662,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.6.0 загружен');
+console.log('✅ ChatModule v8.7.0 загружен');
