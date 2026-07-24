@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.7.0 - динамическая загрузка voice.ts
+// Версия: 8.8.0 - динамическая загрузка voice.ts и media.ts
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -35,6 +35,7 @@ export class ChatModule {
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
   private _voiceLoaded: boolean = false;
+  private _mediaLoaded: boolean = false;
   
   private _delegationHandler: ((e: Event) => void) | null = null;
 
@@ -49,11 +50,11 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.7.0 инициализирован');
+    console.log('✅ ChatModule v8.8.0 инициализирован');
   }
 
   // ==========================================
-  // ✅ НОВЫЙ МЕТОД: ГАРАНТИРУЕТ ЗАГРУЗКУ voice.ts
+  // ГАРАНТИРУЕТ ЗАГРУЗКУ voice.ts
   // ==========================================
 
   private async _ensureVoiceFunction(): Promise<void> {
@@ -70,7 +71,6 @@ export class ChatModule {
     try {
       await import('./voice');
       
-      // Даем микро-тик для завершения регистрации
       await new Promise(resolve => setTimeout(resolve, 10));
 
       if (typeof (window as any).toggleVoiceRecording !== 'function') {
@@ -81,7 +81,37 @@ export class ChatModule {
       console.log('✅ voice.ts успешно загружен динамически');
     } catch (err) {
       console.error('❌ Ошибка загрузки voice.ts:', err);
-      // Не выбрасываем ошибку, чтобы приложение не падало
+    }
+  }
+
+  // ==========================================
+  // ✅ НОВЫЙ МЕТОД: ГАРАНТИРУЕТ ЗАГРУЗКУ media.ts
+  // ==========================================
+
+  private async _ensureMediaFunction(): Promise<void> {
+    if (typeof (window as any).triggerMediaSelector === 'function') {
+      return;
+    }
+
+    if (this._mediaLoaded) {
+      console.warn('⚠️ media.ts загружался, но функция не определена. Пробуем повторно...');
+    }
+
+    console.log('📦 Динамическая загрузка media.ts...');
+
+    try {
+      await import('./media');
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      if (typeof (window as any).triggerMediaSelector !== 'function') {
+        throw new Error('triggerMediaSelector не определена после импорта');
+      }
+
+      this._mediaLoaded = true;
+      console.log('✅ media.ts успешно загружен динамически');
+    } catch (err) {
+      console.error('❌ Ошибка загрузки media.ts:', err);
     }
   }
 
@@ -105,7 +135,6 @@ export class ChatModule {
       if (voiceBtn) {
         console.log('🎙️ Делегирование: нажата кнопка микрофона');
         
-        // ✅ ГАРАНТИРУЕМ ЗАГРУЗКУ voice.ts ПЕРЕД ВЫЗОВОМ
         await this._ensureVoiceFunction();
         
         if ((window as any).toggleVoiceRecording) {
@@ -125,8 +154,17 @@ export class ChatModule {
       const mediaBtn = target.closest('.media-btn') as HTMLElement;
       if (mediaBtn) {
         console.log('📎 Делегирование: нажата кнопка медиа');
+        
+        // ✅ ГАРАНТИРУЕМ ЗАГРУЗКУ media.ts ПЕРЕД ВЫЗОВОМ
+        await this._ensureMediaFunction();
+        
         if ((window as any).triggerMediaSelector) {
           (window as any).triggerMediaSelector();
+        } else {
+          console.error('❌ triggerMediaSelector не определена после загрузки');
+          if ((window as any).tg?.showAlert) {
+            (window as any).tg.showAlert('Отправка изображений временно недоступна. Попробуйте позже.');
+          }
         }
         return;
       }
@@ -662,4 +700,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.7.0 загружен');
+console.log('✅ ChatModule v8.8.0 загружен');
