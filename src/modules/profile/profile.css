@@ -1,0 +1,335 @@
+/* ============================================
+   src/modules/profile/profile.css
+   Стили профиля
+   Версия: 1.0.0
+   ============================================ */
+
+.profile-container {
+    padding: 16px 16px 100px 16px;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--app-border-color-light);
+}
+
+.profile-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0;
+    color: var(--app-text-primary);
+}
+
+/* ===== КАРТОЧКА ПОЛЬЗОВАТЕЛЯ ===== */
+.profile-user-card {
+    background: var(--app-bg-secondary);
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid var(--app-border-color-light);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.profile-user-card .avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 3px solid var(--app-accent-primary);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.profile-user-card .info {
+    flex: 1;
+    min-width: 0;
+}
+
+.profile-user-card .info .name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--app-text-primary);
+}
+
+.profile-user-card .info .username {
+    font-size: 14px;
+    color: var(--app-text-tertiary);
+}
+
+.profile-user-card .info .badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.profile-user-card .info .badges .role {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-accent-primary);
+    background: var(--app-accent-glow);
+    padding: 2px 12px;
+    border-radius: 12px;
+}
+
+.profile-user-card .info .badges .coins {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    cursor: pointer;
+    padding: 2px 10px 2px 6px;
+    border-radius: 16px;
+    background: rgba(212, 175, 55, 0.08);
+    transition: all 0.15s ease;
+}
+
+.profile-user-card .info .badges .coins .lucide {
+    width: 16px;
+    height: 16px;
+    color: var(--app-accent-primary);
+}
+
+.profile-user-card .info .badges .coins .amount {
+    color: var(--app-accent-primary);
+}
+
+/* ===== СТАТИСТИКА ===== */
+.profile-stats-card {
+    background: var(--app-bg-secondary);
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid var(--app-border-color-light);
+}
+
+.profile-stats-card .title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.profile-stats-card .title .lucide {
+    width: 18px;
+    height: 18px;
+}
+
+.profile-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+.profile-stats-grid .stat {
+    text-align: center;
+    padding: 12px 8px;
+    background: var(--app-bg-tertiary);
+    border-radius: 10px;
+}
+
+.profile-stats-grid .stat .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--app-accent-primary);
+}
+
+.profile-stats-grid .stat .label {
+    font-size: 11px;
+    color: var(--app-text-tertiary);
+}
+
+/* ===== ЛИМИТ ===== */
+.profile-limit-row {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--app-border-color-light);
+}
+
+.profile-limit-row .labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    margin-bottom: 4px;
+}
+
+.profile-limit-row .bar {
+    width: 100%;
+    height: 6px;
+    background: var(--app-bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.profile-limit-row .bar .fill {
+    width: 0%;
+    height: 100%;
+    background: var(--app-gradient-primary);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* ===== НАСТРОЙКИ ===== */
+.profile-settings-card {
+    background: var(--app-bg-secondary);
+    border-radius: 16px;
+    border: 1px solid var(--app-border-color-light);
+    overflow: hidden;
+}
+
+.profile-settings-card .setting-item {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--app-border-color-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.profile-settings-card .setting-item:last-child {
+    border-bottom: none;
+}
+
+.profile-settings-card .setting-item .label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--app-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.profile-settings-card .setting-item .label .lucide {
+    width: 18px;
+    height: 18px;
+}
+
+.profile-settings-card .setting-item .actions {
+    display: flex;
+    gap: 6px;
+}
+
+.theme-btn {
+    padding: 4px 14px;
+    border-radius: 8px;
+    border: 2px solid var(--app-border-color);
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--app-text-primary);
+    transition: all 0.2s ease;
+    font-family: var(--app-font-family);
+}
+
+.theme-btn.active {
+    border-color: var(--app-accent-primary);
+    background: var(--app-accent-glow);
+}
+
+.theme-btn .lucide {
+    width: 14px;
+    height: 14px;
+}
+
+/* ===== ЭКСПОРТ ===== */
+.profile-export-card {
+    background: var(--app-bg-secondary);
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid var(--app-border-color-light);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.profile-export-card .title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.profile-export-card .title .lucide {
+    width: 18px;
+    height: 18px;
+}
+
+.profile-export-card .export-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    background: var(--app-bg-tertiary);
+    border: 1px solid var(--app-border-color-light);
+    cursor: pointer;
+    color: var(--app-text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    font-family: var(--app-font-family);
+}
+
+.profile-export-card .export-btn .lucide {
+    width: 18px;
+    height: 18px;
+}
+
+.profile-export-card .export-btn:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* ===== БЕЗОПАСНОСТЬ ===== */
+.profile-security-card {
+    background: var(--app-bg-secondary);
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid var(--app-border-color-light);
+}
+
+.profile-security-card .clear-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    background: rgba(231, 76, 60, 0.08);
+    border: 1px solid rgba(231, 76, 60, 0.2);
+    cursor: pointer;
+    color: var(--app-accent-danger);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    font-family: var(--app-font-family);
+}
+
+.profile-security-card .clear-btn .lucide {
+    width: 18px;
+    height: 18px;
+}
+
+/* ===== ВЕРСИЯ ===== */
+.profile-version {
+    text-align: center;
+    font-size: 12px;
+    color: var(--app-text-tertiary);
+    padding: 8px 0;
+}

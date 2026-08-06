@@ -1,0 +1,118 @@
+/* ============================================
+   src/ui/header.css
+   Стили хедера
+   Версия: 1.0.0
+   ============================================ */
+
+#header {
+    padding: calc(var(--tg-content-safe-area-top, 0px) + 10px) var(--app-spacing-lg) var(--app-spacing-md) var(--app-spacing-lg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+    width: 100%;
+    min-height: 56px;
+    position: relative;
+    z-index: var(--app-z-header);
+    background-color: transparent !important;
+}
+
+.header-glass {
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 30px;
+    padding: 4px 16px 4px 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(212, 175, 55, 0.12);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+    cursor: default;
+    min-height: 48px;
+}
+
+.header-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--app-accent-primary);
+    object-fit: cover;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.header-avatar:active { transform: scale(0.92); }
+
+.coins-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--app-text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px 4px 4px;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.coins-badge .coin-icon { font-size: 18px; line-height: 1; }
+.coins-badge .coin-amount {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--app-accent-primary);
+    font-variant-numeric: tabular-nums;
+}
+.coins-badge:active { transform: scale(0.92); background: rgba(212, 175, 55, 0.1); }
+
+.header-center {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0 4px;
+}
+
+#header-title-text {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--app-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    max-width: 100%;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.header-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--app-text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    width: 32px;
+    height: 32px;
+}
+
+.header-action-btn .lucide { width: 22px; height: 22px; stroke: currentColor; }
+.header-action-btn:active { transform: scale(0.90); background: rgba(212, 175, 55, 0.1); }

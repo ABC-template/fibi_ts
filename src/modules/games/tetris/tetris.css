@@ -1,0 +1,563 @@
+/* ============================================
+   tetris.css - Новая компактная версия
+   Версия: 3.0.0 - TypeScript
+   ============================================ */
+
+/* ===== ОСНОВНОЙ КОНТЕЙНЕР ===== */
+.tetris-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    padding: 4px 8px;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    box-sizing: border-box;
+    position: relative;
+}
+
+/* ===== ИГРОВОЕ ПОЛЕ ===== */
+.tetris-game-wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 500px;
+    position: relative;
+}
+
+/* ===== ИГРОВАЯ ДОСКА ===== */
+.tetris-board {
+    display: grid;
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid var(--app-border-color);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 1px;
+    flex-shrink: 0;
+    touch-action: none;
+    position: relative;
+}
+
+.tetris-cell {
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 2px;
+    transition: background 0.05s ease;
+}
+
+/* ===== ЦВЕТА ФИГУР ===== */
+.tetris-cell.I { background: #00f0f0; }
+.tetris-cell.O { background: #f0f000; }
+.tetris-cell.T { background: #a000f0; }
+.tetris-cell.S { background: #00f000; }
+.tetris-cell.Z { background: #f00000; }
+.tetris-cell.J { background: #0000f0; }
+.tetris-cell.L { background: #f0a000; }
+
+/* Гостинг (тень) */
+.tetris-cell.ghost {
+    opacity: 0.2;
+    background: var(--app-text-primary) !important;
+}
+
+/* Анимация удаления линии */
+.tetris-cell.flash {
+    animation: flashLine 0.25s ease;
+}
+
+@keyframes flashLine {
+    0% { opacity: 1; background: #ffffff; }
+    50% { opacity: 0.3; background: #ffffff; }
+    100% { opacity: 0; background: transparent; }
+}
+
+/* ===== ПРАВАЯ ПАНЕЛЬ (компактная) ===== */
+.tetris-side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+    min-width: 80px;
+    max-width: 110px;
+    padding-top: 2px;
+}
+
+/* ===== СЛЕДУЮЩАЯ ФИГУРА (компактная) ===== */
+.tetris-preview {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--app-border-color-light);
+    border-radius: 8px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.tetris-preview-label {
+    font-size: 9px;
+    color: var(--app-text-tertiary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tetris-preview-grid {
+    display: grid;
+    gap: 1px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 2px;
+    border-radius: 4px;
+}
+
+.tetris-preview-cell {
+    width: 14px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 1px;
+}
+
+/* ===== ИНФОРМАЦИОННАЯ ПАНЕЛЬ (горизонтальная) ===== */
+.tetris-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border-color-light);
+}
+
+.tetris-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+}
+
+.tetris-info-item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--app-text-secondary);
+}
+
+.tetris-info-item .icon {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.tetris-info-item .value {
+    font-weight: 700;
+    color: var(--app-accent-primary);
+    font-size: 12px;
+    min-width: 20px;
+    text-align: right;
+}
+
+.tetris-info-item .value.danger {
+    color: var(--app-accent-danger);
+}
+
+/* ===== КНОПКИ УПРАВЛЕНИЯ (под полем) ===== */
+.tetris-controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 500px;
+    margin-top: 4px;
+}
+
+.tetris-btn {
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: none;
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 48px;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--app-border-color-light);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tetris-btn:active {
+    transform: scale(0.92);
+    background: var(--app-accent-glow);
+}
+
+.tetris-btn.primary {
+    background: var(--app-gradient-primary);
+    color: var(--app-text-inverse);
+    font-weight: 600;
+    font-size: 13px;
+    border: none;
+}
+
+.tetris-btn.primary:active {
+    opacity: 0.8;
+}
+
+.tetris-btn.danger {
+    background: rgba(231, 76, 60, 0.15);
+    color: var(--app-accent-danger);
+    border-color: rgba(231, 76, 60, 0.2);
+}
+
+.tetris-btn .lucide {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+}
+
+/* ===== КНОПКИ ДЕЙСТВИЙ (пауза, сброс) ===== */
+.tetris-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.tetris-actions .tetris-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 4px 8px;
+    font-size: 14px;
+    border-radius: 8px;
+}
+
+.tetris-actions .tetris-btn .lucide {
+    width: 18px;
+    height: 18px;
+}
+
+/* ===== ОВЕРЛЕЙ (пауза / game over) ===== */
+.tetris-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-radius: 8px;
+    z-index: 10;
+    padding: 20px;
+    text-align: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.tetris-overlay h3 {
+    color: var(--app-text-primary);
+    font-size: 22px;
+    margin: 0 0 4px 0;
+}
+
+.tetris-overlay .score {
+    color: var(--app-accent-primary);
+    font-size: 18px;
+    font-weight: 700;
+    margin: 4px 0;
+}
+
+.tetris-overlay .sub {
+    color: var(--app-text-tertiary);
+    font-size: 13px;
+    margin: 4px 0 12px 0;
+}
+
+.tetris-overlay .btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* ===== ТАЧ-КОНТРОЛЫ (только мобильные) ===== */
+.tetris-touch-controls {
+    display: none;
+    gap: 6px;
+    width: 100%;
+    max-width: 320px;
+    margin-top: 6px;
+}
+
+/* ===== АДАПТИВНОСТЬ ===== */
+
+/* Маленькие телефоны (до 400px) */
+@media (max-width: 400px) {
+    .tetris-cell {
+        width: 22px;
+        height: 22px;
+    }
+    
+    .tetris-preview-cell {
+        width: 12px;
+        height: 12px;
+    }
+    
+    .tetris-side-panel {
+        min-width: 65px;
+        max-width: 80px;
+    }
+    
+    .tetris-info-item {
+        font-size: 9px;
+    }
+    
+    .tetris-info-item .value {
+        font-size: 10px;
+        min-width: 16px;
+    }
+    
+    .tetris-btn {
+        min-width: 40px;
+        min-height: 40px;
+        font-size: 15px;
+        padding: 6px 10px;
+    }
+    
+    .tetris-btn .lucide {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* Средние телефоны (400-600px) */
+@media (min-width: 401px) and (max-width: 600px) {
+    .tetris-cell {
+        width: 26px;
+        height: 26px;
+    }
+    
+    .tetris-preview-cell {
+        width: 13px;
+        height: 13px;
+    }
+}
+
+/* Большие телефоны и планшеты (600px+) */
+@media (min-width: 601px) {
+    .tetris-cell {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .tetris-preview-cell {
+        width: 16px;
+        height: 16px;
+    }
+    
+    .tetris-side-panel {
+        min-width: 100px;
+        max-width: 130px;
+    }
+    
+    .tetris-info-item {
+        font-size: 12px;
+    }
+}
+
+/* Планшеты и десктопы (показываем тач-контролы только на мобильных) */
+@media (min-width: 768px) {
+    .tetris-touch-controls {
+        display: none !important;
+    }
+}
+
+/* Вертикальная ориентация (основной режим) */
+@media (orientation: portrait) {
+    .tetris-game-wrapper {
+        flex-direction: row;
+    }
+    
+    .tetris-touch-controls {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+    }
+}
+
+/* Горизонтальная ориентация (альтернативный режим) */
+@media (orientation: landscape) and (max-height: 500px) {
+    .tetris-cell {
+        width: 18px;
+        height: 18px;
+    }
+    
+    .tetris-preview-cell {
+        width: 10px;
+        height: 10px;
+    }
+    
+    .tetris-side-panel {
+        min-width: 60px;
+        max-width: 75px;
+    }
+    
+    .tetris-info-item {
+        font-size: 8px;
+    }
+    
+    .tetris-info-item .value {
+        font-size: 9px;
+        min-width: 14px;
+    }
+    
+    .tetris-btn {
+        min-width: 34px;
+        min-height: 34px;
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+    
+    .tetris-btn .lucide {
+        width: 14px;
+        height: 14px;
+    }
+    
+    .tetris-controls {
+        gap: 4px;
+    }
+}
+
+/* ===== ПОЛНОЭКРАННЫЙ РЕЖИМ ===== */
+.game-fullscreen .tetris-container {
+    padding: 4px;
+    gap: 4px;
+    height: 100%;
+    justify-content: center;
+}
+
+.game-fullscreen .tetris-game-wrapper {
+    max-width: 100%;
+}
+
+.game-fullscreen .tetris-board {
+    max-width: 100%;
+}
+
+.game-fullscreen .tetris-cell {
+    width: calc((100vw - 120px) / 10);
+    height: calc((100vw - 120px) / 10);
+    max-width: 40px;
+    max-height: 40px;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+.game-fullscreen .tetris-side-panel {
+    min-width: 70px;
+    max-width: 90px;
+}
+
+.game-fullscreen .tetris-preview-cell {
+    width: 12px;
+    height: 12px;
+}
+
+.game-fullscreen .tetris-info-item {
+    font-size: 9px;
+}
+
+.game-fullscreen .tetris-info-item .value {
+    font-size: 10px;
+}
+
+.game-fullscreen .tetris-touch-controls {
+    display: grid !important;
+    max-width: 280px;
+    gap: 4px;
+}
+
+.game-fullscreen .tetris-btn {
+    min-width: 38px;
+    min-height: 38px;
+    font-size: 14px;
+    padding: 4px 8px;
+}
+
+.game-fullscreen .tetris-btn .lucide {
+    width: 16px;
+    height: 16px;
+}
+
+/* Адаптация под очень маленькие экраны в полноэкранном режиме */
+@media (max-width: 380px) {
+    .game-fullscreen .tetris-cell {
+        width: calc((100vw - 100px) / 10);
+        height: calc((100vw - 100px) / 10);
+        max-width: 28px;
+        max-height: 28px;
+        min-width: 12px;
+        min-height: 12px;
+    }
+    
+    .game-fullscreen .tetris-side-panel {
+        min-width: 55px;
+        max-width: 70px;
+    }
+    
+    .game-fullscreen .tetris-preview-cell {
+        width: 10px;
+        height: 10px;
+    }
+    
+    .game-fullscreen .tetris-touch-controls {
+        max-width: 200px;
+        gap: 3px;
+    }
+    
+    .game-fullscreen .tetris-btn {
+        min-width: 32px;
+        min-height: 32px;
+        font-size: 11px;
+        padding: 3px 6px;
+    }
+    
+    .game-fullscreen .tetris-btn .lucide {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+/* ===== АНИМАЦИИ ===== */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.tetris-overlay {
+    animation: fadeIn 0.3s ease;
+}
+
+.tetris-overlay .btn-group button {
+    animation: slideUp 0.3s ease;
+}

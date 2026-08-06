@@ -1,0 +1,144 @@
+/* ============================================
+   src/modules/chat-list/chat-list.css
+   Стили списка чатов
+   Версия: 1.0.0
+   ============================================ */
+
+#chatlist-start {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    padding-bottom: 100px;
+    animation: fadeIn 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+#chatlist-start h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--app-text-primary);
+    margin: 0 0 4px 0;
+}
+
+#chatlist-start .subtitle {
+    font-size: 14px;
+    color: var(--app-text-tertiary);
+    margin: 0 0 20px 0;
+}
+
+/* ===== ТЕМЫ ===== */
+.chatlist-topics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.chatlist-topics-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+    margin-bottom: 10px;
+}
+
+/* ===== ФИЛЬТРЫ ===== */
+#chat-filters {
+    display: flex;
+    gap: var(--app-spacing-sm);
+    flex-wrap: wrap;
+    margin-bottom: var(--app-spacing-md);
+    padding-bottom: var(--app-spacing-sm);
+    border-bottom: 1px solid var(--app-border-color-light);
+}
+
+.filter-chip {
+    padding: 4px var(--app-spacing-md);
+    border-radius: var(--app-radius-full);
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-size-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--app-transition-fast);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.filter-chip:active { transform: scale(0.95); }
+.filter-chip.active {
+    background: var(--app-accent-primary);
+    color: var(--app-text-inverse);
+    border-color: var(--app-accent-primary);
+    box-shadow: var(--app-shadow-glow);
+}
+
+/* ===== ПОСЛЕДНИЕ ЧАТЫ ===== */
+.chatlist-recent-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+    margin-bottom: 10px;
+}
+
+#chatlist-recent-chats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-history-item {
+    padding: 12px 16px;
+    background: var(--app-bg-secondary);
+    border-radius: 12px;
+    cursor: pointer;
+    border: 1px solid var(--app-border-color-light);
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chat-history-item:active { transform: scale(0.98); }
+.chat-history-item.active {
+    border-color: var(--app-accent-primary);
+    background: var(--app-accent-glow);
+    box-shadow: var(--app-shadow-glow);
+}
+
+.chat-title-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: var(--app-spacing-sm);
+    text-align: left;
+    font-weight: 500;
+}
+
+.delete-chat-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--app-radius-sm);
+    transition: all var(--app-transition-fast);
+    color: var(--app-text-tertiary);
+}
+
+.delete-chat-btn .lucide { width: 18px; height: 18px; stroke: currentColor; }
+.delete-chat-btn:active { opacity: 1; transform: scale(0.9); }
+
+/* ===== ИСТОРИЯ ===== */
+#history-chats-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-spacing-sm);
+    width: 100%;
+    padding-right: 2px;
+    margin-top: var(--app-spacing-xs);
+    max-height: none;
+    overflow-y: visible;
+}

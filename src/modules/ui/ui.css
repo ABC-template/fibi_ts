@@ -1,0 +1,92 @@
+/* ============================================
+   src/modules/ui/ui.css
+   Стили общих UI-компонентов (тосты, индикаторы)
+   Версия: 1.0.0
+   ============================================ */
+
+/* ===== TOAST ===== */
+#custom-toast {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--app-bg-secondary);
+    color: var(--app-text-primary);
+    padding: 12px 20px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: var(--app-shadow-lg);
+    border: 1px solid var(--app-border-color);
+    z-index: 9999;
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.1, 0.8, 0.25, 1);
+    max-width: 90%;
+    text-align: center;
+    pointer-events: none;
+    font-family: var(--app-font-family);
+}
+
+#custom-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#custom-toast.hide { opacity: 0; transform: translateX(-50%) translateY(20px); }
+
+/* ===== ИНДИКАТОР ПЕЧАТАНИЯ ===== */
+.typing-indicator {
+    align-self: flex-start;
+    display: flex;
+    gap: 5px;
+    padding: var(--app-spacing-sm) var(--app-spacing-md);
+    margin: var(--app-spacing-xs) 0;
+    background: transparent;
+    border-radius: var(--app-radius-lg);
+}
+
+.typing-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--app-radius-full);
+    background: var(--app-accent-primary);
+    animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+    30% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* ===== МЕДИА ПРЕВЬЮ ===== */
+#media-preview-container {
+    display: flex;
+    align-items: center;
+    background: var(--app-bg-tertiary);
+    padding: var(--app-spacing-xs) var(--app-spacing-md);
+    border-radius: var(--app-radius-md);
+    margin-bottom: var(--app-spacing-xs);
+    gap: var(--app-spacing-sm);
+    width: fit-content;
+    border: 1px solid var(--app-border-color-light);
+    animation: fadeInUp 0.2s ease;
+}
+
+#media-preview-container img {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--app-radius-sm);
+    object-fit: cover;
+    border: 1px solid var(--app-border-color-light);
+}
+
+#media-preview-container button {
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: var(--app-font-size-sm);
+    cursor: pointer;
+    color: var(--app-text-tertiary);
+    padding: var(--app-spacing-xs);
+}
+
+#media-preview-container button .lucide { width: 16px; height: 16px; stroke: currentColor; }
