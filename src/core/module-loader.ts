@@ -1,11 +1,24 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 5.1.0 - FIXED
+// Версия: 6.0.0 - добавлены новые модули (coins, referral, sponsors, admin)
 // ============================================
 
 import { eventBus } from './event-bus';
 import { navigationState } from './navigation-state';
+
+// Импортируем все модули для регистрации
+import { DashboardModule } from '@/modules/dashboard/DashboardModule';
+import { ChatListModule } from '@/modules/chat-list/ChatListModule';
+import { ChatModule } from '@/modules/chat/ChatModule';
+import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
+import { ProfileModule } from '@/modules/profile/ProfileModule';
+import { TasksModule } from '@/modules/tasks/TasksModule';
+import { GamesModule } from '@/modules/games/GamesModule';
+import { CoinsModule } from '@/modules/coins/CoinsModule';
+import { ReferralModule } from '@/modules/referral/ReferralModule';
+import { SponsorsModule } from '@/modules/sponsors/SponsorsModule';
+import { AdminModule } from '@/modules/admin/AdminModule';
 
 export interface IModuleOptions {
   silent?: boolean;
@@ -20,10 +33,39 @@ export class ModuleLoader {
   private _currentModule: string | null = null;
   private _currentParams: Record<string, any> = {};
   private _isLoading: boolean = false;
+  private _registered: boolean = false;
 
   constructor() {
     this.container = document.getElementById('app-screen');
-    console.log('✅ ModuleLoader v5.1.0 загружен');
+    this._registerAllModules();
+    console.log('✅ ModuleLoader v6.0.0 загружен');
+  }
+
+  /**
+   * Зарегистрировать все модули
+   */
+  private _registerAllModules(): void {
+    if (this._registered) return;
+
+    console.log('📦 Регистрируем все модули...');
+
+    // Основные модули
+    this.register('dashboard', DashboardModule);
+    this.register('organizer', OrganizerModule);
+    this.register('chat-list', ChatListModule);
+    this.register('chat', ChatModule);
+    this.register('games', GamesModule);
+    this.register('tasks', TasksModule);
+    this.register('profile', ProfileModule);
+
+    // Новые модули
+    this.register('coins', CoinsModule);
+    this.register('referral', ReferralModule);
+    this.register('sponsors', SponsorsModule);
+    this.register('admin', AdminModule);
+
+    this._registered = true;
+    console.log(`✅ Зарегистрировано ${Object.keys(this.modules).length} модулей`);
   }
 
   /**
@@ -43,6 +85,22 @@ export class ModuleLoader {
    */
   async load(moduleName: string, params: Record<string, any> = {}, options: IModuleOptions = {}): Promise<any> {
     const { silent = false, replace = false } = options;
+
+    // Проверяем доступ к админ-модулю
+    if (moduleName === 'admin') {
+      const role = (window as any).userStore?.role || 'trial';
+      if (role !== 'creator') {
+        console.warn(`⛔ Доступ к админ-панели запрещён (роль: ${role})`);
+        if (!silent) {
+          this.eventBus.emit('notification:show', {
+            message: '⛔ Доступ только для создателя приложения',
+            type: 'error',
+            duration: 2000,
+          });
+        }
+        return null;
+      }
+    }
 
     if (this._isLoading) {
       console.log(`⏳ Уже выполняется загрузка, пропускаем`);
@@ -69,7 +127,7 @@ export class ModuleLoader {
 
       if (!instance) {
         this._showLoader(container);
-        
+
         try {
           instance = new ModuleClass(container);
           await instance.init();
@@ -79,7 +137,7 @@ export class ModuleLoader {
           this._hideLoader(container);
           throw err;
         }
-        
+
         this._hideLoader(container);
       }
 
@@ -98,19 +156,18 @@ export class ModuleLoader {
       this._currentParams = { ...params };
 
       if (!silent) {
-        this.eventBus.emit('module:loaded', { 
-          moduleName, 
+        this.eventBus.emit('module:loaded', {
+          moduleName,
           params,
-          instance 
+          instance,
         });
       }
 
       console.log(`✅ Модуль загружен и показан: ${moduleName}`, params);
       return instance;
-
     } catch (err) {
       console.error(`❌ Ошибка загрузки модуля ${moduleName}:`, err);
-      
+
       const container = document.getElementById(`module-${moduleName}`);
       if (container) {
         this._hideLoader(container);
@@ -138,7 +195,7 @@ export class ModuleLoader {
    */
   show(moduleName: string, params: Record<string, any> = {}): void {
     this._hideAllModules();
-    
+
     const container = document.getElementById(`module-${moduleName}`);
     if (!container) {
       console.warn(`⚠️ Контейнер модуля ${moduleName} не найден`);
@@ -201,6 +258,13 @@ export class ModuleLoader {
     return this._getModuleInstance(moduleName);
   }
 
+  /**
+   * Получить список всех зарегистрированных модулей
+   */
+  getRegisteredModules(): string[] {
+    return Object.keys(this.modules);
+  }
+
   // ==========================================
   // ПРИВАТНЫЕ МЕТОДЫ
   // ==========================================
@@ -226,7 +290,7 @@ export class ModuleLoader {
       const element = el as HTMLElement;
       element.classList.add('hidden');
       element.style.display = 'none';
-      
+
       const loader = element.querySelector('.module-loader-overlay');
       if (loader) loader.remove();
     });
@@ -299,4 +363,8 @@ export class ModuleLoader {
 
 // Создаем экземпляр
 export const moduleLoader = new ModuleLoader();
-console.log('✅ ModuleLoader v5.1.0 загружен');
+
+// Привязываем к window для глобального доступа
+(window as any).moduleLoader = moduleLoader;
+
+console.log('✅ ModuleLoader v6.0.0 загружен (с новыми модулями)');
