@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (открывается из ChatListModule)
-// Версия: 8.8.4 - FIXED: отступы через env(safe-area-inset-bottom)
+// Версия: 8.9.0 - с ChatPatcher для точечных обновлений
 // ============================================
 import './chat.css';
 import { chatStore } from '@/store/ChatStore';
@@ -10,6 +10,7 @@ import { eventBus } from '@/core/event-bus';
 import { navigationState } from '@/core/navigation-state';
 import { moduleLoader } from '@/core/module-loader';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { ChatPatcher } from './ChatPatcher';
 import { 
   getWelcomeText, 
   getTopic, 
@@ -37,6 +38,7 @@ export class ChatModule {
   private _voiceLoaded: boolean = false;
   private _mediaLoaded: boolean = false;
   
+  private _patcher: ChatPatcher | null = null;
   private _delegationHandler: ((e: Event) => void) | null = null;
 
   constructor(container: HTMLElement) {
@@ -50,7 +52,7 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.8.4 инициализирован');
+    console.log('✅ ChatModule v8.9.0 инициализирован (с ChatPatcher)');
   }
 
   private async _ensureVoiceFunction(): Promise<void> {
@@ -181,26 +183,41 @@ export class ChatModule {
   }
 
   private _subscribeToEvents(): void {
-    const unsubMsg = this.eventBus.on('chat:message_added', (data) => {
-      if (data.chatId === this._chatId && this._isShowing) {
-        this._loadMessages();
+    // ✅ ИЗБРАННОЕ — точечное обновление через патчер
+    const unsubFav = this.eventBus.on('chat:favorite_toggled', (data) => {
+      if (data.chatId === this._chatId && this._isShowing && this._patcher) {
+        console.log(`📡 [ChatModule] Точечное обновление избранного: ${data.messageId}`);
+        this._patcher.updateFavorite(data.messageId, data.isFavorite);
       }
     }, this);
-    this._subscriptions.push(unsubMsg);
+    this._subscriptions.push(unsubFav);
 
+    // ✅ УДАЛЕНИЕ — точечное обновление через патчер
     const unsubDel = this.eventBus.on('chat:message_deleted', (data) => {
-      if (data.chatId === this._chatId && this._isShowing) {
-        this._loadMessages();
+      if (data.chatId === this._chatId && this._isShowing && this._patcher) {
+        console.log(`📡 [ChatModule] Точечное удаление: ${data.messageId}`);
+        this._patcher.removeMessage(data.messageId);
       }
     }, this);
     this._subscriptions.push(unsubDel);
 
-    const unsubFav = this.eventBus.on('chat:favorite_toggled', (data) => {
-      if (data.chatId === this._chatId && this._isShowing) {
-        this._loadMessages();
+    // ✅ НОВОЕ СООБЩЕНИЕ — точечное добавление через патчер
+    const unsubAdd = this.eventBus.on('chat:message_added', (data) => {
+      if (data.chatId === this._chatId && this._isShowing && this._patcher) {
+        console.log(`📡 [ChatModule] Точечное добавление: ${data.message.id}`);
+        this._patcher.addMessage(data.message);
       }
     }, this);
-    this._subscriptions.push(unsubFav);
+    this._subscriptions.push(unsubAdd);
+
+    // ✅ ОБНОВЛЕНИЕ ТЕКСТА (для стриминга)
+    const unsubUpdate = this.eventBus.on('chat:message_updated', (data) => {
+      if (data.chatId === this._chatId && this._isShowing && this._patcher) {
+        console.log(`📡 [ChatModule] Точечное обновление текста: ${data.messageId}`);
+        this._patcher.updateMessageText(data.messageId, data.text);
+      }
+    }, this);
+    this._subscriptions.push(unsubUpdate);
 
     const unsubRename = this.eventBus.on('chat:renamed', (data) => {
       if (data.chatId === this._chatId) {
@@ -209,13 +226,6 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubRename);
 
-    const unsubAll = this.eventBus.on('chat:all_updated', () => {
-      if (this._isShowing && this._chatId) {
-        this._loadMessages();
-      }
-    }, this);
-    this._subscriptions.push(unsubAll);
-
     const unsubOpen = this.eventBus.on('navigation:open_chat', (data) => {
       if (data.chatId && this._isShowing) {
         this.update(data);
@@ -223,7 +233,7 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubOpen);
 
-    console.log('📡 ChatModule подписан на события');
+    console.log('📡 ChatModule подписан на события (с патчингом)');
   }
 
   async show(params: Record<string, any> = {}): Promise<void> {
@@ -309,14 +319,18 @@ export class ChatModule {
       console.log(`🔄 Переключение с ${this._chatId} на ${chatId}`);
       this._openChat(chatId, topic);
     } else {
-      this._loadMessages();
+      // Просто обновляем сообщения (без перерисовки, если есть патчер)
+      if (this._patcher) {
+        const found = this.chatStore.findChatById(chatId);
+        if (found) {
+          this._patcher.renderAll(found.chat.messages || []);
+        }
+      } else {
+        this._loadMessages();
+      }
       this._updateHeader();
     }
   }
-
-  // ==========================================
-  // ✅ ОБНОВЛЕНО: отступы через env(safe-area-inset-bottom)
-  // ==========================================
 
   private _render(): void {
     if (this._rendered) return;
@@ -342,7 +356,6 @@ export class ChatModule {
           -webkit-overflow-scrolling: touch;
         "></div>
 
-        <!-- ✅ КНОПКА ВЫЗОВА КАПСУЛЫ — env(safe-area-inset-bottom) -->
         <button id="fab-open-input" style="
           position: fixed;
           bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
@@ -365,7 +378,6 @@ export class ChatModule {
 
         <div id="input-overlay" class="hidden"></div>
 
-        <!-- ✅ КАПСУЛА — env(safe-area-inset-bottom) -->
         <div id="input-area" class="input-area-hidden">
           <div style="position:relative;width:100%;display:flex;align-items:flex-start;">
             <textarea id="user-input" placeholder="Ваш вопрос..." rows="1" style="
@@ -483,9 +495,19 @@ export class ChatModule {
       </div>
     `;
 
+    // Инициализируем патчер
+    const chatContainer = document.getElementById('chat-container');
+    if (chatContainer) {
+      this._patcher = new ChatPatcher(chatContainer);
+      console.log('✅ ChatPatcher инициализирован');
+    }
+
     this._rendered = true;
   }
 
+  /**
+   * Загрузить сообщения (полная перерисовка — только при открытии чата)
+   */
   private _loadMessages(): void {
     const container = document.getElementById('chat-container');
     if (!container) {
@@ -510,41 +532,40 @@ export class ChatModule {
       return;
     }
 
-    const { chat } = found;
-    const messages = chat.messages || [];
+    const messages = found.chat.messages || [];
+    console.log(`📋 Загружено ${messages.length} сообщений для чата ${this._chatId}`);
 
-    console.log(`📋 Загружено ${messages.length} сообщений для чата ${this._chatId} (тема: ${chat.topic})`);
+    // Используем патчер для полной перерисовки
+    if (this._patcher) {
+      this._patcher.renderAll(messages);
+    } else {
+      // Fallback: старый метод
+      container.innerHTML = '';
+      if (messages.length === 0) {
+        this._showWelcomeMessage(container);
+        return;
+      }
 
-    container.innerHTML = '';
+      const sortedMessages = [...messages]
+        .filter(m => !m.deleted_at)
+        .sort((a, b) => 
+          new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+        );
 
-    if (messages.length === 0) {
-      this._showWelcomeMessage(container);
-      return;
-    }
-
-    const sortedMessages = [...messages].sort((a, b) => {
-      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-    });
-
-    let renderedCount = 0;
-    for (const msg of sortedMessages) {
-      if (msg.deleted_at) continue;
-
-      const msgDiv = this.uiRenderer.renderMessage(
-        msg.text,
-        msg.type,
-        msg.id,
-        msg.isFavorite || false
-      );
-
-      if (msgDiv) {
-        container.appendChild(msgDiv);
-        renderedCount++;
+      for (const msg of sortedMessages) {
+        const msgDiv = this.uiRenderer.renderMessage(
+          msg.text,
+          msg.type,
+          msg.id,
+          msg.isFavorite || false
+        );
+        if (msgDiv) {
+          container.appendChild(msgDiv);
+        }
       }
     }
 
-    console.log(`✅ Отрендерено ${renderedCount} сообщений`);
-
+    // ✅ Скролл вниз ТОЛЬКО при открытии чата
     setTimeout(() => {
       container.scrollTop = container.scrollHeight;
     }, 100);
@@ -618,6 +639,13 @@ export class ChatModule {
     }
   }
 
+  /**
+   * Получить патчер (для доступа из stream.ts и sync.ts)
+   */
+  getPatcher(): ChatPatcher | null {
+    return this._patcher;
+  }
+
   destroy(): void {
     console.log('🗑️ ChatModule.destroy()');
 
@@ -641,9 +669,10 @@ export class ChatModule {
     this._chatId = null;
     this._topic = null;
     this._isShowing = false;
+    this._patcher = null;
     this.container.innerHTML = '';
   }
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.8.4 загружен (отступы через env(safe-area-inset-bottom))');
+console.log('✅ ChatModule v8.9.0 загружен (с ChatPatcher для точечных обновлений)');
