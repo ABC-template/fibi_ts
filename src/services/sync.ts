@@ -1,7 +1,7 @@
 // ============================================
 // src/services/sync.ts
 // Realtime синхронизация для PRO (с JWT)
-// Версия: 3.0.1 - FIXED TYPES
+// Версия: 3.1.0 - с ChatPatcher для точечных обновлений
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -510,16 +510,24 @@ export class SyncService {
           const { chat } = found;
           const exists = chat.messages.some((m: IMessage) => m.id === newData.id);
           if (!exists && !newData.deleted_at) {
-            chat.messages.push({
+            const newMessage = {
               id: newData.id,
               text: newData.text,
               type: newData.msg_type,
               isFavorite: newData.is_favorite || false,
               deleted_at: newData.deleted_at || null,
               created_at: newData.created_at || new Date().toISOString()
-            });
+            };
+            chat.messages.push(newMessage);
             chatStore.save();
-            console.log(`📝 Новое сообщение ${newData.id}`);
+            console.log(`📝 Новое сообщение ${newData.id} (Realtime)`);
+            
+            // ✅ ТОЧЕЧНОЕ ДОБАВЛЕНИЕ через патчер
+            const chatModule = (window as any).chatModule;
+            const patcher = chatModule?.getPatcher?.();
+            if (patcher) {
+              patcher.addMessage(newMessage);
+            }
           }
         }
       } else if (event === 'UPDATE') {
@@ -532,10 +540,30 @@ export class SyncService {
             existingMsg.isFavorite = newData.is_favorite;
             existingMsg.deleted_at = newData.deleted_at;
             chatStore.save();
-            console.log(`📝 Обновлено сообщение ${newData.id}`);
+            console.log(`📝 Обновлено сообщение ${newData.id} (Realtime)`);
+            
+            // ✅ ТОЧЕЧНОЕ ОБНОВЛЕНИЕ через патчер
+            const chatModule = (window as any).chatModule;
+            const patcher = chatModule?.getPatcher?.();
+            if (patcher) {
+              if (newData.is_favorite !== undefined) {
+                patcher.updateFavorite(newData.id, newData.is_favorite);
+              }
+              if (newData.text !== undefined) {
+                patcher.updateMessageText(newData.id, newData.text);
+              }
+            }
           }
         }
       } else if (event === 'DELETE') {
+        // ✅ ТОЧЕЧНОЕ УДАЛЕНИЕ через патчер
+        const chatModule = (window as any).chatModule;
+        const patcher = chatModule?.getPatcher?.();
+        if (patcher) {
+          patcher.removeMessage(oldData.id);
+        }
+
+        // Удаляем из Store
         for (const [topic, chats] of Object.entries(chatStore.histories || {})) {
           if (!chats) continue;
           for (const chat of chats) {
@@ -543,7 +571,7 @@ export class SyncService {
             if (msgIndex !== -1 && msgIndex !== undefined) {
               chat.messages.splice(msgIndex, 1);
               chatStore.save();
-              console.log(`🗑️ Сообщение ${oldData.id} удалено`);
+              console.log(`🗑️ Сообщение ${oldData.id} удалено (Realtime)`);
               break;
             }
           }
