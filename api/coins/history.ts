@@ -1,7 +1,7 @@
 // ============================================
 // api/coins/history.ts
 // Получение истории транзакций
-// Версия: 1.0.0
+// Версия: 1.1.0
 // ============================================
 
 import {
@@ -31,7 +31,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId!;
-    const config = getSupabaseConfig('service');
+    const supabaseConfig = getSupabaseConfig('service');
 
     const url = new URL(request.url);
     const limit = parseInt(url.searchParams.get('limit') || '50', 10);
@@ -40,7 +40,7 @@ export default async function handler(request: Request): Promise<Response> {
     const result = await supabaseFetch(
       `coin_transactions?user_id=eq.${userId}&order=created_at.desc&limit=${Math.min(limit, 100)}&offset=${offset}`,
       { method: 'GET' },
-      config
+      supabaseConfig
     );
 
     return jsonResponse({
