@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based)
-// Версия: 5.0.0 - с динамической загрузкой stream.ts
+// Версия: 5.1.0 - восстановление пустых чатов
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -20,7 +20,7 @@ export class ChatSend {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v5.0.0 загружен (EventBus-based)');
+    console.log('✅ ChatSend v5.1.0 загружен (восстановление пустых чатов)');
   }
 
   // ==========================================
@@ -128,10 +128,17 @@ export class ChatSend {
       text = `📸 [Прикреплено изображение]\n${text}`;
     }
 
-    const activeChat = this.chatStore.getActiveChat();
+    // ✅ ПОЛУЧАЕМ АКТИВНЫЙ ЧАТ
+    let activeChat = this.chatStore.getActiveChat();
+    
+    // ✅ ЕСЛИ НЕТ АКТИВНОГО ЧАТА — СОЗДАЁМ НОВЫЙ
     if (!activeChat) {
-      this.isSending = false;
-      return;
+      console.log('📝 [sendMessage] Нет активного чата, создаём новый...');
+      activeChat = this.chatStore.createTempChat(this.chatStore.currentTopic);
+      if (!activeChat) {
+        this.isSending = false;
+        return;
+      }
     }
 
     const chatId = activeChat.id;
@@ -297,7 +304,7 @@ export class ChatSend {
   }
 
   // ==========================================
-  // УДАЛЕНИЕ СООБЩЕНИЯ
+  // УДАЛЕНИЕ СООБЩЕНИЯ (с авто-удалением пустого чата)
   // ==========================================
 
   deleteMessage(msgId: UUID): void {
@@ -320,21 +327,18 @@ export class ChatSend {
       return;
     }
 
-    const confirmMsg = 'Удалить это сообщение без возможности восстановления?';
+    // Проверяем, сколько сообщений в чате
+    const totalMessages = activeChat.messages.filter(m => !m.deleted_at).length;
+    
+    // ✅ Если это последнее сообщение — показываем специальное предупреждение
+    let confirmMsg = 'Удалить это сообщение?';
+    if (totalMessages === 1) {
+      confirmMsg = '⚠️ Это последнее сообщение в чате. При удалении чат будет удалён навсегда. Продолжить?';
+    }
 
     const action = async () => {
       const { messageService } = await import('@/services/messages');
       await messageService.deleteMessage(activeChat.id, msgId);
-
-      const domBlock = document.getElementById(`msg-block-${msgId}`);
-      if (domBlock) {
-        domBlock.style.transition = 'all 0.25s ease';
-        domBlock.style.opacity = '0';
-        domBlock.style.transform = 'scale(0.95)';
-        setTimeout(() => domBlock.remove(), 250);
-      }
-
-      this.uiRenderer.showToast('🗑️ Сообщение удалено навсегда', 'info', 1500);
     };
 
     if ((window as any).tg?.showConfirm) {
@@ -386,4 +390,4 @@ export class ChatSend {
 }
 
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v5.0.0 загружен (EventBus-based)');
+console.log('✅ ChatSend v5.1.0 загружен (авто-удаление пустых чатов)');
