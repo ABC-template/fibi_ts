@@ -1,7 +1,7 @@
 // ============================================
 // api/coins/add.ts
 // Начисление монет (с подписью)
-// Версия: 1.0.0
+// Версия: 1.1.0
 // ============================================
 
 import {
@@ -11,56 +11,15 @@ import {
   jsonResponse,
   errorResponse,
   getSupabaseConfig,
-  supabaseFetch,
   supabaseRPC,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
 
-// Секрет для подписи транзакций
-const COIN_SECRET = process.env.COIN_SECRET?.trim();
-
 interface IAddCoinsRequest {
   amount: number;
   source: string;
   description: string;
-  signature: string;
-  timestamp: number;
-}
-
-/**
- * Проверка подписи транзакции
- */
-async function verifySignature(
-  userId: number,
-  amount: number,
-  source: string,
-  timestamp: number,
-  signature: string
-): Promise<boolean> {
-  if (!COIN_SECRET) {
-    console.error('❌ COIN_SECRET не настроен');
-    return false;
-  }
-
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(COIN_SECRET);
-  const message = encoder.encode(`${userId}:${amount}:${source}:${timestamp}`);
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, message);
-  const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  return signature === expectedSignature;
 }
 
 export default async function handler(request: Request): Promise<Response> {
@@ -78,7 +37,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId!;
-    const config = getSupabaseConfig('service');
+    const supabaseConfig = getSupabaseConfig('service');
 
     let body: IAddCoinsRequest;
     try {
@@ -87,9 +46,8 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { amount, source, description, signature, timestamp } = body;
+    const { amount, source, description } = body;
 
-    // Валидация
     if (!amount || amount <= 0) {
       return errorResponse('Invalid amount', 400);
     }
@@ -98,20 +56,6 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Missing source or description', 400);
     }
 
-    // Проверяем timestamp (не старше 5 минут)
-    const now = Date.now();
-    if (Math.abs(now - timestamp) > 300000) {
-      return errorResponse('Transaction expired', 400);
-    }
-
-    // Проверяем подпись
-    const isValid = await verifySignature(userId, amount, source, timestamp, signature);
-    if (!isValid) {
-      console.error(`❌ Неверная подпись для пользователя ${userId}`);
-      return errorResponse('Invalid signature', 403);
-    }
-
-    // Начисляем монеты через RPC
     const result = await supabaseRPC(
       'add_coins',
       {
@@ -120,7 +64,7 @@ export default async function handler(request: Request): Promise<Response> {
         p_source: source,
         p_description: description,
       },
-      config
+      supabaseConfig
     );
 
     if (!result || typeof result !== 'object') {
