@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatPatcher.ts
 // Описание: Точечные обновления DOM для чата
-// Версия: 1.0.0
+// Версия: 1.1.0 - с защитой от дублирования сообщений
 // ============================================
 
 import { uiRenderer } from '@/modules/ui/renderer';
@@ -82,10 +82,23 @@ export class ChatPatcher {
   }
 
   /**
-   * Добавить новое сообщение (без перерисовки)
+   * Добавить новое сообщение (с защитой от дублирования)
    * @param message - Объект сообщения
    */
   addMessage(message: IMessage): void {
+    // ✅ КРИТИЧЕСКАЯ ПРОВЕРКА: Нет ли уже такого сообщения в DOM?
+    const existing = document.getElementById(`msg-block-${message.id}`);
+    if (existing) {
+      console.log(`⚠️ [ChatPatcher] Сообщение ${message.id} уже есть в DOM, пропускаем добавление`);
+      return;
+    }
+
+    // Проверяем, не пытаемся ли добавить сообщение, которое уже удалено
+    if (message.deleted_at) {
+      console.log(`⚠️ [ChatPatcher] Сообщение ${message.id} помечено как удалённое, пропускаем`);
+      return;
+    }
+
     const element = uiRenderer.renderMessage(
       message.text,
       message.type,
@@ -187,6 +200,15 @@ export class ChatPatcher {
   clear(): void {
     this.container.innerHTML = '';
     console.log('🧹 [ChatPatcher] Контейнер очищен');
+  }
+
+  /**
+   * Проверить, существует ли сообщение в DOM
+   * @param messageId - ID сообщения
+   * @returns true если элемент существует
+   */
+  hasMessage(messageId: UUID): boolean {
+    return !!document.getElementById(`msg-block-${messageId}`);
   }
 
   /**
