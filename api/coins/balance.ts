@@ -1,7 +1,7 @@
 // ============================================
 // api/coins/balance.ts
 // Получение баланса пользователя
-// Версия: 1.0.0
+// Версия: 1.1.0
 // ============================================
 
 import {
@@ -31,13 +31,12 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId!;
-    const config = getSupabaseConfig('service');
+    const supabaseConfig = getSupabaseConfig('service');
 
-    // Получаем баланс из БД
     const result = await supabaseFetch(
       `users?telegram_id=eq.${userId}&select=coin_balance,total_earned,total_spent`,
       { method: 'GET' },
-      config
+      supabaseConfig
     );
 
     if (!result || !Array.isArray(result) || result.length === 0) {
