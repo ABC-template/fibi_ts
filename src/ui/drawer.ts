@@ -1,7 +1,7 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре
-// Версия: 1.0.4 - FIXED: надпись темы при создании HTML
+// Версия: 1.1.0 - добавлены новые пункты меню
 // ============================================
 import './drawer.css';
 import { chatStore } from '@/store/ChatStore';
@@ -99,7 +99,7 @@ export function renderChatsInDrawer(): void {
         listWrapper.appendChild(empty);
         container.appendChild(listWrapper);
         appendDrawerNav(container);
-        
+
         setTimeout(() => updateDrawerTrashCount(), 50);
         return;
     }
@@ -201,7 +201,7 @@ function collectChats(): any[] {
 
     const histories = chatStore.histories || {};
     const entries = Object.entries(histories) as [TopicId, IChat[]][];
-    
+
     for (const [topic, chats] of entries) {
         if (!chats) continue;
         for (const chat of chats) {
@@ -251,7 +251,7 @@ function createChatItem(chat: any): HTMLElement {
         ${chat.pinned ? 'background: rgba(212,175,55,0.04); border-left: 3px solid var(--app-accent-primary, #D4AF37);' : ''}
     `;
 
-    const preview = chat.lastMessage 
+    const preview = chat.lastMessage
         ? chat.lastMessage.substring(0, 40) + (chat.lastMessage.length > 40 ? '...' : '')
         : 'Пустой чат';
 
@@ -470,7 +470,6 @@ export function deleteChatFromDrawer(chatId: string): void {
 export function appendDrawerNav(container: HTMLElement): void {
     if (container.querySelector('.drawer-nav-bottom')) return;
 
-    // ✅ БЕРЕМ ТЕКУЩУЮ ТЕМУ ПРИ СОЗДАНИИ HTML
     const currentTheme = window.themeManager?.getCurrentTheme() || 'light';
     const themeNames = { 'light': 'Светлая', 'amoled': 'AMOLED' };
     const themeLabel = themeNames[currentTheme] || 'Светлая';
@@ -484,87 +483,272 @@ export function appendDrawerNav(container: HTMLElement): void {
         background: var(--app-bg-secondary);
     `;
 
-    nav.innerHTML = `
-        <div class="drawer-nav-item" id="drawer-favorites">⭐ Избранное</div>
-        <div class="drawer-nav-item" id="drawer-trash">
-            🗑️ Корзина
-            <span id="drawer-trash-count" style="margin-left: auto; font-size: 11px; background: var(--app-accent-danger, #E74C3C); color: white; padding: 1px 8px; border-radius: 12px; font-weight: 600; display: none;">0</span>
-        </div>
-        <div style="height: 1px; background: rgba(212,175,55,0.08); margin: 4px 20px;"></div>
-        <div class="drawer-nav-item" id="drawer-profile">⚙️ Настройки</div>
-        <div class="drawer-nav-item" id="drawer-theme-toggle">🎨 Тема: <span id="drawer-theme-label">${themeLabel}</span></div>
-        <div class="drawer-nav-item" id="drawer-clear-cache">🗑️ Очистить кэш</div>
-        <div style="padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;">Версия 8.7.0</div>
-    `;
+    // === Пункты меню ===
+    const menuItems: Array<{
+        id: string;
+        icon: string;
+        label: string;
+        action: () => void;
+        show: boolean;
+    }> = [
+        {
+            id: 'drawer-favorites',
+            icon: '⭐',
+            label: 'Избранное',
+            action: () => window.showFavoritesModal(),
+            show: true,
+        },
+        {
+            id: 'drawer-trash',
+            icon: '🗑️',
+            label: 'Корзина',
+            action: () => window.showTrashModal(),
+            show: true,
+        },
+        {
+            id: 'drawer-coins',
+            icon: '💰',
+            label: 'Кошелёк',
+            action: () => {
+                closeDrawer();
+                window.moduleLoader.load('coins');
+            },
+            show: true,
+        },
+        {
+            id: 'drawer-referral',
+            icon: '🤝',
+            label: 'Рефералы',
+            action: () => {
+                closeDrawer();
+                window.moduleLoader.load('referral');
+            },
+            show: true,
+        },
+        {
+            id: 'drawer-sponsors',
+            icon: '📋',
+            label: 'Задания',
+            action: () => {
+                closeDrawer();
+                window.moduleLoader.load('sponsors');
+            },
+            show: true,
+        },
+        {
+            id: 'drawer-admin-item',
+            icon: '👑',
+            label: 'Админ-панель',
+            action: () => {
+                closeDrawer();
+                window.moduleLoader.load('admin');
+            },
+            show: userStore.role === 'creator',
+        },
+    ];
+
+    // === Разделитель перед настройками ===
+    const divider = document.createElement('div');
+    divider.style.cssText = 'height: 1px; background: rgba(212,175,55,0.08); margin: 4px 20px;';
+    nav.appendChild(divider);
+
+    // === Настройки ===
+    const settingsItems: Array<{
+        id: string;
+        icon: string;
+        label: string;
+        action: () => void;
+        show: boolean;
+    }> = [
+        {
+            id: 'drawer-profile',
+            icon: '⚙️',
+            label: 'Настройки',
+            action: () => window.goToProfile(),
+            show: true,
+        },
+        {
+            id: 'drawer-theme-toggle',
+            icon: '🎨',
+            label: `Тема: ${themeLabel}`,
+            action: () => {
+                const themeManager = window.themeManager;
+                if (themeManager) {
+                    const currentTheme = themeManager.getCurrentTheme();
+                    const themes: ('light' | 'amoled')[] = ['light', 'amoled'];
+                    const currentIndex = themes.indexOf(currentTheme);
+                    const nextTheme = themes[(currentIndex + 1) % themes.length];
+                    themeManager.setTheme(nextTheme);
+                    updateThemeLabel(nextTheme);
+                    // Обновляем текст кнопки
+                    const labelEl = document.getElementById('drawer-theme-label');
+                    if (labelEl) {
+                        const names = { 'light': 'Светлая', 'amoled': 'AMOLED' };
+                        labelEl.textContent = names[nextTheme] || 'Светлая';
+                    }
+                }
+            },
+            show: true,
+        },
+        {
+            id: 'drawer-clear-cache',
+            icon: '🗑️',
+            label: 'Очистить кэш',
+            action: () => {
+                const confirmMsg = 'Очистить локальный кэш приложения?\n\n' +
+                    '⚠️ Ваши НЕСИНХРОНИЗИРОВАННЫЕ данные (TRIAL) будут потеряны.\n' +
+                    '☁️ Синхронизированные данные (PRO) восстановятся из облака.';
+
+                const doClear = (): void => {
+                    if (window.tasksStore) {
+                        window.tasksStore._data = {};
+                        window.tasksStore.save();
+                        window.tasksStore.clearJWT();
+                    }
+                    if (window.chatStore) {
+                        window.chatStore._data = {};
+                        window.chatStore.save();
+                        window.chatStore.clearJWT();
+                    }
+                    if (window.userStore) {
+                        window.userStore._data = {};
+                        window.userStore.save();
+                        window.userStore.clearJWT();
+                    }
+                    if (window.organizerStore) {
+                        window.organizerStore._data = {};
+                        window.organizerStore.save();
+                        window.organizerStore.clearJWT();
+                    }
+
+                    localStorage.removeItem('sync_token');
+                    for (let i = localStorage.length - 1; i >= 0; i--) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith('sync_token_') && key !== 'sync_token') {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                    localStorage.removeItem('last_user_id');
+
+                    if (uiRenderer) {
+                        uiRenderer.showToast('🧹 Кэш и токен очищены', 'success', 1500);
+                    }
+                    closeDrawer();
+                    setTimeout(() => location.reload(), 1000);
+                };
+
+                if (window.Telegram?.WebApp?.showConfirm) {
+                    window.Telegram.WebApp.showConfirm(confirmMsg, (ok: boolean) => { if (ok) doClear(); });
+                } else if (confirm(confirmMsg)) {
+                    doClear();
+                }
+            },
+            show: true,
+        },
+    ];
+
+    // Рендерим основные пункты
+    for (const item of menuItems) {
+        if (!item.show) continue;
+
+        const el = document.createElement('div');
+        el.className = 'drawer-nav-item';
+        el.id = item.id;
+        el.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 20px;
+            color: var(--app-text-secondary);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-family: var(--app-font-family);
+            -webkit-tap-highlight-color: transparent;
+        `;
+        el.innerHTML = `
+            <span class="nav-icon" style="font-size: 18px; width: 28px; text-align: center; flex-shrink: 0;">${item.icon}</span>
+            ${item.label}
+            ${item.id === 'drawer-trash' ? `
+                <span id="drawer-trash-count" style="
+                    margin-left: auto;
+                    font-size: 11px;
+                    background: var(--app-accent-danger, #E74C3C);
+                    color: white;
+                    padding: 1px 8px;
+                    border-radius: 12px;
+                    font-weight: 600;
+                    display: none;
+                ">0</span>
+            ` : ''}
+        `;
+        el.addEventListener('click', item.action);
+        nav.appendChild(el);
+    }
+
+    // Разделитель перед настройками
+    const divider2 = document.createElement('div');
+    divider2.style.cssText = 'height: 1px; background: rgba(212,175,55,0.08); margin: 4px 20px;';
+    nav.appendChild(divider2);
+
+    // Рендерим настройки
+    for (const item of settingsItems) {
+        if (!item.show) continue;
+
+        const el = document.createElement('div');
+        el.className = 'drawer-nav-item';
+        el.id = item.id;
+        el.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 20px;
+            color: var(--app-text-secondary);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-family: var(--app-font-family);
+            -webkit-tap-highlight-color: transparent;
+        `;
+
+        if (item.id === 'drawer-theme-toggle') {
+            el.innerHTML = `
+                <span class="nav-icon" style="font-size: 18px; width: 28px; text-align: center; flex-shrink: 0;">${item.icon}</span>
+                Тема: <span id="drawer-theme-label">${themeLabel}</span>
+            `;
+        } else {
+            el.innerHTML = `
+                <span class="nav-icon" style="font-size: 18px; width: 28px; text-align: center; flex-shrink: 0;">${item.icon}</span>
+                ${item.label}
+            `;
+        }
+
+        el.addEventListener('click', item.action);
+        nav.appendChild(el);
+    }
+
+    // Версия
+    const version = document.createElement('div');
+    version.style.cssText = 'padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;';
+    version.textContent = 'Версия 9.0.0';
+    nav.appendChild(version);
 
     container.appendChild(nav);
 
-    // Обработчики
-    nav.querySelector('#drawer-favorites')?.addEventListener('click', () => window.showFavoritesModal());
-    nav.querySelector('#drawer-trash')?.addEventListener('click', () => window.showTrashModal());
-    nav.querySelector('#drawer-profile')?.addEventListener('click', () => window.goToProfile());
-    
-    nav.querySelector('#drawer-theme-toggle')?.addEventListener('click', () => {
-        const themeManager = window.themeManager;
-        if (themeManager) {
-            const currentTheme = themeManager.getCurrentTheme();
-            const themes: ('light' | 'amoled')[] = ['light', 'amoled'];
-            const currentIndex = themes.indexOf(currentTheme);
-            const nextTheme = themes[(currentIndex + 1) % themes.length];
-            themeManager.setTheme(nextTheme);
-            updateThemeLabel(nextTheme);
-        }
-    });
-
-    nav.querySelector('#drawer-clear-cache')?.addEventListener('click', () => {
-        const confirmMsg = 'Очистить локальный кэш приложения?\n\n' +
-            '⚠️ Ваши НЕСИНХРОНИЗИРОВАННЫЕ данные (TRIAL) будут потеряны.\n' +
-            '☁️ Синхронизированные данные (PRO) восстановятся из облака.';
-
-        const doClear = (): void => {
-            if (window.tasksStore) {
-                window.tasksStore._data = {};
-                window.tasksStore.save();
-                window.tasksStore.clearJWT();
-            }
-            if (window.chatStore) {
-                window.chatStore._data = {};
-                window.chatStore.save();
-                window.chatStore.clearJWT();
-            }
-            if (window.userStore) {
-                window.userStore._data = {};
-                window.userStore.save();
-                window.userStore.clearJWT();
-            }
-            if (window.organizerStore) {
-                window.organizerStore._data = {};
-                window.organizerStore.save();
-                window.organizerStore.clearJWT();
-            }
-
-            localStorage.removeItem('sync_token');
-            for (let i = localStorage.length - 1; i >= 0; i--) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('sync_token_') && key !== 'sync_token') {
-                    localStorage.removeItem(key);
-                }
-            }
-            localStorage.removeItem('last_user_id');
-
-            if (uiRenderer) {
-                uiRenderer.showToast('🧹 Кэш и токен очищены', 'success', 1500);
-            }
-            closeDrawer();
-            setTimeout(() => location.reload(), 1000);
-        };
-
-        if (window.Telegram?.WebApp?.showConfirm) {
-            window.Telegram.WebApp.showConfirm(confirmMsg, (ok: boolean) => { if (ok) doClear(); });
-        } else if (confirm(confirmMsg)) {
-            doClear();
-        }
-    });
+    // Обновляем счетчик корзины после рендеринга
+    setTimeout(() => updateDrawerTrashCount(), 100);
 }
 
 // ==========================================
@@ -596,7 +780,7 @@ export function updateDrawerTrashCount(): void {
             badge.style.display = 'none';
             badge.classList.remove('visible');
         }
-        
+
         console.log(`📊 [updateDrawerTrashCount] Обновлен счетчик: ${total} чатов в корзине`);
     } catch (err) {
         console.error('❌ Ошибка обновления счетчика корзины:', err);
@@ -606,7 +790,7 @@ export function updateDrawerTrashCount(): void {
 }
 
 // ==========================================
-// ОБНОВЛЕНИЕ НАДПИСИ ТЕМЫ (ПРИ СМЕНЕ ТЕМЫ)
+// ОБНОВЛЕНИЕ НАДПИСИ ТЕМЫ
 // ==========================================
 
 export function updateThemeLabel(theme: 'light' | 'amoled'): void {
@@ -675,3 +859,23 @@ export function setupDrawerEventListeners(): void {
         }
     });
 }
+
+// ==========================================
+// ПРИВЯЗКА К WINDOW
+// ==========================================
+
+(window as any).openDrawer = openDrawer;
+(window as any).closeDrawer = closeDrawer;
+(window as any).renderChatsInDrawer = renderChatsInDrawer;
+(window as any).updateDrawerCoins = updateDrawerCoins;
+(window as any).updateDrawerTrashCount = updateDrawerTrashCount;
+(window as any).updateThemeLabel = updateThemeLabel;
+(window as any).appendDrawerNav = appendDrawerNav;
+(window as any).toggleChatMenu = toggleChatMenu;
+(window as any).closeAllChatMenus = closeAllChatMenus;
+(window as any).handleChatAction = handleChatAction;
+(window as any).togglePinChat = togglePinChat;
+(window as any).renameChatFromDrawer = renameChatFromDrawer;
+(window as any).deleteChatFromDrawer = deleteChatFromDrawer;
+
+console.log('✅ drawer.ts v1.1.0 загружен (с новыми пунктами меню)');
