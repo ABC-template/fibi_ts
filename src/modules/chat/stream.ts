@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ
-// Версия: 4.0.3 - EventBus-based
+// Версия: 4.1.0 - с ChatPatcher для точечных обновлений
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -40,6 +40,10 @@ let streamCallCounter = 0;
   let chunksReceived = 0;
   let finalizeCalled = false;
   let generatedAiMsgId: UUID | null = null;
+
+  // Получаем патчер из ChatModule
+  const chatModule = (window as any).chatModule;
+  const patcher = chatModule?.getPatcher?.() || null;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
@@ -123,30 +127,66 @@ let streamCallCounter = 0;
       }
 
       if (msgDiv && !isFirstChunk) {
-        if (typeof (window as any).marked !== 'undefined') {
-          try {
-            let rawHTML = (window as any).marked.parse(accumulatedText);
-            let safeHTML = rawHTML;
-            if (typeof (window as any).DOMPurify !== 'undefined') {
-              safeHTML = (window as any).DOMPurify.sanitize(rawHTML, {
-                ALLOWED_TAGS: [
-                  'p', 'br', 'strong', 'em', 'u', 'i', 'b',
-                  'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                  'ul', 'ol', 'li', 'blockquote',
-                  'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                  'span', 'div', 'img', 'hr', 'sub', 'sup'
-                ],
-                ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
-                FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
-              });
+        // ✅ ИСПОЛЬЗУЕМ ПАТЧЕР для точечного обновления
+        if (patcher) {
+          // Если есть ID, используем патчер
+          if (generatedAiMsgId) {
+            patcher.updateMessageText(generatedAiMsgId, accumulatedText);
+          } else {
+            // Обновляем напрямую (первый чанк)
+            if (typeof (window as any).marked !== 'undefined') {
+              try {
+                let rawHTML = (window as any).marked.parse(accumulatedText);
+                let safeHTML = rawHTML;
+                if (typeof (window as any).DOMPurify !== 'undefined') {
+                  safeHTML = (window as any).DOMPurify.sanitize(rawHTML, {
+                    ALLOWED_TAGS: [
+                      'p', 'br', 'strong', 'em', 'u', 'i', 'b',
+                      'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                      'ul', 'ol', 'li', 'blockquote',
+                      'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+                      'span', 'div', 'img', 'hr', 'sub', 'sup'
+                    ],
+                    ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
+                    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
+                  });
+                }
+                msgDiv.innerHTML = safeHTML;
+              } catch (markErr) {
+                console.warn(`⚠️ [СТРИМ #${callId}] Ошибка marked:`, markErr);
+                msgDiv.textContent = accumulatedText;
+              }
+            } else {
+              msgDiv.textContent = accumulatedText;
             }
-            msgDiv.innerHTML = safeHTML;
-          } catch (markErr) {
-            console.warn(`⚠️ [СТРИМ #${callId}] Ошибка marked:`, markErr);
-            msgDiv.textContent = accumulatedText;
           }
         } else {
-          msgDiv.textContent = accumulatedText;
+          // Fallback: старый метод
+          if (typeof (window as any).marked !== 'undefined') {
+            try {
+              let rawHTML = (window as any).marked.parse(accumulatedText);
+              let safeHTML = rawHTML;
+              if (typeof (window as any).DOMPurify !== 'undefined') {
+                safeHTML = (window as any).DOMPurify.sanitize(rawHTML, {
+                  ALLOWED_TAGS: [
+                    'p', 'br', 'strong', 'em', 'u', 'i', 'b',
+                    'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                    'ul', 'ol', 'li', 'blockquote',
+                    'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+                    'span', 'div', 'img', 'hr', 'sub', 'sup'
+                  ],
+                  ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
+                  FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
+                });
+              }
+              msgDiv.innerHTML = safeHTML;
+            } catch (markErr) {
+              console.warn(`⚠️ [СТРИМ #${callId}] Ошибка marked:`, markErr);
+              msgDiv.textContent = accumulatedText;
+            }
+          } else {
+            msgDiv.textContent = accumulatedText;
+          }
         }
         smartScroll();
       }
@@ -170,7 +210,7 @@ let streamCallCounter = 0;
 
       const safeFinalText = typeof accumulatedText === 'string' ? accumulatedText : String(accumulatedText);
 
-      // ✅ ИСПРАВЛЕНО: data-атрибуты вместо onclick
+      // ✅ КНОПКИ ДЕЙСТВИЙ (data-атрибуты)
       const act = document.createElement('div');
       act.className = 'msg-actions';
       
@@ -241,7 +281,7 @@ let streamCallCounter = 0;
         container.scrollTop = container.scrollHeight;
       }
 
-      // ✅ Уведомляем через EventBus
+      // ✅ Уведомляем через EventBus (с флагом, что это новое сообщение)
       eventBusInstance.emit('chat:message_added', {
         chatId: chatId,
         message: aiMessage
@@ -286,7 +326,7 @@ let streamCallCounter = 0;
 
       const safeFinalText = typeof disconnectNotice === 'string' ? disconnectNotice : String(disconnectNotice);
 
-      // ✅ data-атрибуты вместо onclick
+      // ✅ data-атрибуты
       const act = document.createElement('div');
       act.className = 'msg-actions';
       
@@ -355,4 +395,4 @@ let streamCallCounter = 0;
   }
 };
 
-console.log('✅ ChatStream v4.0.3 загружен (EventBus-based)');
+console.log('✅ ChatStream v4.1.0 загружен (с ChatPatcher)');
