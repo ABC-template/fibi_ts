@@ -1,13 +1,14 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.0.2 - FIXED TYPES
+// Версия: 4.1.0 - авто-удаление пустых чатов
 // ============================================
 
 import { apiClient } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { chatService } from './chats';
+import { uiRenderer } from '@/modules/ui/renderer';
 import type { UUID, MessageType, IMessage } from '@types';
 
 export class MessageService {
@@ -157,13 +158,54 @@ export class MessageService {
   }
 
   // ==========================================
-  // УДАЛЕНИЕ СООБЩЕНИЯ
+  // УДАЛЕНИЕ СООБЩЕНИЯ (С АВТО-УДАЛЕНИЕМ ПУСТОГО ЧАТА)
   // ==========================================
 
   async deleteMessage(chatId: UUID, messageId: UUID): Promise<boolean> {
     const deleted = chatStore.deleteMessage(chatId, messageId);
     if (!deleted) return false;
 
+    // ✅ ПРОВЕРЯЕМ: Остались ли сообщения в чате?
+    const found = chatStore.findChatById(chatId);
+    if (found) {
+      const hasMessages = chatStore.hasRealMessages(found.chat);
+      
+      // ✅ ЕСЛИ СООБЩЕНИЙ НЕТ → УДАЛЯЕМ ЧАТ
+      if (!hasMessages) {
+        console.log(`🧹 [deleteMessage] Чат ${chatId} стал пустым, удаляем...`);
+        
+        // Показываем уведомление
+        if (uiRenderer) {
+          uiRenderer.showToast('🗑️ Последнее сообщение удалено, чат будет удалён', 'info', 2000);
+        }
+        
+        // Удаляем чат (HARD DELETE)
+        const chatDeleted = chatStore.permanentDeleteChat(chatId);
+        
+        if (chatDeleted && userStore.canSync()) {
+          try {
+            // Сначала отправляем в корзину (для соблюдения логики)
+            await chatService.deleteChat(chatId);
+            // Затем удаляем навсегда
+            await chatService.permanentDeleteChat(chatId);
+            console.log(`✅ [deleteMessage] Чат ${chatId} удалён на сервере (HARD DELETE)`);
+          } catch (err) {
+            console.error(`❌ [deleteMessage] Ошибка синхронизации удаления чата:`, err);
+          }
+        }
+        
+        // Возвращаемся в список чатов
+        if (window.moduleLoader) {
+          setTimeout(() => {
+            window.moduleLoader.load('chat-list');
+          }, 300);
+        }
+        
+        return true;
+      }
+    }
+
+    // Если сообщения остались — синхронизируем удаление сообщения
     if (userStore.canSync()) {
       try {
         const result = await apiClient.post('/chats/mutations/delete-with-confirm', {
@@ -219,4 +261,4 @@ export class MessageService {
 
 // Создаем экземпляр
 export const messageService = new MessageService();
-console.log('✅ MessageService v4.0.2 загружен');
+console.log('✅ MessageService v4.1.0 загружен (авто-удаление пустых чатов)');
