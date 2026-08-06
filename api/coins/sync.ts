@@ -1,7 +1,7 @@
 // ============================================
 // api/coins/sync.ts
 // Полная синхронизация баланса и транзакций
-// Версия: 1.0.0
+// Версия: 1.1.0
 // ============================================
 
 import {
@@ -31,13 +31,12 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId!;
-    const config = getSupabaseConfig('service');
+    const supabaseConfig = getSupabaseConfig('service');
 
-    // Получаем пользователя
     const userResult = await supabaseFetch(
       `users?telegram_id=eq.${userId}&select=coin_balance,total_earned,total_spent`,
       { method: 'GET' },
-      config
+      supabaseConfig
     );
 
     if (!userResult || !Array.isArray(userResult) || userResult.length === 0) {
@@ -52,11 +51,10 @@ export default async function handler(request: Request): Promise<Response> {
 
     const user = userResult[0];
 
-    // Получаем последние транзакции
     const transactions = await supabaseFetch(
       `coin_transactions?user_id=eq.${userId}&order=created_at.desc&limit=50`,
       { method: 'GET' },
-      config
+      supabaseConfig
     );
 
     return jsonResponse({
