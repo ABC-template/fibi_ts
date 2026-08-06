@@ -1,7 +1,7 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 5.0.9 - FIXED: getActiveChat() возвращает чат только из текущей темы
+// Версия: 5.1.0 - авто-удаление пустых чатов
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -73,13 +73,11 @@ export class ChatStore extends BaseStore<IChatStoreData> {
   }
 
   // ==========================================
-  // ✅ ИСПРАВЛЕНО: getActiveChat() — ТОЛЬКО ИЗ ТЕКУЩЕЙ ТЕМЫ
+  // ПОЛУЧЕНИЕ АКТИВНОГО ЧАТА
   // ==========================================
 
   getActiveChat(topicId?: TopicId): IChat | null {
-    // Если topicId не передан — используем currentTopic
     const targetTopic = topicId || this._data.currentTopic;
-    
     const chats = this.getChats(targetTopic);
     const activeId = this._data.activeIds[targetTopic];
     
@@ -88,8 +86,27 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       if (found) return found;
     }
     
-    // Если в текущей теме нет активного чата — возвращаем null
     return null;
+  }
+
+  // ==========================================
+  // ПРОВЕРКА, ЕСТЬ ЛИ У ЧАТА СООБЩЕНИЯ
+  // ==========================================
+
+  hasRealMessages(chat: IChat): boolean {
+    if (!chat || !chat.messages) return false;
+    return chat.messages.some(m =>
+      (m.type === 'user-msg' || m.type === 'ai-msg') &&
+      !m.deleted_at &&
+      m.text && m.text.trim().length > 0
+    );
+  }
+
+  /**
+   * Проверить, является ли чат пустым (без сообщений)
+   */
+  isEmpty(chat: IChat): boolean {
+    return !this.hasRealMessages(chat);
   }
 
   // ==========================================
@@ -141,16 +158,13 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return newChat;
   }
 
-  // ✅ ИСПРАВЛЕНО: createTempChat — удаляем ВСЕ пустые чаты, создаем новый
   createTempChat(topicId?: TopicId): IChat | null {
     if (!topicId) topicId = this._data.currentTopic;
 
     console.log(`🧹 [createTempChat] Удаляем ВСЕ пустые чаты перед созданием нового в теме: ${topicId}`);
 
-    // ✅ 1. УДАЛЯЕМ ВСЕ ПУСТЫЕ ЧАТЫ ВО ВСЕХ ТЕМАХ
     this.cleanupAllEmptyChats();
 
-    // ✅ 2. СОЗДАЕМ НОВЫЙ ЧАТ
     console.log(`📝 [createTempChat] Создаем новый чат в теме: ${topicId}`);
     const newChat = this.createChat(topicId, undefined, {
       messages: []
@@ -164,7 +178,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return newChat;
   }
 
-  // ✅ ИСПРАВЛЕНО: cleanupAllEmptyChats — удаляет ВСЕ пустые чаты ВО ВСЕХ ТЕМАХ
   cleanupAllEmptyChats(): number {
     let cleaned = 0;
     const allTopics = Object.keys(this._data.histories) as TopicId[];
@@ -174,13 +187,7 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       const nonEmptyChats: IChat[] = [];
 
       for (const chat of chats) {
-        const hasRealMessages = chat.messages && chat.messages.some(m =>
-          (m.type === 'user-msg' || m.type === 'ai-msg') &&
-          !m.deleted_at &&
-          m.text && m.text.trim().length > 0
-        );
-
-        if (!hasRealMessages && !chat.deleted_at) {
+        if (!this.hasRealMessages(chat) && !chat.deleted_at) {
           cleaned++;
           console.log(`🧹 [cleanupAllEmptyChats] Удаляем пустой чат ${chat.id} из темы ${topic}`);
         } else {
@@ -191,7 +198,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       if (nonEmptyChats.length !== chats.length) {
         this._data.histories[topic] = nonEmptyChats;
         
-        // Если активный чат был пустым — сбрасываем
         if (this._data.activeIds[topic]) {
           const stillExists = nonEmptyChats.some(c => c.id === this._data.activeIds[topic]);
           if (!stillExists) {
@@ -345,13 +351,8 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     }
 
     const { chat, topic } = found;
-
-    if (!chat.deleted_at) {
-      console.warn(`⚠️ Чат ${chatId} не в корзине, удаление невозможно`);
-      return false;
-    }
-
     const chatTitle = chat.title;
+    
     this._data.histories[topic] = this._data.histories[topic].filter(c => c.id !== chatId);
 
     if (this._data.activeIds[topic] === chatId) {
@@ -500,15 +501,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return newMsg;
   }
 
-  hasRealMessages(chat: IChat): boolean {
-    if (!chat || !chat.messages) return false;
-    return chat.messages.some(m =>
-      (m.type === 'user-msg' || m.type === 'ai-msg') &&
-      !m.deleted_at &&
-      m.text && m.text.trim().length > 0
-    );
-  }
-
   getTrash(): ITrash {
     const trash: ITrash = { chats: [], messages: [] };
 
@@ -579,10 +571,22 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       return;
     }
 
+    // ✅ Фильтруем пустые чаты (без сообщений)
+    const filteredChats = cloudChats.filter(chat => {
+      const hasMessages = chat.messages?.some(m => 
+        !m.deleted_at && m.text && m.text.trim().length > 0
+      );
+      return hasMessages || chat.deleted_at;
+    });
+
+    if (filteredChats.length !== cloudChats.length) {
+      console.log(`🧹 [updateAllChats] Отфильтровано ${cloudChats.length - filteredChats.length} пустых чатов`);
+    }
+
     const grouped: Record<TopicId, IChat[]> = {} as Record<TopicId, IChat[]>;
     let totalMessages = 0;
     
-    for (const chat of cloudChats) {
+    for (const chat of filteredChats) {
       const chatTopic = chat.topic || 'fast';
       if (!grouped[chatTopic]) {
         grouped[chatTopic] = [];
@@ -645,9 +649,9 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 
     this.save();
     
-    console.log(`✅ [updateAllChats] Заменено ${cloudChats.length} чатов, ${totalMessages} сообщений`);
+    console.log(`✅ [updateAllChats] Заменено ${filteredChats.length} чатов, ${totalMessages} сообщений`);
     this._emitChange('chat:all_updated', {
-      totalChats: cloudChats.length,
+      totalChats: filteredChats.length,
       totalMessages: totalMessages
     });
   }
@@ -697,4 +701,4 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 }
 
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v5.0.9 загружен (FIXED: getActiveChat() только из текущей темы)');
+console.log('✅ ChatStore v5.1.0 загружен (авто-удаление пустых чатов)');
