@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/sponsors/SponsorsModule.ts
 // Модуль заданий от спонсоров
-// Версия: 1.0.0
+// Версия: 1.1.0
 // ============================================
 
 import { sponsorsStore, type ISponsorTask, type IUserTaskCompletion } from './SponsorsStore';
@@ -10,6 +10,7 @@ import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
+import type { UUID } from '@types';
 
 export class SponsorsModule {
   private container: HTMLElement;
@@ -36,7 +37,7 @@ export class SponsorsModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ SponsorsModule v1.0.0 инициализирован');
+    console.log('✅ SponsorsModule v1.1.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -83,7 +84,6 @@ export class SponsorsModule {
         flex-direction: column;
         height: 100%;
       ">
-        <!-- Статистика -->
         <div style="
           display: grid;
           grid-template-columns: repeat(4, 1fr);
@@ -140,7 +140,6 @@ export class SponsorsModule {
           </div>
         </div>
 
-        <!-- Доступные задания -->
         <div style="
           flex: 1;
           background: var(--app-bg-secondary);
@@ -349,9 +348,6 @@ export class SponsorsModule {
     }
   }
 
-  /**
-   * Отправить заявку на выполнение задания
-   */
   async submitTask(taskId: string): Promise<void> {
     const userId = this.userStore.userId;
     if (!userId) {
@@ -365,7 +361,6 @@ export class SponsorsModule {
       return;
     }
 
-    // Для псевдо-проверки — просто отправляем заявку
     if (task.verification_type === 'pseudo') {
       const completion = this.sponsorsStore.submitCompletion(taskId as UUID, userId);
       if (completion) {
@@ -381,19 +376,13 @@ export class SponsorsModule {
       return;
     }
 
-    // Для авто-проверки — сразу проверяем
     if (task.verification_type === 'auto') {
-      // Здесь будет автоматическая проверка (например, через Telegram API)
-      // Пока просто имитируем
       this.uiRenderer?.showToast('🔍 Проверяем выполнение...', 'info', 1500);
       setTimeout(() => {
-        // Имитация успешной проверки
         const completion = this.sponsorsStore.submitCompletion(taskId as UUID, userId);
         if (completion) {
-          // Сразу одобряем
           const approved = this.sponsorsStore.updateCompletionStatus(completion.id, 'approved');
           if (approved) {
-            // Начисляем награду
             this.coinsStore.addCoins(task.reward, `task_${taskId}`, `Задание: ${task.title}`);
             this.sponsorsStore.claimReward(completion.id);
             this.uiRenderer?.showToast(`🎉 +${task.reward} монет за выполнение!`, 'success', 2000);
@@ -404,7 +393,6 @@ export class SponsorsModule {
       return;
     }
 
-    // Для ручной проверки
     const completion = this.sponsorsStore.submitCompletion(taskId as UUID, userId);
     if (completion) {
       this.uiRenderer?.showToast(
@@ -416,23 +404,16 @@ export class SponsorsModule {
     }
   }
 
-  /**
-   * Повторно отправить заявку (для rejected)
-   */
   resubmitTask(taskId: string): void {
     this.submitTask(taskId);
   }
 
-  /**
-   * Открыть админ-панель (только для creator)
-   */
   openAdminPanel(): void {
     if (this.userStore.role !== 'creator') {
       this.uiRenderer?.showToast('⛔ Доступ только для создателя', 'error', 1500);
       return;
     }
 
-    // Переключаем вкладку на админ-панель заданий
     if ((window as any).moduleLoader) {
       (window as any).moduleLoader.load('admin', { tab: 'sponsors' });
     }
@@ -480,4 +461,4 @@ export class SponsorsModule {
 (window as any).SponsorsModule = SponsorsModule;
 (window as any).sponsorsModule = new SponsorsModule(document.createElement('div'));
 
-console.log('✅ SponsorsModule v1.0.0 загружен');
+console.log('✅ SponsorsModule v1.1.0 загружен');
