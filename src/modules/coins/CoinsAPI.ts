@@ -1,16 +1,18 @@
 // ============================================
 // src/modules/coins/CoinsAPI.ts
 // API-клиент для работы с монетами
-// Версия: 1.0.0
+// Версия: 1.1.0
 // ============================================
 
 import { apiClient } from '@/services/api';
 import { coinsStore } from './CoinsStore';
+import { userStore } from '@/store/UserStore';
 
 export class CoinsAPI {
-  /**
-   * Получить баланс с сервера
-   */
+  private _getUserId(): number | null {
+    return userStore.userId || null;
+  }
+
   async getBalance(): Promise<{ balance: number; total_earned: number; total_spent: number }> {
     try {
       const data = await apiClient.get('/coins/balance');
@@ -28,9 +30,6 @@ export class CoinsAPI {
     }
   }
 
-  /**
-   * Полная синхронизация
-   */
   async sync(): Promise<boolean> {
     try {
       const data = await apiClient.get('/coins/sync');
@@ -45,9 +44,6 @@ export class CoinsAPI {
     }
   }
 
-  /**
-   * Получить историю транзакций
-   */
   async getHistory(limit: number = 50, offset: number = 0): Promise<any[]> {
     try {
       const data = await apiClient.get(`/coins/history?limit=${limit}&offset=${offset}`);
@@ -61,28 +57,15 @@ export class CoinsAPI {
     }
   }
 
-  /**
-   * Начислить монеты (с подписью)
-   */
   async addCoins(amount: number, source: string, description: string): Promise<boolean> {
     try {
-      const timestamp = Date.now();
-      const userId = coinsStore.getTelegramId();
-
-      // Генерируем подпись на клиенте (для демонстрации)
-      // В реальном проекте подпись должна генерироваться на сервере!
-      const signature = await this._generateSignature(userId, amount, source, timestamp);
-
       const data = await apiClient.post('/coins/add', {
         amount,
         source,
         description,
-        signature,
-        timestamp,
       });
 
       if (data.success) {
-        // Обновляем локальный баланс
         coinsStore.addCoins(amount, source, description);
         return true;
       }
@@ -93,21 +76,25 @@ export class CoinsAPI {
     }
   }
 
-  /**
-   * Генерация подписи (временная реализация)
-   * В реальном проекте используйте серверную генерацию
-   */
-  private async _generateSignature(
-    userId: number | null,
-    amount: number,
-    source: string,
-    timestamp: number
-  ): Promise<string> {
-    // Временная заглушка
-    // В реальном проекте подпись должна генерироваться на сервере
-    return 'temp_signature_' + Date.now();
+  async spendCoins(amount: number, source: string, description: string): Promise<boolean> {
+    try {
+      const data = await apiClient.post('/coins/spend', {
+        amount,
+        source,
+        description,
+      });
+
+      if (data.success) {
+        coinsStore.spendCoins(amount, source, description);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('❌ Ошибка списания монет:', err);
+      return false;
+    }
   }
 }
 
 export const coinsAPI = new CoinsAPI();
-console.log('✅ CoinsAPI v1.0.0 загружен');
+console.log('✅ CoinsAPI v1.1.0 загружен');
