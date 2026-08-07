@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 10.0.0 - ДОБАВЛЕНО: экономическое ядро
+// Версия: 10.0.1 - ИСПРАВЛЕНА ЗАГРУЗКА
 // ============================================
 
 import './config';
@@ -56,7 +56,7 @@ import { GamesModule } from '@/modules/games/GamesModule';
 // ✅ НОВОЕ: ЭКОНОМИЧЕСКОЕ ЯДРО
 import '@/economy';
 
-console.log('🚀 App v10.0.0 начал загрузку (с экономическим ядром)');
+console.log('🚀 App v10.0.1 начал загрузку (с экономическим ядром)');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -173,7 +173,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 10.0.0
+                    Версия 10.0.1
                 </div>
             </div>
         `;
@@ -289,6 +289,7 @@ async function initApp(): Promise<void> {
     initSplash();
     updateSplashProgress(0, '🔮 Инициализация...');
 
+    // ✅ ПРОВЕРКА: ЗАПУСК ВНЕ TELEGRAM
     if (!isTelegramWebApp()) {
         console.log('🚫 Приложение открыто вне Telegram → показываем заглушку');
         showTelegramRequiredScreen();
@@ -531,7 +532,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v10.0.0 успешно загружено (с экономическим ядром)');
+        console.log('✅ Приложение v10.0.1 успешно загружено (с экономическим ядром)');
     }, 500);
 }
 
@@ -575,11 +576,15 @@ function setupEventSubscriptions(): void {
 // 9. ЗАПУСК (ТОЛЬКО ОДИН РАЗ!)
 // ==========================================
 
+// ✅ ЗАПУСК ПРИЛОЖЕНИЯ — ТОЛЬКО ПОСЛЕ ЗАГРУЗКИ DOM
 document.addEventListener('DOMContentLoaded', () => {
+    // ✅ ПРОВЕРКА: ЗАПУСК ВНЕ TELEGRAM
     if (!isTelegramWebApp()) {
         showTelegramRequiredScreen();
         return;
     }
+    
+    // ✅ ЗАПУСК ОСНОВНОЙ ИНИЦИАЛИЗАЦИИ
     initApp().catch(err => {
         console.error('❌ Критический сбой инициализации:', err);
         hideSplash();
@@ -619,4 +624,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v10.0.0 полностью загружен (с экономическим ядром)');
+console.log('✅ app.ts v10.0.1 полностью загружен (с экономическим ядром)');
