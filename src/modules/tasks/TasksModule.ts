@@ -1,13 +1,14 @@
 // ============================================
 // src/modules/tasks/TasksModule.ts
 // Модуль заданий (геймификация)
-// Версия: 3.0.1 - FIXED TYPES
+// Версия: 4.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
 import { tasksStore } from '@/store/TasksStore';
 import { eventBus } from '@/core/event-bus';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { userStore } from '@/store/UserStore';
 import type { IDailyQuest, IAchievement } from '@types';
 
 export class TasksModule {
@@ -19,6 +20,9 @@ export class TasksModule {
   private tasksStore = tasksStore;
   private eventBus = eventBus;
   private uiRenderer = uiRenderer;
+  private userStore = userStore;
+  
+  private userId: number | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -26,6 +30,8 @@ export class TasksModule {
 
   async init(): Promise<void> {
     if (this.isInitialized) return;
+
+    this.userId = this.userStore.userId;
 
     (window as any).tasksModule = this;
 
@@ -74,6 +80,7 @@ export class TasksModule {
       </div>
     `;
 
+    this._subscribeToBalance();
     this.render();
 
     setTimeout(() => {
@@ -83,7 +90,23 @@ export class TasksModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ TasksModule v3.0.1 инициализирован');
+    console.log('✅ TasksModule v4.0.0 инициализирован (экономика через EventBus)');
+  }
+
+  private _subscribeToBalance(): void {
+    const unsub = this.eventBus.on('economy:balance:updated', (data) => {
+      if (data.userId === this.userId) {
+        this._updateBalanceUI(data.newBalance);
+      }
+    }, this);
+    this._subscriptions.push(unsub);
+  }
+
+  private _updateBalanceUI(newBalance: number): void {
+    const balanceEl = document.getElementById('tasks-balance');
+    if (balanceEl) {
+      balanceEl.textContent = String(newBalance);
+    }
   }
 
   render(): void {
@@ -94,11 +117,12 @@ export class TasksModule {
   }
 
   renderBalance(): void {
-    const balanceEl = document.getElementById('tasks-balance');
+    const balance = (window as any).economyStore?.getBalance() || 0;
     const tokensEl = document.getElementById('tasks-tokens');
     const streakEl = document.getElementById('tasks-streak');
 
-    if (balanceEl) balanceEl.textContent = String(this.tasksStore.getBalance());
+    const balanceEl = document.getElementById('tasks-balance');
+    if (balanceEl) balanceEl.textContent = String(balance);
     if (tokensEl) tokensEl.textContent = String(this.tasksStore.getTokens());
     if (streakEl) streakEl.textContent = String(this.tasksStore.streakDays || 0);
   }
@@ -235,12 +259,23 @@ export class TasksModule {
     const quest = this.tasksStore.dailyQuests.find(q => q.id === questId);
     if (!quest || !quest.completed || quest.claimed) return;
 
-    this.tasksStore.addBalance(quest.reward, `Задание: ${quest.title}`);
+    if (this.userId) {
+      this.eventBus.emit('economy:earn', {
+        userId: this.userId,
+        source: 'task:daily',
+        amount: quest.reward,
+        metadata: {
+          quest_id: quest.id,
+          quest_title: quest.title,
+          type: 'daily_quest'
+        }
+      });
+    }
+
     quest.claimed = true;
     this.tasksStore.save();
 
     this.render();
-
     this.uiRenderer.showToast(`🎉 +${quest.reward} монет!`, 'success', 1500);
   }
 
@@ -248,17 +283,40 @@ export class TasksModule {
     const ach = this.tasksStore.achievements.find(a => a.id === achievementId);
     if (!ach || !ach.unlocked || ach.claimed) return;
 
+    if (this.userId) {
+      this.eventBus.emit('economy:earn', {
+        userId: this.userId,
+        source: 'achievement:unlock',
+        amount: ach.reward,
+        metadata: {
+          achievement_id: ach.id,
+          achievement_title: ach.title,
+          type: 'achievement'
+        }
+      });
+    }
+
     ach.claimed = true;
     this.tasksStore.save();
 
     this.render();
-
     this.uiRenderer.showToast(`🏆 Достижение получено!`, 'success', 1500);
   }
 
   claimDailyBonus(): void {
     const bonus = this.tasksStore.claimDailyBonus();
     if (bonus) {
+      if (this.userId) {
+        this.eventBus.emit('economy:earn', {
+          userId: this.userId,
+          source: 'daily:bonus',
+          amount: bonus.bonus,
+          metadata: {
+            streak: bonus.streak,
+            type: 'daily_bonus'
+          }
+        });
+      }
       this.render();
       this.uiRenderer.showToast(`🎁 Ежедневный бонус: +${bonus.bonus} монет!`, 'success', 1500);
     } else {
@@ -267,18 +325,32 @@ export class TasksModule {
   }
 
   exchange(coins: number, tokens: number): void {
-    const result = this.tasksStore.exchangeCoinsForTokens(coins);
-    if (result.success) {
-      this.render();
-      this.uiRenderer.showToast(`🔄 Обмен: +${result.tokens} токенов`, 'success', 1500);
-    } else {
-      this.uiRenderer.showToast(`❌ ${result.message}`, 'error', 1500);
+    if (!this.userId) {
+      this.uiRenderer.showToast('⚠️ Ошибка авторизации', 'error', 1500);
+      return;
     }
-  }
 
-  // ==========================================
-  // УПРАВЛЕНИЕ МОДУЛЕМ
-  // ==========================================
+    const currentBalance = (window as any).economyStore?.getBalance() || 0;
+    if (currentBalance < coins) {
+      this.uiRenderer.showToast('❌ Недостаточно монет', 'error', 1500);
+      return;
+    }
+
+    this.eventBus.emit('economy:spend', {
+      userId: this.userId,
+      source: 'exchange:coins_to_tokens',
+      amount: coins,
+      metadata: {
+        tokens_received: tokens,
+        rate: coins / tokens
+      }
+    });
+
+    this.tasksStore.addTokens(tokens, 'Обмен монет');
+
+    this.render();
+    this.uiRenderer.showToast(`🔄 Обмен: +${tokens} токенов`, 'success', 1500);
+  }
 
   show(): void {
     console.log('📱 TasksModule.show() вызван');
@@ -325,6 +397,5 @@ export class TasksModule {
   }
 }
 
-// Экспортируем класс в глобальный объект
 (window as any).TasksModule = TasksModule;
-console.log('✅ TasksModule v3.0.1 загружен');
+console.log('✅ TasksModule v4.0.0 загружен (экономика через EventBus)');
