@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/coins/CoinsModule.ts
 // Модуль для отображения кошелька и транзакций
-// Версия: 1.0.0
+// Версия: 2.0.0 - ПЕРЕКЛЮЧЕНО НА EconomyStore
 // ============================================
 
 import { coinsStore } from './CoinsStore';
@@ -30,24 +30,19 @@ export class CoinsModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ CoinsModule v1.0.0 инициализирован');
+    console.log('✅ CoinsModule v2.0.0 инициализирован (переключен на EconomyStore)');
   }
 
   private _subscribeToEvents(): void {
-    const unsub = this.eventBus.on('coins:added', () => {
+    const unsub = this.eventBus.on('coins:synced', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsub);
 
-    const unsub2 = this.eventBus.on('coins:spent', () => {
+    const unsub2 = this.eventBus.on('economy:balance:updated', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsub2);
-
-    const unsub3 = this.eventBus.on('coins:synced', () => {
-      this._updateUI();
-    }, this);
-    this._subscriptions.push(unsub3);
   }
 
   private _render(): void {
@@ -65,7 +60,6 @@ export class CoinsModule {
         flex-direction: column;
         height: 100%;
       ">
-        <!-- Баланс -->
         <div style="
           background: var(--app-bg-secondary);
           border-radius: 16px;
@@ -88,7 +82,6 @@ export class CoinsModule {
           </div>
         </div>
 
-        <!-- Статистика -->
         <div style="
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -121,7 +114,6 @@ export class CoinsModule {
           </div>
         </div>
 
-        <!-- История транзакций -->
         <div style="
           flex: 1;
           background: var(--app-bg-secondary);
@@ -258,4 +250,4 @@ export class CoinsModule {
 }
 
 (window as any).CoinsModule = CoinsModule;
-console.log('✅ CoinsModule v1.0.0 загружен');
+console.log('✅ CoinsModule v2.0.0 загружен (переключен на EconomyStore)');
