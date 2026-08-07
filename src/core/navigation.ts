@@ -1,7 +1,7 @@
 // ============================================
 // src/core/navigation.ts
 // Нижняя навигация с иконками Lucide
-// Версия: 3.1.0 - FIXED
+// Версия: 4.0.0 - добавлен QuestsModule
 // ============================================
 
 export interface INavTab {
@@ -16,14 +16,14 @@ export class Navigation {
     { id: 'organizer', icon: 'layout-dashboard', label: 'Органайзер' },
     { id: 'chat-list', icon: 'message-square', label: 'Versatile AI' },
     { id: 'games', icon: 'gamepad-2', label: 'Игры' },
-    { id: 'tasks', icon: 'trophy', label: 'Задания' },
+    { id: 'quests', icon: 'trophy', label: 'Задания' },
   ];
   private activeTab: string = 'dashboard';
   private navElement: HTMLElement | null = null;
   private _isSwitching: boolean = false;
 
   constructor() {
-    console.log('✅ Navigation v3.1.0 загружен');
+    console.log('✅ Navigation v4.0.0 загружен');
   }
 
   render(): void {
@@ -79,13 +79,13 @@ export class Navigation {
     const overlay = document.getElementById('drawer-overlay');
     if (drawer?.classList.contains('active')) {
       console.log('📂 Закрываем сайдбар мгновенно (переключение вкладки)');
-      
+
       drawer.classList.remove('active');
       drawer.classList.remove('drawer-anim-in');
       drawer.classList.remove('drawer-anim-out');
       if (overlay) overlay.classList.remove('active');
       document.body.style.overflow = '';
-      
+
       if ((window as any).navigationState) {
         (window as any).navigationState.toggleDrawer(false);
       }
@@ -134,6 +134,5 @@ export class Navigation {
   }
 }
 
-// Создаем экземпляр
 export const navigation = new Navigation();
-console.log('✅ Navigation v3.1.0 загружен');
+console.log('✅ Navigation v4.0.0 загружен');
