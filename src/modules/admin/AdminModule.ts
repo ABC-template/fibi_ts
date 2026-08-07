@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Админ-панель (только для creator)
-// Версия: 2.0.0 - ДОБАВЛЕНО: управление экономикой
+// Версия: 2.1.0 - ИСПРАВЛЕН: setUserLocked → toggleUserLock
 // ============================================
 
 import { adminStore } from './AdminStore';
@@ -49,7 +49,7 @@ export class AdminModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v2.0.0 инициализирован (с управлением экономикой)');
+    console.log('✅ AdminModule v2.1.0 инициализирован (с управлением экономикой)');
   }
 
   private _subscribeToEvents(): void {
@@ -769,17 +769,10 @@ export class AdminModule {
   async loadRules(): Promise<void> {
     try {
       const { economyService } = await import('@/economy/EconomyService');
-      const { supabaseFetch, getSupabaseConfig } = await import('@api/_lib/supabase-client');
-      
-      const config = getSupabaseConfig('service');
-      const result = await supabaseFetch(
-        'economy_rules?order=source.asc',
-        { method: 'GET' },
-        config
-      );
+      const result = await economyService.getRules();
 
-      if (result && Array.isArray(result)) {
-        this._renderRulesListWithData(result);
+      if (result.success) {
+        this._renderRulesListWithData(result.rules || []);
       }
     } catch (err) {
       console.error('❌ Ошибка загрузки правил:', err);
@@ -851,22 +844,20 @@ export class AdminModule {
 
   async editRule(ruleId: string): Promise<void> {
     try {
-      const { supabaseFetch, getSupabaseConfig } = await import('@api/_lib/supabase-client');
-      const config = getSupabaseConfig('service');
+      const { economyService } = await import('@/economy/EconomyService');
+      const result = await economyService.getRules(100, 0);
 
-      const result = await supabaseFetch(
-        `economy_rules?id=eq.${ruleId}`,
-        { method: 'GET' },
-        config
-      );
+      if (!result.success) {
+        this.uiRenderer?.showToast('⚠️ Не удалось загрузить правило', 'error', 1500);
+        return;
+      }
 
-      if (!result || !Array.isArray(result) || result.length === 0) {
+      const rule = result.rules?.find((r: any) => r.id === ruleId);
+      if (!rule) {
         this.uiRenderer?.showToast('⚠️ Правило не найдено', 'error', 1500);
         return;
       }
 
-      const rule = result[0];
-      
       const content = `
         <div style="display: flex; flex-direction: column; gap: 10px;">
           <div>
@@ -1050,26 +1041,20 @@ export class AdminModule {
 
   async loadAudit(): Promise<void> {
     try {
-      const { supabaseFetch, getSupabaseConfig } = await import('@api/_lib/supabase-client');
-      const config = getSupabaseConfig('service');
+      const { economyService } = await import('@/economy/EconomyService');
 
       const userId = (document.getElementById('audit-user-filter') as HTMLInputElement)?.value;
       const type = (document.getElementById('audit-type-filter') as HTMLSelectElement)?.value;
 
-      let query = 'economy_audit_log?order=created_at.desc&limit=100';
-      if (userId) {
-        query += `&user_id=eq.${userId}`;
-      }
-      if (type) {
-        query += `&event_type=eq.${type}`;
-      }
-
-      const result = await supabaseFetch(query, { method: 'GET' }, config);
+      const result = await economyService.getAudit(
+        userId ? parseInt(userId, 10) : null,
+        type || null
+      );
 
       const container = document.getElementById('audit-list');
       if (!container) return;
 
-      if (!result || !Array.isArray(result) || result.length === 0) {
+      if (!result.success || !result.logs || result.logs.length === 0) {
         container.innerHTML = `
           <div style="text-align: center; padding: 20px; color: var(--app-text-tertiary); font-size: 13px;">
             📭 Нет записей
@@ -1078,11 +1063,11 @@ export class AdminModule {
         return;
       }
 
-      container.innerHTML = result.map((log: any) => {
+      container.innerHTML = result.logs.map((log: any) => {
         const date = new Date(log.created_at);
         const dateStr = date.toLocaleString();
         const isEarn = log.event_type === 'EARN';
-        const sign = isEarn ? '+' : '-';
+        const sign = isEarn ? '+' : '';
         const color = isEarn ? '#27ae60' : '#e74c3c';
 
         return `
@@ -1111,7 +1096,6 @@ export class AdminModule {
           </div>
         `;
       }).join('');
-
     } catch (err) {
       console.error('❌ Ошибка загрузки аудита:', err);
       this.uiRenderer?.showToast('⚠️ Ошибка загрузки', 'error', 1500);
@@ -1165,7 +1149,7 @@ export class AdminModule {
 
     try {
       const { economyService } = await import('@/economy/EconomyService');
-      const success = await economyService.setUserLocked(userId, lock);
+      const success = await economyService.toggleUserLock(userId, lock);
 
       if (success) {
         this.uiRenderer?.showToast(
@@ -1466,4 +1450,4 @@ export class AdminModule {
 (window as any).AdminModule = AdminModule;
 (window as any).adminModule = new AdminModule(document.createElement('div'));
 
-console.log('✅ AdminModule v2.0.0 загружен (с управлением экономикой)');
+console.log('✅ AdminModule v2.1.0 загружен (с управлением экономикой)');
