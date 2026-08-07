@@ -1,13 +1,13 @@
 // ============================================
 // src/modules/games/GamesModule.ts
 // Модуль игр (контейнер) с полноэкранным режимом
-// Версия: 6.1.0 - исправлены типы
+// Версия: 6.2.0 - исправлен импорт
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
 import { navigationState } from '@/core/navigation-state';
 import { eventBus } from '@/core/event-bus';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 
 export class GamesModule {
   private container: HTMLElement;
@@ -24,7 +24,7 @@ export class GamesModule {
   private headerManager = headerManager;
   private navigationState = navigationState;
   private eventBus = eventBus;
-  private tasksStore = tasksStore;
+  private questsStore = questsStore;
   
   private userId: number | null = null;
 
@@ -51,7 +51,7 @@ export class GamesModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ GamesModule v6.1.0 инициализирован');
+    console.log('✅ GamesModule v6.2.0 инициализирован');
   }
 
   private _subscribeToBalance(): void {
@@ -126,10 +126,10 @@ export class GamesModule {
   }
 
   private _updateHighScores(): void {
-    const tetrisScore = this.tasksStore.getGameData<number>('tetris_high_score', 0);
-    const sudokuScore = this.tasksStore.getGameData<number>('sudoku_high_score', 0);
-    const snakeScore = this.tasksStore.getGameData<number>('snake_high_score', 0);
-    const hangmanScore = this.tasksStore.getGameData<number>('hangman_high_score', 0);
+    const tetrisScore = this.questsStore.getGameData<number>('tetris_high_score', 0);
+    const sudokuScore = this.questsStore.getGameData<number>('sudoku_high_score', 0);
+    const snakeScore = this.questsStore.getGameData<number>('snake_high_score', 0);
+    const hangmanScore = this.questsStore.getGameData<number>('hangman_high_score', 0);
 
     const tetrisEl = document.getElementById('tetris-high-score');
     const sudokuEl = document.getElementById('sudoku-high-score');
@@ -483,4 +483,4 @@ export class GamesModule {
 }
 
 (window as any).GamesModule = GamesModule;
-console.log('✅ GamesModule v6.1.0 загружен');
+console.log('✅ GamesModule v6.2.0 загружен');
