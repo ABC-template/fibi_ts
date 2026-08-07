@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/coins/CoinsAPI.ts
 // API-клиент для работы с монетами
-// Версия: 1.1.0
+// Версия: 2.0.0 - ПЕРЕКЛЮЧЕНО НА EconomyStore
 // ============================================
 
 import { apiClient } from '@/services/api';
@@ -56,45 +56,7 @@ export class CoinsAPI {
       return [];
     }
   }
-
-  async addCoins(amount: number, source: string, description: string): Promise<boolean> {
-    try {
-      const data = await apiClient.post('/coins/add', {
-        amount,
-        source,
-        description,
-      });
-
-      if (data.success) {
-        coinsStore.addCoins(amount, source, description);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('❌ Ошибка начисления монет:', err);
-      return false;
-    }
-  }
-
-  async spendCoins(amount: number, source: string, description: string): Promise<boolean> {
-    try {
-      const data = await apiClient.post('/coins/spend', {
-        amount,
-        source,
-        description,
-      });
-
-      if (data.success) {
-        coinsStore.spendCoins(amount, source, description);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('❌ Ошибка списания монет:', err);
-      return false;
-    }
-  }
 }
 
 export const coinsAPI = new CoinsAPI();
-console.log('✅ CoinsAPI v1.1.0 загружен');
+console.log('✅ CoinsAPI v2.0.0 загружен (переключен на EconomyStore)');
