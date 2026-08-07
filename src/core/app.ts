@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 9.2.0 - обновлена инициализация заданий
+// Версия: 10.0.0 - переход на единую систему заданий
 // ============================================
 
 import './config';
@@ -27,7 +27,7 @@ import { setupGlobalFunctions } from '@/utils/global';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { organizerStore } from '@/store/OrganizerStore';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 
 // ✅ SERVICES
 import { authService } from '@/services/auth';
@@ -50,10 +50,10 @@ import { ChatListModule } from '@/modules/chat-list/ChatListModule';
 import { ChatModule } from '@/modules/chat/ChatModule';
 import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
 import { ProfileModule } from '@/modules/profile/ProfileModule';
-import { TasksModule } from '@/modules/tasks/TasksModule';
+import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v9.2.0 начал загрузку');
+console.log('🚀 App v10.0.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -66,7 +66,7 @@ function registerModules(): void {
     moduleLoader.register('chat-list', ChatListModule);
     moduleLoader.register('chat', ChatModule);
     moduleLoader.register('games', GamesModule);
-    moduleLoader.register('tasks', TasksModule);
+    moduleLoader.register('quests', QuestsModule);
     moduleLoader.register('profile', ProfileModule);
     console.log('✅ Все модули зарегистрированы');
 }
@@ -77,22 +77,22 @@ function registerModules(): void {
 
 function bindUIToWindow(): void {
     console.log('🔗 Привязываем UI к window...');
-    
+
     window.uiRenderer = uiRenderer;
     window.chatUI = chatUI;
     window.profileUI = profileUI;
     window.organizerUI = organizerUI;
-    
+
     window.chatStore = chatStore;
     window.userStore = userStore;
     window.organizerStore = organizerStore;
-    window.tasksStore = tasksStore;
-    
+    window.questsStore = questsStore;
+
     window.authService = authService;
     window.chatService = chatService;
     window.messageService = messageService;
     window.syncService = syncService;
-    
+
     window.moduleLoader = moduleLoader;
     window.navigationState = navigationState;
     window.navigation = navigation;
@@ -102,9 +102,9 @@ function bindUIToWindow(): void {
     window.inputManager = inputManager;
     window.themeManager = themeManager;
     window.eventBus = eventBus;
-    
+
     window.chatSend = chatSend;
-    
+
     console.log('✅ UI привязан к window');
 }
 
@@ -165,7 +165,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 9.2.0
+                    Версия 10.0.0
                 </div>
             </div>
         `;
@@ -189,7 +189,7 @@ function initEruda(role: string): void {
         try {
             (window as any).eruda.init();
             console.log(`🛠️ Eruda активирована для ${role}`);
-            
+
             if (uiRenderer) {
                 uiRenderer.showToast(`🛠️ Eruda активирована (${role})`, 'info', 3000);
             }
@@ -244,15 +244,15 @@ function setupTelegramWebApp(): void {
 
     try {
         tg.ready();
-        
+
         if (typeof tg.expand === 'function') {
             tg.expand();
         }
-        
+
         if (tg.themeParams && tg.themeParams.bg_color) {
             tg.setBackgroundColor(tg.themeParams.bg_color);
         }
-        
+
         if (typeof tg.requestFullscreen === 'function') {
             try {
                 tg.requestFullscreen();
@@ -260,11 +260,11 @@ function setupTelegramWebApp(): void {
                 console.log('ℹ️ requestFullscreen не поддерживается');
             }
         }
-        
+
         if (typeof tg.showLoading === 'function') {
             tg.showLoading();
         }
-        
+
         console.log('✅ Telegram WebApp настроен');
     } catch (e) {
         console.error('Ошибка настройки Telegram WebApp:', e);
@@ -277,7 +277,7 @@ function setupTelegramWebApp(): void {
 
 async function initApp(): Promise<void> {
     console.log('🔧 Начало инициализации приложения...');
-    
+
     initSplash();
     updateSplashProgress(0, '🔮 Инициализация...');
 
@@ -332,7 +332,7 @@ async function initApp(): Promise<void> {
     chatStore.load();
     userStore.load();
     organizerStore.load();
-    tasksStore.load();
+    questsStore.load();
 
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
@@ -369,7 +369,7 @@ async function initApp(): Promise<void> {
         try {
             const result = await authService.checkSubscription();
             updateSplashProgress(70, '🔐 Проверка подписки...');
-            
+
             const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
             const needFullReload = authService.needFullReload(result.syncToken);
 
@@ -459,7 +459,7 @@ async function initApp(): Promise<void> {
                 const { economyManager, economyStore } = await import('@/economy');
                 window.economyManager = economyManager;
                 window.economyStore = economyStore;
-                
+
                 if (economyStore) {
                     await economyStore.loadBalance();
                     console.log('💰 Баланс загружен в EconomyStore');
@@ -471,7 +471,7 @@ async function initApp(): Promise<void> {
 
             // ✅ СИНХРОНИЗАЦИЯ ЗАДАНИЙ
             try {
-                await tasksStore.sync();
+                await questsStore.sync();
                 console.log('✅ Задания синхронизированы');
             } catch (err) {
                 console.warn('⚠️ Не удалось синхронизировать задания:', err);
@@ -490,7 +490,7 @@ async function initApp(): Promise<void> {
             if (message.text === '🔄' && userStore.canSync()) {
                 console.log('✅ СИГНАЛ ОБНОВЛЕНИЯ РАСПОЗНАН!');
                 if (uiRenderer) uiRenderer.showSyncStatus('syncing');
-                if (window.chatListModule) window.chatListModule.show();
+                if (window.questsModule) window.questsModule.show();
                 if (uiRenderer) uiRenderer.showSyncStatus('success');
             }
         });
@@ -536,7 +536,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v9.2.0 успешно загружено (с синхронизацией заданий)');
+        console.log('✅ Приложение v10.0.0 успешно загружено (с единой системой заданий)');
     }, 500);
 }
 
@@ -571,55 +571,54 @@ function setupEventSubscriptions(): void {
         });
     });
 
-    // ✅ НОВОЕ: обновление заданий после действий
+    // ✅ НОВОЕ: автоматическое обновление заданий
     eventBus.on('chat:message_added', () => {
-        tasksStore.updateQuest('send_message_1').catch(() => {});
-        tasksStore.updateQuest('send_message_5').catch(() => {});
+        questsStore.updateProgress('send_message_1').catch(() => {});
+        questsStore.updateProgress('send_message_5').catch(() => {});
     });
 
     eventBus.on('organizer:todo_added', () => {
-        tasksStore.updateQuest('add_todo').catch(() => {});
+        questsStore.updateProgress('add_todo').catch(() => {});
     });
 
     eventBus.on('organizer:todo_toggled', (data) => {
         if (data.isCompleted) {
-            tasksStore.updateQuest('complete_todo_3').catch(() => {});
+            questsStore.updateProgress('complete_todo_3').catch(() => {});
         }
     });
 
     eventBus.on('organizer:reminder_added', () => {
-        tasksStore.updateQuest('create_reminder').catch(() => {});
+        questsStore.updateProgress('create_reminder').catch(() => {});
     });
 
     // Достижения
     eventBus.on('chat:created', () => {
-        tasksStore.updateAchievement('first_chat').catch(() => {});
+        questsStore.updateProgress('first_chat').catch(() => {});
     });
 
     eventBus.on('chat:message_added', () => {
-        tasksStore.updateAchievement('chat_100').catch(() => {});
+        questsStore.updateProgress('chat_100').catch(() => {});
     });
 
     eventBus.on('organizer:todo_added', () => {
-        tasksStore.updateAchievement('todo_50').catch(() => {});
+        questsStore.updateProgress('todo_50').catch(() => {});
     });
 
     eventBus.on('organizer:reminder_added', () => {
-        tasksStore.updateAchievement('reminder_10').catch(() => {});
+        questsStore.updateProgress('reminder_10').catch(() => {});
     });
 
-    eventBus.on('tasks:daily_bonus_claimed', (data) => {
-        if (data.streak >= 7) {
-            tasksStore.updateAchievement('streak_7').catch(() => {});
-        }
-        if (data.streak >= 30) {
-            tasksStore.updateAchievement('streak_30').catch(() => {});
+    // Стрик через ежедневный бонус
+    eventBus.on('quests:quest_completed', (data) => {
+        if (data.questId === 'daily_login') {
+            // Стрик обновляется через RPC
         }
     });
 
+    // Монеты
     eventBus.on('economy:balance:updated', (data) => {
         if (data.newBalance >= 100) {
-            tasksStore.updateAchievement('coins_100').catch(() => {});
+            questsStore.updateProgress('coins_100').catch(() => {});
         }
     });
 
@@ -632,7 +631,6 @@ function setupEventSubscriptions(): void {
 // 9. ЗАПУСК (ТОЛЬКО ОДИН РАЗ!)
 // ==========================================
 
-// ✅ ЕДИНСТВЕННАЯ ТОЧКА ВХОДА — только DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
     if (!isTelegramWebApp()) {
         showTelegramRequiredScreen();
@@ -677,4 +675,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v9.2.0 полностью загружен (с синхронизацией заданий)');
+console.log('✅ app.ts v10.0.0 полностью загружен (с единой системой заданий)');
