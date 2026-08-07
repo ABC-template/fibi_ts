@@ -1,11 +1,10 @@
 // ============================================
 // src/modules/sponsors/SponsorsModule.ts
 // Модуль заданий от спонсоров
-// Версия: 1.1.0
+// Версия: 2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { sponsorsStore, type ISponsorTask, type IUserTaskCompletion } from './SponsorsStore';
-import { coinsStore } from '@/modules/coins/CoinsStore';
 import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
@@ -19,9 +18,10 @@ export class SponsorsModule {
   private headerManager = headerManager;
   private eventBus = eventBus;
   private sponsorsStore = sponsorsStore;
-  private coinsStore = coinsStore;
   private userStore = userStore;
   private uiRenderer = uiRenderer;
+  
+  private userId: number | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -30,14 +30,33 @@ export class SponsorsModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
+    this.userId = this.userStore.userId;
+
     this.headerManager.setTitle('📋 Задания');
     this.headerManager.setActions([]);
 
     this._render();
     this._subscribeToEvents();
+    this._subscribeToBalance();
 
     this.isInitialized = true;
-    console.log('✅ SponsorsModule v1.1.0 инициализирован');
+    console.log('✅ SponsorsModule v2.0.0 инициализирован (экономика через EventBus)');
+  }
+
+  private _subscribeToBalance(): void {
+    const unsub = this.eventBus.on('economy:balance:updated', (data) => {
+      if (data.userId === this.userId) {
+        this._updateBalanceUI(data.newBalance);
+      }
+    }, this);
+    this._subscriptions.push(unsub);
+  }
+
+  private _updateBalanceUI(newBalance: number): void {
+    const balanceEl = document.getElementById('sponsors-balance-display');
+    if (balanceEl) {
+      balanceEl.textContent = String(newBalance);
+    }
   }
 
   private _subscribeToEvents(): void {
@@ -60,11 +79,6 @@ export class SponsorsModule {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsub4);
-
-    const unsub5 = this.eventBus.on('coins:added', () => {
-      this._updateUI();
-    }, this);
-    this._subscriptions.push(unsub5);
   }
 
   private _render(): void {
@@ -73,6 +87,7 @@ export class SponsorsModule {
     const completions = this.sponsorsStore.getUserCompletions(userId);
     const stats = this.sponsorsStore.getUserStats(userId);
     const isCreator = this.userStore.role === 'creator';
+    const currentBalance = (window as any).economyStore?.getBalance() || 0;
 
     this.container.innerHTML = `
       <div style="
@@ -84,6 +99,27 @@ export class SponsorsModule {
         flex-direction: column;
         height: 100%;
       ">
+        <div style="
+          background: var(--app-bg-secondary);
+          border-radius: 12px;
+          padding: 12px 16px;
+          border: 1px solid var(--app-border-color-light);
+          margin-bottom: 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        ">
+          <div>
+            <div style="font-size: 11px; color: var(--app-text-tertiary);">Ваш баланс</div>
+            <div style="font-size: 20px; font-weight: 700; color: var(--app-accent-primary);" id="sponsors-balance-display">
+              ${currentBalance}
+            </div>
+          </div>
+          <div style="font-size: 13px; color: var(--app-text-secondary);">
+            🪙 Fibi Coins
+          </div>
+        </div>
+
         <div style="
           display: grid;
           grid-template-columns: repeat(4, 1fr);
@@ -361,6 +397,12 @@ export class SponsorsModule {
       return;
     }
 
+    const isLocked = await this._isUserLocked(userId);
+    if (isLocked) {
+      this.uiRenderer?.showToast('⚠️ Ваш аккаунт заблокирован для экономических операций', 'error', 2000);
+      return;
+    }
+
     if (task.verification_type === 'pseudo') {
       const completion = this.sponsorsStore.submitCompletion(taskId as UUID, userId);
       if (completion) {
@@ -378,12 +420,25 @@ export class SponsorsModule {
 
     if (task.verification_type === 'auto') {
       this.uiRenderer?.showToast('🔍 Проверяем выполнение...', 'info', 1500);
+      
       setTimeout(() => {
         const completion = this.sponsorsStore.submitCompletion(taskId as UUID, userId);
         if (completion) {
           const approved = this.sponsorsStore.updateCompletionStatus(completion.id, 'approved');
           if (approved) {
-            this.coinsStore.addCoins(task.reward, `task_${taskId}`, `Задание: ${task.title}`);
+            this.eventBus.emit('economy:earn', {
+              userId: userId,
+              source: `sponsor:task:${taskId}`,
+              amount: task.reward,
+              metadata: {
+                task_id: task.id,
+                task_title: task.title,
+                sponsor_name: task.sponsor_name,
+                verification_type: task.verification_type,
+                completion_id: completion.id
+              }
+            });
+            
             this.sponsorsStore.claimReward(completion.id);
             this.uiRenderer?.showToast(`🎉 +${task.reward} монет за выполнение!`, 'success', 2000);
             this._updateUI();
@@ -401,6 +456,16 @@ export class SponsorsModule {
         2000
       );
       this._updateUI();
+    }
+  }
+
+  private async _isUserLocked(userId: number): Promise<boolean> {
+    try {
+      const { economyService } = await import('@/economy/EconomyService');
+      return await economyService.isUserLocked(userId);
+    } catch (err) {
+      console.warn('⚠️ Не удалось проверить блокировку пользователя:', err);
+      return false;
     }
   }
 
@@ -461,4 +526,4 @@ export class SponsorsModule {
 (window as any).SponsorsModule = SponsorsModule;
 (window as any).sponsorsModule = new SponsorsModule(document.createElement('div'));
 
-console.log('✅ SponsorsModule v1.1.0 загружен');
+console.log('✅ SponsorsModule v2.0.0 загружен (экономика через EventBus)');
