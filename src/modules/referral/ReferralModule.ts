@@ -1,14 +1,14 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 1.0.0
+// Версия: 2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { referralStore, REFERRAL_TIERS, REFERRAL_REWARD_LIMIT } from './ReferralStore';
 import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
-import { coinsStore } from '@/modules/coins/CoinsStore';
 import { userStore } from '@/store/UserStore';
+import { uiRenderer } from '@/modules/ui/renderer';
 
 export class ReferralModule {
   private container: HTMLElement;
@@ -17,8 +17,10 @@ export class ReferralModule {
   private headerManager = headerManager;
   private eventBus = eventBus;
   private referralStore = referralStore;
-  private coinsStore = coinsStore;
   private userStore = userStore;
+  private uiRenderer = uiRenderer;
+  
+  private userId: number | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -27,14 +29,33 @@ export class ReferralModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
+    this.userId = this.userStore.userId;
+    
     this.headerManager.setTitle('🤝 Рефералы');
     this.headerManager.setActions([]);
 
     this._render();
     this._subscribeToEvents();
+    this._subscribeToBalance();
 
     this.isInitialized = true;
-    console.log('✅ ReferralModule v1.0.0 инициализирован');
+    console.log('✅ ReferralModule v2.0.0 инициализирован (экономика через EventBus)');
+  }
+
+  private _subscribeToBalance(): void {
+    const unsub = this.eventBus.on('economy:balance:updated', (data) => {
+      if (data.userId === this.userId) {
+        this._updateBalanceUI(data.newBalance);
+      }
+    }, this);
+    this._subscriptions.push(unsub);
+  }
+
+  private _updateBalanceUI(newBalance: number): void {
+    const balanceEl = document.getElementById('referral-balance-display');
+    if (balanceEl) {
+      balanceEl.textContent = String(newBalance);
+    }
   }
 
   private _subscribeToEvents(): void {
@@ -64,6 +85,7 @@ export class ReferralModule {
     const referrals = this.referralStore.getReferrals();
     const link = this.referralStore.getReferralLink();
     const rewardForNext = this.referralStore.getRewardForReferral();
+    const currentBalance = (window as any).economyStore?.getBalance() || 0;
 
     this.container.innerHTML = `
       <div style="
@@ -75,6 +97,28 @@ export class ReferralModule {
         flex-direction: column;
         height: 100%;
       ">
+        <!-- Баланс -->
+        <div style="
+          background: var(--app-bg-secondary);
+          border-radius: 16px;
+          padding: 16px 20px;
+          border: 1px solid var(--app-border-color-light);
+          margin-bottom: 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        ">
+          <div>
+            <div style="font-size: 12px; color: var(--app-text-tertiary);">Ваш баланс</div>
+            <div style="font-size: 24px; font-weight: 700; color: var(--app-accent-primary);" id="referral-balance-display">
+              ${currentBalance}
+            </div>
+          </div>
+          <div style="font-size: 14px; color: var(--app-text-secondary);">
+            🪙 Fibi Coins
+          </div>
+        </div>
+
         <!-- Реферальная ссылка -->
         <div style="
           background: var(--app-bg-secondary);
@@ -367,17 +411,68 @@ export class ReferralModule {
   }
 
   private _updateUI(): void {
-    const listEl = document.getElementById('referral-list');
-    const stats = this.referralStore.getStats();
-    const referrals = this.referralStore.getReferrals();
+    this._render();
+  }
 
-    if (listEl) {
-      listEl.innerHTML = this._renderReferrals(referrals);
+  async rewardReferral(referralId: string): Promise<void> {
+    const userId = this.userStore.userId;
+    if (!userId) {
+      this.uiRenderer?.showToast('⚠️ Ошибка авторизации', 'error', 1500);
+      return;
     }
 
-    // Обновляем статистику (упрощённо — перерендер)
-    // В реальном проекте лучше обновлять отдельные элементы
-    setTimeout(() => this._render(), 100);
+    try {
+      const referral = this.referralStore.getReferrals().find(r => r.id === referralId);
+      if (!referral) {
+        this.uiRenderer?.showToast('⚠️ Реферал не найден', 'error', 1500);
+        return;
+      }
+
+      if (referral.status === 'rewarded') {
+        this.uiRenderer?.showToast('⚠️ Реферал уже награждён', 'info', 1500);
+        return;
+      }
+
+      const rewardedReferrals = this.referralStore.getReferrals()
+        .filter(r => r.referrer_id === userId && r.status === 'rewarded');
+      const totalRewarded = rewardedReferrals.length;
+
+      let rewardAmount = this.referralStore.getRewardForReferral();
+
+      const totalEarned = this.referralStore.getStats().total_reward;
+      if (totalEarned + rewardAmount > REFERRAL_REWARD_LIMIT) {
+        const remaining = REFERRAL_REWARD_LIMIT - totalEarned;
+        if (remaining <= 0) {
+          this.uiRenderer?.showToast('⚠️ Достигнут лимит реферальных наград', 'warning', 2000);
+          return;
+        }
+        rewardAmount = remaining;
+      }
+
+      this.eventBus.emit('economy:earn', {
+        userId: userId,
+        source: 'referral:reward',
+        amount: rewardAmount,
+        metadata: {
+          referral_id: referralId,
+          referred_id: referral.referred_id,
+          referred_username: referral.referred_username,
+          tier: this._getTierName(this.referralStore.getStats().current_tier)
+        }
+      });
+
+      this.referralStore.updateReferralStatus(referralId, 'rewarded');
+      this.referralStore._data.total_reward += rewardAmount;
+      this.referralStore.save();
+
+      this.uiRenderer?.showToast(`💰 +${rewardAmount} монет за реферала!`, 'success', 2000);
+      
+      this._updateUI();
+
+    } catch (err) {
+      console.error('❌ Ошибка начисления реферальной награды:', err);
+      this.uiRenderer?.showToast('⚠️ Ошибка начисления награды', 'error', 1500);
+    }
   }
 
   show(): void {
@@ -419,7 +514,6 @@ export class ReferralModule {
   }
 }
 
-// Глобальная функция для копирования ссылки
 (window as any).copyReferralLink = function(): void {
   const input = document.getElementById('referral-link-input') as HTMLInputElement;
   if (!input || !input.value) {
@@ -432,7 +526,6 @@ export class ReferralModule {
       (window as any).uiRenderer.showToast('📋 Ссылка скопирована!', 'success', 1500);
     }
   }).catch(() => {
-    // Fallback
     input.select();
     document.execCommand('copy');
     if ((window as any).uiRenderer) {
@@ -442,4 +535,4 @@ export class ReferralModule {
 };
 
 (window as any).ReferralModule = ReferralModule;
-console.log('✅ ReferralModule v1.0.0 загружен');
+console.log('✅ ReferralModule v2.0.0 загружен (экономика через EventBus)');
