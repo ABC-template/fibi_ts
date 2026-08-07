@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/games/GamesModule.ts
 // Модуль игр (контейнер) с полноэкранным режимом
-// Версия: 5.0.0 - ДИНАМИЧЕСКАЯ ЗАГРУЗКА ИГР
+// Версия: 6.0.0 - ДОБАВЛЕНО: подписка на баланс
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -25,6 +25,8 @@ export class GamesModule {
   private navigationState = navigationState;
   private eventBus = eventBus;
   private tasksStore = tasksStore;
+  
+  private userId: number | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -39,8 +41,8 @@ export class GamesModule {
     this.headerManager.setActions([]);
 
     this._render();
-
     this._subscribeToEvents();
+    this._subscribeToBalance();
 
     setTimeout(() => {
       if (typeof (window as any).lucide !== 'undefined') {
@@ -49,12 +51,23 @@ export class GamesModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ GamesModule v5.0.0 инициализирован');
+    console.log('✅ GamesModule v6.0.0 инициализирован');
   }
 
-  // ==========================================
-  // РЕНДЕРИНГ
-  // ==========================================
+  private _subscribeToBalance(): void {
+    const unsub = this.eventBus.on('economy:balance:updated', (data) => {
+      if (data.userId === this.userId) {
+        this._updateBalanceUI(data.newBalance);
+      }
+    }, this);
+    this._subscriptions.push(unsub);
+  }
+
+  private _updateBalanceUI(newBalance: number): void {
+    document.querySelectorAll('.game-balance-display').forEach(el => {
+      (el as HTMLElement).textContent = String(newBalance);
+    });
+  }
 
   private _render(): void {
     this.container.innerHTML = `
@@ -65,7 +78,6 @@ export class GamesModule {
         </h2>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <!-- Тетрис -->
           <div onclick="window.gamesModule.openGame('tetris')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
             <div style="font-size:40px; margin-bottom:8px;">🧩</div>
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Тетрис</div>
@@ -73,7 +85,6 @@ export class GamesModule {
             <div style="font-size:10px; color:var(--app-accent-primary); margin-top:4px;" id="tetris-high-score">🏆 0</div>
           </div>
 
-          <!-- Судоку -->
           <div onclick="window.gamesModule.openGame('sudoku')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
             <div style="font-size:40px; margin-bottom:8px;">🧩</div>
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Судоку</div>
@@ -81,7 +92,6 @@ export class GamesModule {
             <div style="font-size:10px; color:var(--app-accent-primary); margin-top:4px;" id="sudoku-high-score">🏆 0</div>
           </div>
 
-          <!-- Змейка -->
           <div onclick="window.gamesModule.openGame('snake')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
             <div style="font-size:40px; margin-bottom:8px;">🐍</div>
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Змейка</div>
@@ -89,7 +99,6 @@ export class GamesModule {
             <div style="font-size:10px; color:var(--app-accent-primary); margin-top:4px;" id="snake-high-score">🏆 0</div>
           </div>
 
-          <!-- Виселица -->
           <div onclick="window.gamesModule.openGame('hangman')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
             <div style="font-size:40px; margin-bottom:8px;">💀</div>
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Виселица</div>
@@ -116,10 +125,6 @@ export class GamesModule {
     this._updateHighScores();
   }
 
-  // ==========================================
-  // ОБНОВЛЕНИЕ РЕКОРДОВ
-  // ==========================================
-
   private _updateHighScores(): void {
     const tetrisScore = this.tasksStore.get('tetris_high_score') || 0;
     const sudokuScore = this.tasksStore.get('sudoku_high_score') || 0;
@@ -136,10 +141,6 @@ export class GamesModule {
     if (snakeEl) snakeEl.textContent = `🏆 ${snakeScore}`;
     if (hangmanEl) hangmanEl.textContent = `🏆 ${hangmanScore}`;
   }
-
-  // ==========================================
-  // ПОЛНОЭКРАННЫЙ РЕЖИМ
-  // ==========================================
 
   private _enterFullscreen(): void {
     if (this._isFullscreen) return;
@@ -205,10 +206,6 @@ export class GamesModule {
     console.log('🎮 Полноэкранный режим выключен');
   }
 
-  // ==========================================
-  // ОТКРЫТИЕ ИГРЫ (С ДИНАМИЧЕСКОЙ ЗАГРУЗКОЙ)
-  // ==========================================
-
   async openGame(gameId: string): Promise<void> {
     console.log(`🎮 [openGame] Открываем игру: ${gameId}`);
 
@@ -217,7 +214,6 @@ export class GamesModule {
       return;
     }
 
-    // Если уже открыта другая игра — закрываем её
     if (this._gameInstance && this._mode === 'game') {
       this._gameInstance.destroy();
       this._gameInstance = null;
@@ -226,7 +222,6 @@ export class GamesModule {
     this._isLoadingGame = true;
 
     try {
-      // Динамически импортируем нужную игру
       let GameClass: any = null;
       let gameName = '';
 
@@ -242,7 +237,6 @@ export class GamesModule {
           gameName = '🧩 Судоку';
           break;
         case 'snake':
-          // Заглушка для будущих игр
           if ((window as any).tg?.showAlert) {
             (window as any).tg.showAlert('🐍 Змейка скоро появится!');
           }
@@ -272,7 +266,6 @@ export class GamesModule {
         return;
       }
 
-      // Показываем контейнер
       if (this._gameContainer) {
         this._gameContainer.style.display = 'block';
       }
@@ -280,7 +273,6 @@ export class GamesModule {
         this._gameTitle.textContent = gameName;
       }
 
-      // Создаём экземпляр игры
       try {
         this._gameInstance = new GameClass();
       } catch (err) {
@@ -292,7 +284,6 @@ export class GamesModule {
         return;
       }
 
-      // Инициализируем игру в контейнере
       if (this._gameContent) {
         try {
           this._gameInstance.init(this._gameContent);
@@ -307,18 +298,14 @@ export class GamesModule {
         }
       }
 
-      // Обновляем состояние
       this._mode = 'game';
       this._currentGameId = gameId;
 
-      // Устанавливаем заголовок
       this.headerManager.setTitle(gameName);
       this.headerManager.setActions([]);
 
-      // Включаем полноэкранный режим
       this._enterFullscreen();
 
-      // Сообщаем NavigationState о переходе в игру
       if (this.navigationState) {
         (this.navigationState as any)._state.params = {
           ...(this.navigationState as any)._state.params,
@@ -328,7 +315,6 @@ export class GamesModule {
         (this.navigationState as any)._updateBackButton();
       }
 
-      // Отправляем событие о смене режима
       this.eventBus.emit('games:mode_changed', { mode: 'game', gameId }, this);
 
       console.log(`✅ Игра ${gameId} открыта в полноэкранном режиме`);
@@ -341,10 +327,6 @@ export class GamesModule {
       this._isLoadingGame = false;
     }
   }
-
-  // ==========================================
-  // ЗАКРЫТИЕ ИГРЫ
-  // ==========================================
 
   closeGame(): void {
     console.log('🎮 [closeGame] Закрываем игру...');
@@ -389,10 +371,6 @@ export class GamesModule {
     console.log('✅ Игра закрыта, возврат в список');
   }
 
-  // ==========================================
-  // ПОДПИСКА НА СОБЫТИЯ
-  // ==========================================
-
   private _subscribeToEvents(): void {
     const unsubScore = this.eventBus.on('game:score_updated', () => {
       this._updateHighScores();
@@ -409,10 +387,6 @@ export class GamesModule {
     console.log('📡 GamesModule подписан на события');
   }
 
-  // ==========================================
-  // ПОЛУЧЕНИЕ СОСТОЯНИЯ
-  // ==========================================
-
   getMode(): 'list' | 'game' {
     return this._mode;
   }
@@ -424,10 +398,6 @@ export class GamesModule {
   isGameOpen(): boolean {
     return this._mode === 'game';
   }
-
-  // ==========================================
-  // УПРАВЛЕНИЕ МОДУЛЕМ
-  // ==========================================
 
   show(): void {
     this.container.classList.remove('hidden');
@@ -512,7 +482,5 @@ export class GamesModule {
   }
 }
 
-// Экспортируем класс в глобальный объект
 (window as any).GamesModule = GamesModule;
-
-console.log('✅ GamesModule v5.0.0 загружен (динамическая загрузка игр)');
+console.log('✅ GamesModule v6.0.0 загружен (подписка на баланс)');
