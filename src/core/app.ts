@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 9.0.9 - FIXED: удалён дублирующийся запуск, Eruda статическая
+// Версия: 9.0.9 - FIXED: экономическое ядро инициализируется после авторизации
 // ============================================
 
 import './config';
@@ -53,10 +53,7 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-// ✅ НОВОЕ: ЭКОНОМИЧЕСКОЕ ЯДРО
-import '@/economy';
-
-console.log('🚀 App v9.0.9 начал загрузку (с экономическим ядром)');
+console.log('🚀 App v9.0.9 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -107,11 +104,6 @@ function bindUIToWindow(): void {
     window.eventBus = eventBus;
     
     window.chatSend = chatSend;
-    
-    // ✅ НОВОЕ: экономика в window
-    window.economyManager = (window as any).economyManager;
-    window.economyStore = (window as any).economyStore;
-    window.economyService = (window as any).economyService;
     
     console.log('✅ UI привязан к window');
 }
@@ -193,8 +185,6 @@ function initEruda(role: string): void {
         return;
     }
 
-    // Eruda уже загружена статически из index.html
-    // Просто инициализируем её
     if (typeof (window as any).eruda !== 'undefined') {
         try {
             (window as any).eruda.init();
@@ -344,16 +334,6 @@ async function initApp(): Promise<void> {
     organizerStore.load();
     tasksStore.load();
 
-    // ✅ НОВОЕ: загружаем баланс в EconomyStore
-    if ((window as any).economyStore) {
-        try {
-            await (window as any).economyStore.loadBalance();
-            console.log('💰 Баланс загружен в EconomyStore');
-        } catch (err) {
-            console.warn('⚠️ Не удалось загрузить баланс:', err);
-        }
-    }
-
     // ВЫЗЫВАЕМ НОВЫЙ МЕТОД ИЗ ChatStore — УДАЛЯЕМ ВСЕ ПУСТЫЕ ЧАТЫ
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
@@ -474,6 +454,21 @@ async function initApp(): Promise<void> {
 
             // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR (статическая загрузка)
             initEruda(result.role);
+
+            // ✅ НОВОЕ: ИНИЦИАЛИЗАЦИЯ ЭКОНОМИЧЕСКОГО ЯДРА ПОСЛЕ АВТОРИЗАЦИИ
+            try {
+                const { economyManager, economyStore } = await import('@/economy');
+                window.economyManager = economyManager;
+                window.economyStore = economyStore;
+                
+                if (economyStore) {
+                    await economyStore.loadBalance();
+                    console.log('💰 Баланс загружен в EconomyStore');
+                }
+                console.log('✅ Экономическое ядро инициализировано');
+            } catch (err) {
+                console.warn('⚠️ Не удалось инициализировать экономическое ядро:', err);
+            }
 
             updateSplashProgress(95, '🎬 Завершение...');
         } catch (err) {
