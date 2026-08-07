@@ -1,7 +1,7 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 6.0.0 - добавлены новые модули (coins, referral, sponsors, admin)
+// Версия: 7.0.0 - удалены Tasks и Sponsors
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -13,7 +13,7 @@ import { ChatListModule } from '@/modules/chat-list/ChatListModule';
 import { ChatModule } from '@/modules/chat/ChatModule';
 import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
 import { ProfileModule } from '@/modules/profile/ProfileModule';
-import { TasksModule } from '@/modules/tasks/TasksModule';
+import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 import { CoinsModule } from '@/modules/coins/CoinsModule';
 import { ReferralModule } from '@/modules/referral/ReferralModule';
@@ -38,7 +38,7 @@ export class ModuleLoader {
   constructor() {
     this.container = document.getElementById('app-screen');
     this._registerAllModules();
-    console.log('✅ ModuleLoader v6.0.0 загружен');
+    console.log('✅ ModuleLoader v7.0.0 загружен');
   }
 
   /**
@@ -55,7 +55,7 @@ export class ModuleLoader {
     this.register('chat-list', ChatListModule);
     this.register('chat', ChatModule);
     this.register('games', GamesModule);
-    this.register('tasks', TasksModule);
+    this.register('quests', QuestsModule);
     this.register('profile', ProfileModule);
 
     // Новые модули
@@ -367,4 +367,4 @@ export const moduleLoader = new ModuleLoader();
 // Привязываем к window для глобального доступа
 (window as any).moduleLoader = moduleLoader;
 
-console.log('✅ ModuleLoader v6.0.0 загружен (с новыми модулями)');
+console.log('✅ ModuleLoader v7.0.0 загружен');
