@@ -138,27 +138,27 @@ export class TetrisGame {
     }
   }
 
-  private _loadStats(): void {
-    this.highScore = (tasksStore.get('tetris_high_score') as number) || 0;
-    this.totalGames = (tasksStore.get('tetris_total_games') as number) || 0;
-    this.totalLines = (tasksStore.get('tetris_total_lines') as number) || 0;
-    this.bestScore = (tasksStore.get('tetris_best_score') as number) || 0;
-    this.gamesWon = (tasksStore.get('tetris_games_won') as number) || 0;
-    
-    const savedAchievements = tasksStore.get('tetris_achievements') as Record<string, boolean>;
-    if (savedAchievements) {
-      this.achievements = { ...this.achievements, ...savedAchievements };
-    }
+private _loadStats(): void {
+  this.highScore = this.tasksStore.getGameData<number>('tetris_high_score', 0);
+  this.totalGames = this.tasksStore.getGameData<number>('tetris_total_games', 0);
+  this.totalLines = this.tasksStore.getGameData<number>('tetris_total_lines', 0);
+  this.bestScore = this.tasksStore.getGameData<number>('tetris_best_score', 0);
+  this.gamesWon = this.tasksStore.getGameData<number>('tetris_games_won', 0);
+  
+  const savedAchievements = this.tasksStore.getGameData<Record<string, boolean>>('tetris_achievements', {});
+  if (savedAchievements) {
+    this.achievements = { ...this.achievements, ...savedAchievements };
   }
+}
 
-  private _saveStats(): void {
-    tasksStore.set('tetris_high_score', this.highScore);
-    tasksStore.set('tetris_total_games', this.totalGames);
-    tasksStore.set('tetris_total_lines', this.totalLines);
-    tasksStore.set('tetris_best_score', this.bestScore);
-    tasksStore.set('tetris_games_won', this.gamesWon);
-    tasksStore.set('tetris_achievements', this.achievements);
-  }
+private _saveStats(): void {
+  this.tasksStore.setGameData('tetris_high_score', this.highScore);
+  this.tasksStore.setGameData('tetris_total_games', this.totalGames);
+  this.tasksStore.setGameData('tetris_total_lines', this.totalLines);
+  this.tasksStore.setGameData('tetris_best_score', this.bestScore);
+  this.tasksStore.setGameData('tetris_games_won', this.gamesWon);
+  this.tasksStore.setGameData('tetris_achievements', this.achievements);
+}
 
   start(): void {
     if (this.isRunning) return;
