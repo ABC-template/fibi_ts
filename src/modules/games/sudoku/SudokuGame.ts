@@ -1,12 +1,13 @@
 // ============================================
 // src/modules/games/sudoku/SudokuGame.ts
 // Описание: Классическое Судоку
-// Версия: 3.0.1 - CLEAN (исправлен key)
+// Версия: 4.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import './sudoku.css';
 import { tasksStore } from '@/store/TasksStore';
 import { eventBus } from '@/core/event-bus';
+import { userStore } from '@/store/UserStore';
 
 export interface ISudokuState {
   difficulty: 'easy' | 'medium' | 'hard';
@@ -26,7 +27,6 @@ export class SudokuGame {
   private gameOver: boolean = false;
   private difficulty: 'easy' | 'medium' | 'hard' = 'medium';
   
-  // Игровые данные
   private board: number[][] = [];
   private solution: number[][] = [];
   private given: boolean[][] = [];
@@ -38,15 +38,15 @@ export class SudokuGame {
   private elapsedTime: number = 0;
   private timerInterval: number | null = null;
   
-  // UI состояния
   private selectedRow: number = -1;
   private selectedCol: number = -1;
   
-  // Рекорды
   private highScore: number = 0;
   private bestTime: number | null = null;
   
-  // DOM элементы
+  private userId: number | null = null;
+  private balanceSubscription: (() => void) | null = null;
+  
   private boardEl: HTMLElement | null = null;
   private timerEl: HTMLElement | null = null;
   private errorsEl: HTMLElement | null = null;
@@ -54,20 +54,16 @@ export class SudokuGame {
   private highEl: HTMLElement | null = null;
   private overlayEl: HTMLElement | null = null;
 
-  constructor() {
-    // Пустой конструктор
-  }
-
-  // ==========================================
-  // ИНИЦИАЛИЗАЦИЯ
-  // ==========================================
+  constructor() {}
 
   init(container: HTMLElement, difficulty: 'easy' | 'medium' | 'hard' = 'medium'): void {
     this.container = container;
     this.difficulty = difficulty;
+    this.userId = userStore.userId;
     
     this._loadHighScores();
     this._generatePuzzle();
+    this._subscribeToBalance();
     
     this.errors = 0;
     this.hintsUsed = 0;
@@ -88,9 +84,25 @@ export class SudokuGame {
     console.log(`🧩 Судоку инициализирован (${this.difficulty})`);
   }
 
-  // ==========================================
-  // ГЕНЕРАЦИЯ ПОЛЯ
-  // ==========================================
+  private _subscribeToBalance(): void {
+    if (this.balanceSubscription) {
+      this.balanceSubscription();
+      this.balanceSubscription = null;
+    }
+
+    this.balanceSubscription = eventBus.on('economy:balance:updated', (data) => {
+      if (data.userId === this.userId) {
+        this._updateBalanceUI(data.newBalance);
+      }
+    }, this);
+  }
+
+  private _updateBalanceUI(newBalance: number): void {
+    const balanceEl = document.getElementById('sudoku-balance');
+    if (balanceEl) {
+      balanceEl.textContent = String(newBalance);
+    }
+  }
 
   private _generatePuzzle(): void {
     this.solution = this._generateSolvedBoard();
@@ -182,10 +194,6 @@ export class SudokuGame {
     return shuffled;
   }
 
-  // ==========================================
-  // РЕКОРДЫ
-  // ==========================================
-
   private _loadHighScores(): void {
     const key = `sudoku_${this.difficulty}_high_score`;
     this.highScore = (tasksStore.get(key) as number) || 0;
@@ -202,13 +210,24 @@ export class SudokuGame {
       this.bestTime = time;
       tasksStore.set(timeKey, time);
       
-      const reward = 30;
-      tasksStore.addBalance(reward, `🧩 Рекорд в Судоку (${this.difficulty})!`);
+      if (this.userId) {
+        eventBus.emit('economy:earn', {
+          userId: this.userId,
+          source: 'game:sudoku:win',
+          amount: 30,
+          metadata: {
+            difficulty: this.difficulty,
+            time: time,
+            errors: this.errors,
+            hints: this.hintsUsed
+          }
+        });
+      }
       
       eventBus.emit('game:score_updated', {
         gameId: 'sudoku',
         score: time,
-        reward: reward,
+        reward: 30,
         difficulty: this.difficulty
       });
       
@@ -223,15 +242,12 @@ export class SudokuGame {
     }
   }
 
-  // ==========================================
-  // РЕНДЕРИНГ
-  // ==========================================
-
   private _render(): void {
     if (!this.container) return;
     
     const timeStr = this._formatTime(this.elapsedTime);
     const errorsStr = `${this.errors}/${this.maxErrors}`;
+    const currentBalance = (window as any).economyStore?.getBalance() || 0;
     
     this.container.innerHTML = `
       <div class="sudoku-container" id="sudoku-container">
@@ -247,6 +263,9 @@ export class SudokuGame {
           </div>
           <div class="sudoku-info-item">
             🏆 <span class="value" id="sudoku-high">${this.highScore}</span>
+          </div>
+          <div class="sudoku-info-item">
+            🪙 <span class="value" id="sudoku-balance">${currentBalance}</span>
           </div>
         </div>
         
@@ -325,10 +344,6 @@ export class SudokuGame {
     }
     return html;
   }
-
-  // ==========================================
-  // ОБНОВЛЕНИЕ UI
-  // ==========================================
 
   private _updateUI(): void {
     if (!this.boardEl) return;
@@ -435,10 +450,6 @@ export class SudokuGame {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 
-  // ==========================================
-  // ТАЙМЕР
-  // ==========================================
-
   private _startTimer(): void {
     if (this.startTime !== null) return;
     this.startTime = Date.now() - this.elapsedTime * 1000;
@@ -458,10 +469,6 @@ export class SudokuGame {
       this.timerEl.textContent = this._formatTime(this.elapsedTime);
     }
   }
-
-  // ==========================================
-  // ЛОГИКА ИГРЫ
-  // ==========================================
 
   private _selectCell(row: number, col: number): void {
     if (this.gameOver || this.isPaused) return;
@@ -668,10 +675,6 @@ export class SudokuGame {
     console.log('💀 Судоку проиграно');
   }
 
-  // ==========================================
-  // УПРАВЛЕНИЕ
-  // ==========================================
-
   start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
@@ -698,6 +701,11 @@ export class SudokuGame {
     this.isRunning = false;
     this.isPaused = false;
     
+    if (this.balanceSubscription) {
+      this.balanceSubscription();
+      this.balanceSubscription = null;
+    }
+    
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
@@ -711,10 +719,6 @@ export class SudokuGame {
     
     console.log('🧹 Судоку уничтожен');
   }
-
-  // ==========================================
-  // КНОПКИ
-  // ==========================================
 
   private _bindButtons(): void {
     document.querySelectorAll('.sudoku-num-btn').forEach(btn => {
@@ -775,10 +779,6 @@ export class SudokuGame {
     }
   }
 
-  // ==========================================
-  // КЛАВИАТУРА
-  // ==========================================
-
   private _setupControls(): void {
     document.addEventListener('keydown', this._handleKeyDown.bind(this));
     document.addEventListener('visibilitychange', this._handleVisibilityChange.bind(this));
@@ -830,10 +830,6 @@ export class SudokuGame {
     }
   }
 
-  // ==========================================
-  // ВИДИМОСТЬ ВКЛАДКИ
-  // ==========================================
-
   private _handleVisibilityChange(): void {
     if (document.hidden) {
       if (this.isRunning && !this.isPaused && !this.gameOver) {
@@ -841,10 +837,6 @@ export class SudokuGame {
       }
     }
   }
-
-  // ==========================================
-  // ПОЛУЧЕНИЕ СОСТОЯНИЯ
-  // ==========================================
 
   getScore(): number {
     return this.highScore;
@@ -868,6 +860,5 @@ export class SudokuGame {
   }
 }
 
-// Экспортируем в глобальный объект
 (window as any).SudokuGame = SudokuGame;
-console.log('✅ SudokuGame v3.0.1 загружен');
+console.log('✅ SudokuGame v4.0.0 загружен (экономика через EventBus)');
