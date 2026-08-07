@@ -1,13 +1,23 @@
 // ============================================
 // src/store/TasksStore.ts
 // Хранилище заданий (фасад для API + кэш)
-// Версия: 5.0.0 - полностью переписан
+// Версия: 6.0.0 - с i18n и конфигом
 // ============================================
 
 import { BaseStore } from './BaseStore';
 import { apiClient } from '@/services/api';
 import { eventBus } from '@/core/event-bus';
-import { ACHIEVEMENTS, DAILY_QUESTS, DAILY_BONUS_AMOUNT } from '@/config/achievements';
+import {
+  ACHIEVEMENTS,
+  DAILY_QUESTS,
+  DAILY_BONUS_AMOUNT,
+  getLocalizedAchievement,
+  getLocalizedQuest,
+  getAchievementTitle,
+  getAchievementDescription,
+  getQuestTitle,
+  getQuestDescription,
+} from '@/config/achievements';
 import type { IDailyQuest, IAchievement } from '@types';
 
 interface ITasksCacheData {
@@ -162,40 +172,41 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
   }
 
   private _mergeQuests(serverQuests: any[]): void {
-    // Создаём карту существующих заданий
     const questMap = new Map<string, IDailyQuest>();
     for (const q of this._data.quests) {
       questMap.set(q.id, q);
     }
 
-    // Обновляем или добавляем
     for (const sq of serverQuests) {
       const existing = questMap.get(sq.id);
+      const config = getLocalizedQuest(sq.id);
+
       if (existing) {
         existing.progress = sq.progress || 0;
         existing.completed = sq.completed || false;
         existing.claimed = sq.claimed || false;
-      } else {
-        // Находим конфиг задания
-        const config = DAILY_QUESTS.find(q => q.id === sq.id);
         if (config) {
-          const newQuest: IDailyQuest = {
-            id: sq.id,
-            title: config.title,
-            description: config.description,
-            target: config.target,
-            reward: config.reward,
-            progress: sq.progress || 0,
-            completed: sq.completed || false,
-            claimed: sq.claimed || false,
-            type: 'daily',
-          };
-          this._data.quests.push(newQuest);
+          existing.target = config.target;
+          existing.reward = config.reward;
+          existing.title = config.title;
+          existing.description = config.description;
         }
+      } else if (config) {
+        const newQuest: IDailyQuest = {
+          id: sq.id,
+          title: config.title,
+          description: config.description,
+          target: config.target,
+          reward: config.reward,
+          progress: sq.progress || 0,
+          completed: sq.completed || false,
+          claimed: sq.claimed || false,
+          type: 'daily',
+        };
+        this._data.quests.push(newQuest);
       }
     }
 
-    // Удаляем задания, которых нет на сервере (если они не в DAILY_QUESTS)
     const serverQuestIds = new Set(serverQuests.map(q => q.id));
     this._data.quests = this._data.quests.filter(q => serverQuestIds.has(q.id));
   }
@@ -208,7 +219,7 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
 
     for (const sa of serverAchievements) {
       const existing = achievementMap.get(sa.id);
-      const config = ACHIEVEMENTS.find(a => a.id === sa.id);
+      const config = getLocalizedAchievement(sa.id);
 
       if (existing) {
         existing.progress = sa.progress || 0;
@@ -340,8 +351,12 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
     const quest = this._data.quests.find(q => q.id === questId);
     if (!quest || !quest.completed || quest.claimed) return null;
 
+    // Берём награду из конфига!
+    const config = getLocalizedQuest(questId);
+    if (!config) return null;
+
     try {
-      const result = await apiClient.claimQuestReward(questId);
+      const result = await apiClient.claimQuestReward(questId, config.reward);
 
       if (result.success) {
         quest.claimed = true;
@@ -408,8 +423,12 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
     const achievement = this._data.achievements.find(a => a.id === achievementId);
     if (!achievement || !achievement.unlocked || achievement.claimed) return null;
 
+    // Берём награду из конфига!
+    const config = getLocalizedAchievement(achievementId);
+    if (!config) return null;
+
     try {
-      const result = await apiClient.claimAchievementReward(achievementId);
+      const result = await apiClient.claimAchievementReward(achievementId, config.reward);
 
       if (result.success) {
         achievement.claimed = true;
@@ -541,4 +560,4 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
 
 // Создаем экземпляр
 export const tasksStore = new TasksStore();
-console.log('✅ TasksStore v5.0.0 загружен');
+console.log('✅ TasksStore v6.0.0 загружен');
