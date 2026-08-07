@@ -1,11 +1,13 @@
 // ============================================
 // src/modules/games/tetris/TetrisGame.ts
 // Описание: Классический Тетрис
-// Версия: 4.0.0 - CLEAN
+// Версия: 5.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import './tetris.css';
 import { tasksStore } from '@/store/TasksStore';
+import { eventBus } from '@/core/event-bus';
+import { userStore } from '@/store/UserStore';
 
 export interface ITetrisState {
   score: number;
@@ -40,7 +42,6 @@ export class TetrisGame {
   private dropInterval: number = 1000;
   private lastDropTime: number = 0;
   
-  // Игровое поле
   private cols: number = 10;
   private rows: number = 20;
   private board: string[][] = [];
@@ -48,17 +49,17 @@ export class TetrisGame {
   private nextPiece: IPiece | null = null;
   private ghostRow: number = 0;
   
-  // Статистика
   private totalGames: number = 0;
   private totalLines: number = 0;
   private bestScore: number = 0;
   private gamesWon: number = 0;
   
-  // Флаг для анимации удаления
   private _isClearingLines: boolean = false;
   private _isPausedByVisibility: boolean = false;
   
-  // Фигуры
+  private userId: number | null = null;
+  private balanceSubscription: (() => void) | null = null;
+  
   private pieces: IPiece[] = [
     { shape: [[1, 1, 1, 1]], color: 'I' },
     { shape: [[1, 1], [1, 1]], color: 'O' },
@@ -69,7 +70,6 @@ export class TetrisGame {
     { shape: [[0, 0, 1], [1, 1, 1]], color: 'L' }
   ];
   
-  // Достижения
   private achievements: Record<string, boolean> = {
     firstGame: false,
     line10: false,
@@ -83,7 +83,6 @@ export class TetrisGame {
     perfectClear: false
   };
   
-  // DOM элементы
   private boardEl: HTMLElement | null = null;
   private previewEl: HTMLElement | null = null;
   private scoreEl: HTMLElement | null = null;
@@ -94,22 +93,19 @@ export class TetrisGame {
   private pauseBtn: HTMLElement | null = null;
   private resetBtn: HTMLElement | null = null;
 
-  constructor() {
-    // Пустой конструктор
-  }
-
-  // ==========================================
-  // ИНИЦИАЛИЗАЦИЯ
-  // ==========================================
+  constructor() {}
 
   init(container: HTMLElement): void {
     this.container = container;
+    this.userId = userStore.userId;
+    
     this._loadStats();
     this._initBoard();
     this._spawnPiece();
     this._spawnNextPiece();
     this._render();
     this._setupControls();
+    this._subscribeToBalance();
     
     this.score = 0;
     this.lines = 0;
@@ -119,12 +115,28 @@ export class TetrisGame {
     this.isPaused = false;
     this._isClearingLines = false;
     
-    console.log('🧩 Тетрис v4.0.0 инициализирован');
+    console.log('🧩 Тетрис v5.0.0 инициализирован (экономика через EventBus)');
   }
 
-  // ==========================================
-  // СТАТИСТИКА
-  // ==========================================
+  private _subscribeToBalance(): void {
+    if (this.balanceSubscription) {
+      this.balanceSubscription();
+      this.balanceSubscription = null;
+    }
+
+    this.balanceSubscription = eventBus.on('economy:balance:updated', (data) => {
+      if (data.userId === this.userId) {
+        this._updateBalanceUI(data.newBalance);
+      }
+    }, this);
+  }
+
+  private _updateBalanceUI(newBalance: number): void {
+    const balanceEl = document.getElementById('tetris-balance');
+    if (balanceEl) {
+      balanceEl.textContent = String(newBalance);
+    }
+  }
 
   private _loadStats(): void {
     this.highScore = (tasksStore.get('tetris_high_score') as number) || 0;
@@ -147,10 +159,6 @@ export class TetrisGame {
     tasksStore.set('tetris_games_won', this.gamesWon);
     tasksStore.set('tetris_achievements', this.achievements);
   }
-
-  // ==========================================
-  // УПРАВЛЕНИЕ
-  // ==========================================
 
   start(): void {
     if (this.isRunning) return;
@@ -194,6 +202,11 @@ export class TetrisGame {
     this.isRunning = false;
     this.isPaused = false;
     
+    if (this.balanceSubscription) {
+      this.balanceSubscription();
+      this.balanceSubscription = null;
+    }
+    
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -207,10 +220,6 @@ export class TetrisGame {
     
     console.log('🧹 Тетрис уничтожен');
   }
-
-  // ==========================================
-  // ИГРОВОЙ ЦИКЛ
-  // ==========================================
 
   private _gameLoop(timestamp: number): void {
     if (!this.isRunning || this.isPaused || this.gameOver) {
@@ -228,14 +237,11 @@ export class TetrisGame {
     }
   }
 
-  // ==========================================
-  // РЕНДЕРИНГ
-  // ==========================================
-
   private _render(): void {
     if (!this.container) return;
     
-    // Сокращенный рендеринг (основная логика)
+    const currentBalance = (window as any).economyStore?.getBalance() || 0;
+    
     this.container.innerHTML = `
       <div class="tetris-container" id="tetris-container">
         <div class="tetris-game-wrapper">
@@ -257,6 +263,9 @@ export class TetrisGame {
               <div class="tetris-info-row">
                 <span class="tetris-info-item">📈 <span class="value" id="tetris-level">1</span></span>
                 <span class="tetris-info-item">⭐ <span class="value" id="tetris-high">${this.highScore}</span></span>
+              </div>
+              <div class="tetris-info-row">
+                <span class="tetris-info-item">🪙 <span class="value" id="tetris-balance">${currentBalance}</span></span>
               </div>
             </div>
             <div class="tetris-actions">
@@ -379,10 +388,6 @@ export class TetrisGame {
     return flat.join('');
   }
 
-  // ==========================================
-  // ОБНОВЛЕНИЕ UI
-  // ==========================================
-
   private _updateUI(): void {
     if (!this.boardEl) return;
     
@@ -455,10 +460,6 @@ export class TetrisGame {
       this.overlayEl.style.display = 'none';
     }
   }
-
-  // ==========================================
-  // ЛОГИКА ИГРЫ
-  // ==========================================
 
   private _initBoard(): void {
     this.board = [];
@@ -549,10 +550,6 @@ export class TetrisGame {
     }
   }
 
-  // ==========================================
-  // УДАЛЕНИЕ СТРОК
-  // ==========================================
-
   private _clearLines(): void {
     let cleared = 0;
     const clearedRows: number[] = [];
@@ -611,10 +608,6 @@ export class TetrisGame {
       }, 250);
     }
   }
-
-  // ==========================================
-  // ДВИЖЕНИЯ ФИГУР
-  // ==========================================
 
   private _movePieceDown(): void {
     if (!this.currentPiece || this.gameOver || this.isPaused) return;
@@ -717,10 +710,6 @@ export class TetrisGame {
     return row;
   }
 
-  // ==========================================
-  // ДОСТИЖЕНИЯ
-  // ==========================================
-
   private _unlockAchievement(id: string): void {
     if (this.achievements[id]) return;
     
@@ -754,7 +743,21 @@ export class TetrisGame {
     };
     
     const reward = rewards[id] || 10;
-    tasksStore.addBalance(reward, `🏆 Достижение: ${names[id]}`);
+    
+    if (this.userId) {
+      eventBus.emit('economy:earn', {
+        userId: this.userId,
+        source: `game:tetris:achievement`,
+        amount: reward,
+        metadata: {
+          achievement_id: id,
+          achievement_name: names[id],
+          score: this.score,
+          level: this.level,
+          lines: this.lines
+        }
+      });
+    }
     
     if ((window as any).uiRenderer) {
       (window as any).uiRenderer.showToast(`🏆 ${names[id]}! +${reward} 🪙`, 'success', 2500);
@@ -763,26 +766,29 @@ export class TetrisGame {
     console.log(`🏆 Достижение разблокировано: ${names[id]}`);
   }
 
-  // ==========================================
-  // РЕКОРДЫ
-  // ==========================================
-
   private _checkHighScore(): void {
     if (this.score > this.highScore) {
       this.highScore = this.score;
       this._saveStats();
       
-      tasksStore.addBalance(30, '🏆 Новый рекорд в Тетрисе!');
+      if (this.userId) {
+        eventBus.emit('economy:earn', {
+          userId: this.userId,
+          source: 'game:tetris:high_score',
+          amount: 30,
+          metadata: {
+            score: this.score,
+            level: this.level,
+            lines: this.lines
+          }
+        });
+      }
       
       if ((window as any).uiRenderer) {
         (window as any).uiRenderer.showToast('🏆 Новый рекорд! +30 🪙', 'success', 2000);
       }
     }
   }
-
-  // ==========================================
-  // СБРОС
-  // ==========================================
 
   private _resetGame(): void {
     if (this.lines > 0) this.totalLines += this.lines;
@@ -809,10 +815,6 @@ export class TetrisGame {
     
     console.log('🔄 Тетрис сброшен');
   }
-
-  // ==========================================
-  // КНОПКИ
-  // ==========================================
 
   private _bindButtons(): void {
     const actionMap: Record<string, () => void> = {
@@ -869,10 +871,6 @@ export class TetrisGame {
     }
   }
 
-  // ==========================================
-  // КЛАВИАТУРА
-  // ==========================================
-
   private _setupControls(): void {
     document.addEventListener('keydown', this._handleKeyDown.bind(this));
     document.addEventListener('visibilitychange', this._handleVisibilityChange.bind(this));
@@ -911,10 +909,6 @@ export class TetrisGame {
     }
   }
 
-  // ==========================================
-  // ВИДИМОСТЬ ВКЛАДКИ
-  // ==========================================
-
   private _handleVisibilityChange(): void {
     if (document.hidden) {
       if (this.isRunning && !this.isPaused && !this.gameOver && !this._isClearingLines) {
@@ -930,10 +924,6 @@ export class TetrisGame {
       }
     }
   }
-
-  // ==========================================
-  // ПОЛУЧЕНИЕ СОСТОЯНИЯ
-  // ==========================================
 
   getScore(): number {
     return this.score;
@@ -961,6 +951,5 @@ export class TetrisGame {
   }
 }
 
-// Экспортируем в глобальный объект
 (window as any).TetrisGame = TetrisGame;
-console.log('✅ TetrisGame v4.0.0 загружен');
+console.log('✅ TetrisGame v5.0.0 загружен (экономика через EventBus)');
