@@ -1,10 +1,11 @@
 // ============================================
 // src/modules/sponsors/SponsorsStore.ts
 // Хранилище заданий от спонсоров
-// Версия: 1.0.0
+// Версия: 2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
+import { eventBus } from '@/core/event-bus';
 import type { UUID, ISODateString } from '@types';
 
 export type SponsorTaskType = 'subscribe' | 'visit' | 'action' | 'survey';
@@ -19,14 +20,14 @@ export interface ISponsorTask {
   sponsor_logo?: string;
   reward: number;
   type: SponsorTaskType;
-  target: string; // канал, сайт, действие
-  action_required: string; // что нужно сделать
+  target: string;
+  action_required: string;
   verification_type: VerificationType;
-  pseudo_hours: number; // часы для псевдо-проверки (по умолчанию 12)
+  pseudo_hours: number;
   is_active: boolean;
   starts_at: ISODateString;
   expires_at?: ISODateString;
-  max_completions?: number; // сколько раз можно выполнить
+  max_completions?: number;
   completions_count: number;
   created_at: ISODateString;
 }
@@ -41,7 +42,7 @@ export interface IUserTaskCompletion {
   proof_data?: any;
   reward_claimed: boolean;
   created_at: ISODateString;
-  expires_at?: ISODateString; // для псевдо-проверки
+  expires_at?: ISODateString;
 }
 
 export interface ISponsorsStoreData {
@@ -66,11 +67,19 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
 
     if (!this._data.tasks) this._data.tasks = [];
     if (!this._data.completions) this._data.completions = [];
+
+    this._subscribeToBalance();
   }
 
-  /**
-   * Получить активные задания
-   */
+  private _subscribeToBalance(): void {
+    eventBus.on('economy:balance:updated', (data) => {
+      this._emitChange('sponsors:balance_updated', { 
+        userId: data.userId, 
+        newBalance: data.newBalance 
+      });
+    }, this);
+  }
+
   getActiveTasks(): ISponsorTask[] {
     const now = new Date().toISOString();
     return this._data.tasks.filter(t =>
@@ -80,44 +89,28 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     );
   }
 
-  /**
-   * Получить все задания (для админа)
-   */
   getAllTasks(): ISponsorTask[] {
     return this._data.tasks || [];
   }
 
-  /**
-   * Получить задание по ID
-   */
   getTask(taskId: UUID): ISponsorTask | undefined {
     return this._data.tasks.find(t => t.id === taskId);
   }
 
-  /**
-   * Получить выполнение задания пользователем
-   */
   getCompletion(taskId: UUID, userId: number): IUserTaskCompletion | undefined {
     return this._data.completions.find(
       c => c.task_id === taskId && c.user_id === userId
     );
   }
 
-  /**
-   * Получить все выполнения пользователя
-   */
   getUserCompletions(userId: number): IUserTaskCompletion[] {
     return this._data.completions.filter(c => c.user_id === userId);
   }
 
-  /**
-   * Проверить, может ли пользователь выполнить задание
-   */
   canCompleteTask(taskId: UUID, userId: number): boolean {
     const task = this.getTask(taskId);
     if (!task || !task.is_active) return false;
 
-    // Проверяем лимит выполнений
     if (task.max_completions) {
       const completions = this._data.completions.filter(
         c => c.task_id === taskId && c.status === 'approved'
@@ -125,23 +118,16 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
       if (completions.length >= task.max_completions) return false;
     }
 
-    // Проверяем, не выполнял ли уже пользователь
     const existing = this.getCompletion(taskId, userId);
     if (existing) {
-      // Если статус 'rejected' — можно попробовать снова
       if (existing.status === 'rejected') return true;
-      // Если 'pending' или 'submitted' — уже в процессе
       if (existing.status === 'pending' || existing.status === 'submitted') return false;
-      // Если 'approved' — уже выполнил
       if (existing.status === 'approved') return false;
     }
 
     return true;
   }
 
-  /**
-   * Добавить задание (только для creator)
-   */
   addTask(task: Omit<ISponsorTask, 'id' | 'completions_count' | 'created_at'>): ISponsorTask {
     const newTask: ISponsorTask = {
       id: this.generateUUID(),
@@ -158,9 +144,6 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     return newTask;
   }
 
-  /**
-   * Обновить задание (только для creator)
-   */
   updateTask(taskId: UUID, data: Partial<ISponsorTask>): ISponsorTask | null {
     const index = this._data.tasks.findIndex(t => t.id === taskId);
     if (index === -1) {
@@ -176,15 +159,11 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     return this._data.tasks[index];
   }
 
-  /**
-   * Удалить задание (только для creator)
-   */
   deleteTask(taskId: UUID): boolean {
     const index = this._data.tasks.findIndex(t => t.id === taskId);
     if (index === -1) return false;
 
     this._data.tasks.splice(index, 1);
-    // Удаляем все выполнения этого задания
     this._data.completions = this._data.completions.filter(c => c.task_id !== taskId);
     this.save();
 
@@ -193,20 +172,15 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     return true;
   }
 
-  /**
-   * Отправить заявку на выполнение задания
-   */
   submitCompletion(taskId: UUID, userId: number, proof_data?: any): IUserTaskCompletion | null {
     const task = this.getTask(taskId);
     if (!task) return null;
 
-    // Проверяем, можно ли выполнить
     if (!this.canCompleteTask(taskId, userId)) {
       console.warn(`⚠️ Нельзя выполнить задание ${taskId}`);
       return null;
     }
 
-    // Если была rejected-заявка — удаляем её
     const existing = this.getCompletion(taskId, userId);
     if (existing && existing.status === 'rejected') {
       this._data.completions = this._data.completions.filter(c => c.id !== existing.id);
@@ -238,9 +212,6 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     return completion;
   }
 
-  /**
-   * Обновить статус выполнения
-   */
   updateCompletionStatus(completionId: UUID, status: TaskStatus): IUserTaskCompletion | null {
     const index = this._data.completions.findIndex(c => c.id === completionId);
     if (index === -1) return null;
@@ -262,9 +233,6 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     return this._data.completions[index];
   }
 
-  /**
-   * Отметить награду как полученную
-   */
   claimReward(completionId: UUID): boolean {
     const index = this._data.completions.findIndex(c => c.id === completionId);
     if (index === -1) return false;
@@ -287,17 +255,11 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     return true;
   }
 
-  /**
-   * Получить задания, доступные для пользователя
-   */
   getAvailableTasks(userId: number): ISponsorTask[] {
     const activeTasks = this.getActiveTasks();
     return activeTasks.filter(task => this.canCompleteTask(task.id, userId));
   }
 
-  /**
-   * Получить статистику по заданиям для пользователя
-   */
   getUserStats(userId: number): {
     total: number;
     pending: number;
@@ -322,16 +284,11 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     };
   }
 
-  /**
-   * Синхронизировать с сервером
-   */
   sync(data: { tasks: ISponsorTask[]; completions: IUserTaskCompletion[] }): void {
-    // Мержим задания
     const taskIds = new Set(this._data.tasks.map(t => t.id));
     const newTasks = data.tasks.filter(t => !taskIds.has(t.id));
     this._data.tasks = [...this._data.tasks, ...newTasks];
 
-    // Обновляем существующие задания
     for (const task of data.tasks) {
       const index = this._data.tasks.findIndex(t => t.id === task.id);
       if (index !== -1) {
@@ -339,7 +296,6 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
       }
     }
 
-    // Мержим выполнения
     const compIds = new Set(this._data.completions.map(c => c.id));
     const newComps = data.completions.filter(c => !compIds.has(c.id));
     this._data.completions = [...this._data.completions, ...newComps];
@@ -354,9 +310,6 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
     });
   }
 
-  /**
-   * Очистить все данные
-   */
   clear(): void {
     this._data = {
       tasks: [],
@@ -370,4 +323,4 @@ export class SponsorsStore extends BaseStore<ISponsorsStoreData> {
 }
 
 export const sponsorsStore = new SponsorsStore();
-console.log('✅ SponsorsStore v1.0.0 загружен');
+console.log('✅ SponsorsStore v2.0.0 загружен');
