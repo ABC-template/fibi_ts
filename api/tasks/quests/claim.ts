@@ -1,7 +1,7 @@
 // ============================================
 // api/tasks/quests/claim.ts
 // Забрать награду за задание
-// Версия: 1.0.0
+// Версия: 2.0.0 - награда передаётся с клиента
 // ============================================
 
 import {
@@ -18,6 +18,7 @@ export const config = { runtime: 'edge' };
 
 interface IClaimRequest {
   questId: string;
+  reward: number; // 👈 награда с клиента
 }
 
 export default async function handler(request: Request): Promise<Response> {
@@ -43,10 +44,14 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { questId } = body;
+    const { questId, reward } = body;
 
     if (!questId) {
       return errorResponse('questId is required', 400);
+    }
+
+    if (!reward || reward <= 0) {
+      return errorResponse('reward must be greater than 0', 400);
     }
 
     const config = getSupabaseConfig('service');
@@ -56,6 +61,7 @@ export default async function handler(request: Request): Promise<Response> {
       {
         p_user_id: userId,
         p_quest_id: questId,
+        p_reward: reward,
       },
       config
     );
