@@ -194,53 +194,55 @@ export class SudokuGame {
     return shuffled;
   }
 
-  private _loadHighScores(): void {
-    const key = `sudoku_${this.difficulty}_high_score`;
-    this.highScore = (tasksStore.get(key) as number) || 0;
-    this.bestTime = (tasksStore.get(`sudoku_${this.difficulty}_best_time`) as number) || null;
-  }
+private _loadHighScores(): void {
+  const key = `sudoku_${this.difficulty}_high_score`;
+  this.highScore = this.tasksStore.getGameData<number>(key, 0);
+  
+  const timeKey = `sudoku_${this.difficulty}_best_time`;
+  this.bestTime = this.tasksStore.getGameData<number | null>(timeKey, null);
+}
 
-  private _saveHighScore(): void {
-    if (this.errors > this.maxErrors) return;
+private _saveHighScore(): void {
+  if (this.errors > this.maxErrors) return;
+  
+  const time = this.elapsedTime;
+  const timeKey = `sudoku_${this.difficulty}_best_time`;
+  
+  if (!this.bestTime || time < this.bestTime) {
+    this.bestTime = time;
+    this.tasksStore.setGameData(timeKey, time);
     
-    const time = this.elapsedTime;
-    const timeKey = `sudoku_${this.difficulty}_best_time`;
-    
-    if (!this.bestTime || time < this.bestTime) {
-      this.bestTime = time;
-      tasksStore.set(timeKey, time);
-      
-      if (this.userId) {
-        eventBus.emit('economy:earn', {
-          userId: this.userId,
-          source: 'game:sudoku:win',
-          amount: 30,
-          metadata: {
-            difficulty: this.difficulty,
-            time: time,
-            errors: this.errors,
-            hints: this.hintsUsed
-          }
-        });
-      }
-      
-      eventBus.emit('game:score_updated', {
-        gameId: 'sudoku',
-        score: time,
-        reward: 30,
-        difficulty: this.difficulty
+    if (this.userId) {
+      eventBus.emit('economy:earn', {
+        userId: this.userId,
+        source: 'game:sudoku:win',
+        amount: 30,
+        metadata: {
+          difficulty: this.difficulty,
+          time: time,
+          errors: this.errors,
+          hints: this.hintsUsed
+        }
       });
-      
-      this._updateUI();
     }
     
-    const points = Math.max(100, Math.floor(1000 / (time / 60)));
-    if (points > this.highScore) {
-      this.highScore = points;
-      const highKey = `sudoku_${this.difficulty}_high_score`;
-      tasksStore.set(highKey, points);
-    }
+    eventBus.emit('game:score_updated', {
+      gameId: 'sudoku',
+      score: time,
+      reward: 30,
+      difficulty: this.difficulty
+    });
+    
+    this._updateUI();
   }
+  
+  const points = Math.max(100, Math.floor(1000 / (time / 60)));
+  if (points > this.highScore) {
+    this.highScore = points;
+    const highKey = `sudoku_${this.difficulty}_high_score`;
+    this.tasksStore.setGameData(highKey, points);
+  }
+}
 
   private _render(): void {
     if (!this.container) return;
