@@ -10,7 +10,7 @@ export * from './ui';
 // Основные модули
 export * from './dashboard/DashboardModule';
 export * from './chat-list/ChatListModule';
-export * include'./chat/ChatModule';
+export * from './chat/ChatModule';
 export * from './organizer/OrganizerModule';
 export * from './profile/ProfileModule';
 export * from './quests/QuestsModule';
@@ -29,4 +29,5 @@ export * from './export-local';
 // Новые модули
 export * from './coins/CoinsModule';
 export * from './referral/ReferralModule';
+export * from './sponsors/SponsorsModule';
 export * from './admin/AdminModule';
