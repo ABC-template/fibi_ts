@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 9.0.9 - FIXED: удалён дублирующийся запуск, Eruda статическая
+// Версия: 10.0.0 - ДОБАВЛЕНО: экономическое ядро
 // ============================================
 
 import './config';
@@ -53,7 +53,10 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v9.0.9 начал загрузку');
+// ✅ НОВОЕ: ЭКОНОМИЧЕСКОЕ ЯДРО
+import '@/economy';
+
+console.log('🚀 App v10.0.0 начал загрузку (с экономическим ядром)');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -104,6 +107,11 @@ function bindUIToWindow(): void {
     window.eventBus = eventBus;
     
     window.chatSend = chatSend;
+    
+    // ✅ НОВОЕ: экономика в window
+    window.economyManager = (window as any).economyManager;
+    window.economyStore = (window as any).economyStore;
+    window.economyService = (window as any).economyService;
     
     console.log('✅ UI привязан к window');
 }
@@ -165,7 +173,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 9.0.9
+                    Версия 10.0.0
                 </div>
             </div>
         `;
@@ -176,7 +184,7 @@ function showTelegramRequiredScreen(): void {
 }
 
 // ==========================================
-// 4. АКТИВАЦИЯ ERUDA (статическая загрузка)
+// 4. АКТИВАЦИЯ ERUDA
 // ==========================================
 
 function initEruda(role: string): void {
@@ -185,8 +193,6 @@ function initEruda(role: string): void {
         return;
     }
 
-    // Eruda уже загружена статически из index.html
-    // Просто инициализируем её
     if (typeof (window as any).eruda !== 'undefined') {
         try {
             (window as any).eruda.init();
@@ -336,7 +342,16 @@ async function initApp(): Promise<void> {
     organizerStore.load();
     tasksStore.load();
 
-    // ВЫЗЫВАЕМ НОВЫЙ МЕТОД ИЗ ChatStore — УДАЛЯЕМ ВСЕ ПУСТЫЕ ЧАТЫ
+    // ✅ НОВОЕ: загружаем баланс в EconomyStore
+    if ((window as any).economyStore) {
+        try {
+            await (window as any).economyStore.loadBalance();
+            console.log('💰 Баланс загружен в EconomyStore');
+        } catch (err) {
+            console.warn('⚠️ Не удалось загрузить баланс:', err);
+        }
+    }
+
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
         console.log(`🧹 При загрузке очищено ${cleaned} пустых чатов (HARD DELETE)`);
@@ -454,7 +469,7 @@ async function initApp(): Promise<void> {
                 }
             }
 
-            // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR (статическая загрузка)
+            // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR
             initEruda(result.role);
 
             updateSplashProgress(95, '🎬 Завершение...');
@@ -516,7 +531,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v9.0.9 успешно загружено');
+        console.log('✅ Приложение v10.0.0 успешно загружено (с экономическим ядром)');
     }, 500);
 }
 
@@ -544,6 +559,13 @@ function setupEventSubscriptions(): void {
     eventBus.on('chat:renamed', () => renderChatsInDrawer());
     eventBus.on('chat:trash_cleared', () => updateDrawerTrashCount());
 
+    // ✅ НОВОЕ: подписка на обновление баланса для UI
+    eventBus.on('economy:balance:updated', (data) => {
+        document.querySelectorAll('.coin-amount, .balance-display').forEach(el => {
+            (el as HTMLElement).textContent = String(data.newBalance);
+        });
+    });
+
     setupNetworkListeners();
 
     console.log('📡 Глобальные подписки настроены');
@@ -553,7 +575,6 @@ function setupEventSubscriptions(): void {
 // 9. ЗАПУСК (ТОЛЬКО ОДИН РАЗ!)
 // ==========================================
 
-// ✅ ЕДИНСТВЕННАЯ ТОЧКА ВХОДА — только DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
     if (!isTelegramWebApp()) {
         showTelegramRequiredScreen();
@@ -598,4 +619,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v9.0.9 полностью загружен (удалён дублирующийся запуск)');
+console.log('✅ app.ts v10.0.0 полностью загружен (с экономическим ядром)');
