@@ -1,7 +1,7 @@
 // ============================================
 // src/store/TasksStore.ts
 // Хранилище заданий (фасад для API + кэш)
-// Версия: 6.0.0 - с i18n и конфигом
+// Версия: 6.1.0 - исправлены типы и load()
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -13,10 +13,6 @@ import {
   DAILY_BONUS_AMOUNT,
   getLocalizedAchievement,
   getLocalizedQuest,
-  getAchievementTitle,
-  getAchievementDescription,
-  getQuestTitle,
-  getQuestDescription,
 } from '@/config/achievements';
 import type { IDailyQuest, IAchievement } from '@types';
 
@@ -31,6 +27,8 @@ interface ITasksCacheData {
   // Мета
   lastSync: string | null;
   lastResetDate: string | null;
+  // Игровые рекорды (произвольные ключи)
+  [key: string]: any; // 👈 добавляем индексную сигнатуру для игр
 }
 
 export class TasksStore extends BaseStore<ITasksCacheData> {
@@ -90,11 +88,8 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
   private checkDailyReset(): void {
     const today = new Date().toISOString().split('T')[0];
     if (this._data.lastResetDate !== today) {
-      // Сбрасываем только кэш заданий, не трогаем БД
-      // Реальный сброс происходит на сервере
       this._data.lastResetDate = today;
       
-      // Локально сбрасываем только флаги UI
       const quests = this._data.quests || [];
       for (const quest of quests) {
         quest.progress = 0;
@@ -127,23 +122,19 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
       const result = await apiClient.syncTasks();
 
       if (result.success) {
-        // Обновляем баланс
         if (result.balance !== undefined) {
           this._data.balance = result.balance;
         }
 
-        // Обновляем стрик
         if (result.dailyBonus?.streak !== undefined) {
           this._data.streak = result.dailyBonus.streak;
           this._data.dailyBonusClaimed = result.dailyBonus.claimed_today || false;
         }
 
-        // Обновляем задания
         if (result.quests && Array.isArray(result.quests)) {
           this._mergeQuests(result.quests);
         }
 
-        // Обновляем достижения
         if (result.achievements && Array.isArray(result.achievements)) {
           this._mergeAchievements(result.achievements);
         }
@@ -188,14 +179,15 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
         if (config) {
           existing.target = config.target;
           existing.reward = config.reward;
-          existing.title = config.title;
-          existing.description = config.description;
+          // Для совместимости с типами IDailyQuest
+          existing.title = typeof config.title === 'string' ? config.title : JSON.stringify(config.title);
+          existing.description = typeof config.description === 'string' ? config.description : JSON.stringify(config.description);
         }
       } else if (config) {
         const newQuest: IDailyQuest = {
           id: sq.id,
-          title: config.title,
-          description: config.description,
+          title: typeof config.title === 'string' ? config.title : JSON.stringify(config.title),
+          description: typeof config.description === 'string' ? config.description : JSON.stringify(config.description),
           target: config.target,
           reward: config.reward,
           progress: sq.progress || 0,
@@ -228,14 +220,14 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
         if (config) {
           existing.target = config.target;
           existing.reward = config.reward;
-          existing.title = config.title;
-          existing.description = config.description;
+          existing.title = typeof config.title === 'string' ? config.title : JSON.stringify(config.title);
+          existing.description = typeof config.description === 'string' ? config.description : JSON.stringify(config.description);
         }
       } else if (config) {
         const newAchievement: IAchievement = {
           id: sa.id,
-          title: config.title,
-          description: config.description,
+          title: typeof config.title === 'string' ? config.title : JSON.stringify(config.title),
+          description: typeof config.description === 'string' ? config.description : JSON.stringify(config.description),
           target: config.target,
           reward: config.reward,
           progress: sa.progress || 0,
@@ -246,14 +238,13 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
       }
     }
 
-    // Добавляем недостающие достижения (из конфига)
     const serverAchievementIds = new Set(serverAchievements.map(a => a.id));
     for (const config of ACHIEVEMENTS) {
       if (!serverAchievementIds.has(config.id)) {
         const newAchievement: IAchievement = {
           id: config.id,
-          title: config.title,
-          description: config.description,
+          title: typeof config.title === 'string' ? config.title : JSON.stringify(config.title),
+          description: typeof config.description === 'string' ? config.description : JSON.stringify(config.description),
           target: config.target,
           reward: config.reward,
           progress: 0,
@@ -312,7 +303,6 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
   async updateQuest(questId: string, increment: number = 1): Promise<boolean> {
     if (!this.userId) return false;
 
-    // Проверяем кэш
     const quest = this._data.quests.find(q => q.id === questId);
     if (quest && (quest.completed || quest.claimed)) {
       return false;
@@ -322,7 +312,6 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
       const result = await apiClient.updateQuestProgress(questId, increment);
 
       if (result.success) {
-        // Обновляем кэш
         const q = this._data.quests.find(q => q.id === questId);
         if (q) {
           q.progress = result.progress || 0;
@@ -351,7 +340,6 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
     const quest = this._data.quests.find(q => q.id === questId);
     if (!quest || !quest.completed || quest.claimed) return null;
 
-    // Берём награду из конфига!
     const config = getLocalizedQuest(questId);
     if (!config) return null;
 
@@ -423,7 +411,6 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
     const achievement = this._data.achievements.find(a => a.id === achievementId);
     if (!achievement || !achievement.unlocked || achievement.claimed) return null;
 
-    // Берём награду из конфига!
     const config = getLocalizedAchievement(achievementId);
     if (!config) return null;
 
@@ -473,6 +460,19 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
 
   get achievements(): IAchievement[] {
     return this._data.achievements || [];
+  }
+
+  // ==========================================
+  // МЕТОДЫ ДЛЯ ИГР (произвольные ключи)
+  // ==========================================
+
+  getGameData<T = any>(key: string, defaultValue: T): T {
+    return (this._data[key] as T) ?? defaultValue;
+  }
+
+  setGameData<T = any>(key: string, value: T): void {
+    this._data[key] = value;
+    this.save();
   }
 
   // ==========================================
@@ -547,17 +547,21 @@ export class TasksStore extends BaseStore<ITasksCacheData> {
   // ЗАГРУЗКА ПРИ ВХОДЕ
   // ==========================================
 
-  async load(): Promise<void> {
+  load(): ITasksCacheData {
     // Загружаем из localStorage
-    this.load();
+    super.load();
 
-    // Если есть userId — синхронизируем
+    // Если есть userId — синхронизируем (асинхронно)
     if (this.userId) {
-      await this.sync();
+      this.sync().catch(err => {
+        console.warn('⚠️ [TasksStore] Фоновая синхронизация не удалась:', err);
+      });
     }
+
+    return this._data;
   }
 }
 
 // Создаем экземпляр
 export const tasksStore = new TasksStore();
-console.log('✅ TasksStore v6.0.0 загружен');
+console.log('✅ TasksStore v6.1.0 загружен');
