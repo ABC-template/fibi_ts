@@ -1,13 +1,13 @@
 // ============================================
 // src/modules/dashboard/DashboardModule.ts
 // Главная страница (заглушка)
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.1.0 - исправлен импорт
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 
 export class DashboardModule {
   private container: HTMLElement;
@@ -16,7 +16,7 @@ export class DashboardModule {
   private eventBus = eventBus;
   private headerManager = headerManager;
   private chatStore = chatStore;
-  private tasksStore = tasksStore;
+  private questsStore = questsStore;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -93,7 +93,7 @@ export class DashboardModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ DashboardModule v2.0.0 инициализирован');
+    console.log('✅ DashboardModule v2.1.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -180,4 +180,4 @@ export class DashboardModule {
 
 // Экспортируем класс в глобальный объект для регистрации в ModuleLoader
 (window as any).DashboardModule = DashboardModule;
-console.log('✅ DashboardModule v2.0.0 загружен');
+console.log('✅ DashboardModule v2.1.0 загружен');
