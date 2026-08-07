@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 9.0.9 - FIXED: экономическое ядро инициализируется после авторизации
+// Версия: 9.1.0 - исправлена инициализация экономики
 // ============================================
 
 import './config';
@@ -53,7 +53,7 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v9.0.9 начал загрузку');
+console.log('🚀 App v9.1.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -165,7 +165,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 9.0.9
+                    Версия 9.1.0
                 </div>
             </div>
         `;
@@ -176,7 +176,7 @@ function showTelegramRequiredScreen(): void {
 }
 
 // ==========================================
-// 4. АКТИВАЦИЯ ERUDA (статическая загрузка)
+// 4. АКТИВАЦИЯ ERUDA
 // ==========================================
 
 function initEruda(role: string): void {
@@ -334,7 +334,6 @@ async function initApp(): Promise<void> {
     organizerStore.load();
     tasksStore.load();
 
-    // ВЫЗЫВАЕМ НОВЫЙ МЕТОД ИЗ ChatStore — УДАЛЯЕМ ВСЕ ПУСТЫЕ ЧАТЫ
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
         console.log(`🧹 При загрузке очищено ${cleaned} пустых чатов (HARD DELETE)`);
@@ -452,15 +451,17 @@ async function initApp(): Promise<void> {
                 }
             }
 
-            // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR (статическая загрузка)
+            // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR
             initEruda(result.role);
 
             // ✅ НОВОЕ: ИНИЦИАЛИЗАЦИЯ ЭКОНОМИЧЕСКОГО ЯДРА ПОСЛЕ АВТОРИЗАЦИИ
             try {
+                // Загружаем экономические модули
                 const { economyManager, economyStore } = await import('@/economy');
                 window.economyManager = economyManager;
                 window.economyStore = economyStore;
                 
+                // Загружаем баланс
                 if (economyStore) {
                     await economyStore.loadBalance();
                     console.log('💰 Баланс загружен в EconomyStore');
@@ -529,7 +530,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v9.0.9 успешно загружено (с экономическим ядром)');
+        console.log('✅ Приложение v9.1.0 успешно загружено (с экономическим ядром)');
     }, 500);
 }
 
@@ -618,4 +619,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v9.0.9 полностью загружен (с экономическим ядром)');
+console.log('✅ app.ts v9.1.0 полностью загружен (с экономическим ядром)');
