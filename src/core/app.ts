@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 10.0.1 - ИСПРАВЛЕНА ЗАГРУЗКА
+// Версия: 9.0.9 - С ЭКОНОМИЧЕСКИМ ЯДРОМ
 // ============================================
 
 import './config';
@@ -53,10 +53,10 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-// ✅ НОВОЕ: ЭКОНОМИЧЕСКОЕ ЯДРО
+// ✅ ДОБАВЛЕНО: ЭКОНОМИЧЕСКОЕ ЯДРО
 import '@/economy';
 
-console.log('🚀 App v10.0.1 начал загрузку (с экономическим ядром)');
+console.log('🚀 App v9.0.9 начал загрузку (с экономическим ядром)');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -108,7 +108,7 @@ function bindUIToWindow(): void {
     
     window.chatSend = chatSend;
     
-    // ✅ НОВОЕ: экономика в window
+    // ✅ ДОБАВЛЕНО: экономика в window
     window.economyManager = (window as any).economyManager;
     window.economyStore = (window as any).economyStore;
     window.economyService = (window as any).economyService;
@@ -173,7 +173,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 10.0.1
+                    Версия 9.0.9
                 </div>
             </div>
         `;
@@ -184,7 +184,7 @@ function showTelegramRequiredScreen(): void {
 }
 
 // ==========================================
-// 4. АКТИВАЦИЯ ERUDA
+// 4. АКТИВАЦИЯ ERUDA (статическая загрузка)
 // ==========================================
 
 function initEruda(role: string): void {
@@ -289,7 +289,6 @@ async function initApp(): Promise<void> {
     initSplash();
     updateSplashProgress(0, '🔮 Инициализация...');
 
-    // ✅ ПРОВЕРКА: ЗАПУСК ВНЕ TELEGRAM
     if (!isTelegramWebApp()) {
         console.log('🚫 Приложение открыто вне Telegram → показываем заглушку');
         showTelegramRequiredScreen();
@@ -343,7 +342,7 @@ async function initApp(): Promise<void> {
     organizerStore.load();
     tasksStore.load();
 
-    // ✅ НОВОЕ: загружаем баланс в EconomyStore
+    // ✅ ДОБАВЛЕНО: загружаем баланс в EconomyStore
     if ((window as any).economyStore) {
         try {
             await (window as any).economyStore.loadBalance();
@@ -470,7 +469,7 @@ async function initApp(): Promise<void> {
                 }
             }
 
-            // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR
+            // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR (статическая загрузка)
             initEruda(result.role);
 
             updateSplashProgress(95, '🎬 Завершение...');
@@ -532,7 +531,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v10.0.1 успешно загружено (с экономическим ядром)');
+        console.log('✅ Приложение v9.0.9 успешно загружено (с экономическим ядром)');
     }, 500);
 }
 
@@ -560,7 +559,7 @@ function setupEventSubscriptions(): void {
     eventBus.on('chat:renamed', () => renderChatsInDrawer());
     eventBus.on('chat:trash_cleared', () => updateDrawerTrashCount());
 
-    // ✅ НОВОЕ: подписка на обновление баланса для UI
+    // ✅ ДОБАВЛЕНО: подписка на обновление баланса для UI
     eventBus.on('economy:balance:updated', (data) => {
         document.querySelectorAll('.coin-amount, .balance-display').forEach(el => {
             (el as HTMLElement).textContent = String(data.newBalance);
@@ -576,15 +575,12 @@ function setupEventSubscriptions(): void {
 // 9. ЗАПУСК (ТОЛЬКО ОДИН РАЗ!)
 // ==========================================
 
-// ✅ ЗАПУСК ПРИЛОЖЕНИЯ — ТОЛЬКО ПОСЛЕ ЗАГРУЗКИ DOM
+// ✅ ЕДИНСТВЕННАЯ ТОЧКА ВХОДА — только DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
-    // ✅ ПРОВЕРКА: ЗАПУСК ВНЕ TELEGRAM
     if (!isTelegramWebApp()) {
         showTelegramRequiredScreen();
         return;
     }
-    
-    // ✅ ЗАПУСК ОСНОВНОЙ ИНИЦИАЛИЗАЦИИ
     initApp().catch(err => {
         console.error('❌ Критический сбой инициализации:', err);
         hideSplash();
@@ -624,4 +620,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v10.0.1 полностью загружен (с экономическим ядром)');
+console.log('✅ app.ts v9.0.9 полностью загружен (с экономическим ядром)');
