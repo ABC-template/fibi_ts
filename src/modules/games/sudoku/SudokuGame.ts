@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/games/sudoku/SudokuGame.ts
 // Описание: Классическое Судоку
-// Версия: 4.0.0 - ИЗМЕНЕНО: экономика через EventBus
+// Версия: 4.1.0 - добавлен tasksStore
 // ============================================
 
 import './sudoku.css';
@@ -53,6 +53,8 @@ export class SudokuGame {
   private hintsEl: HTMLElement | null = null;
   private highEl: HTMLElement | null = null;
   private overlayEl: HTMLElement | null = null;
+
+  private tasksStore = tasksStore; // 👈 добавляем
 
   constructor() {}
 
@@ -194,55 +196,55 @@ export class SudokuGame {
     return shuffled;
   }
 
-private _loadHighScores(): void {
-  const key = `sudoku_${this.difficulty}_high_score`;
-  this.highScore = this.tasksStore.getGameData<number>(key, 0);
-  
-  const timeKey = `sudoku_${this.difficulty}_best_time`;
-  this.bestTime = this.tasksStore.getGameData<number | null>(timeKey, null);
-}
-
-private _saveHighScore(): void {
-  if (this.errors > this.maxErrors) return;
-  
-  const time = this.elapsedTime;
-  const timeKey = `sudoku_${this.difficulty}_best_time`;
-  
-  if (!this.bestTime || time < this.bestTime) {
-    this.bestTime = time;
-    this.tasksStore.setGameData(timeKey, time);
+  private _loadHighScores(): void {
+    const key = `sudoku_${this.difficulty}_high_score`;
+    this.highScore = this.tasksStore.getGameData<number>(key, 0);
     
-    if (this.userId) {
-      eventBus.emit('economy:earn', {
-        userId: this.userId,
-        source: 'game:sudoku:win',
-        amount: 30,
-        metadata: {
-          difficulty: this.difficulty,
-          time: time,
-          errors: this.errors,
-          hints: this.hintsUsed
-        }
+    const timeKey = `sudoku_${this.difficulty}_best_time`;
+    this.bestTime = this.tasksStore.getGameData<number | null>(timeKey, null);
+  }
+
+  private _saveHighScore(): void {
+    if (this.errors > this.maxErrors) return;
+    
+    const time = this.elapsedTime;
+    const timeKey = `sudoku_${this.difficulty}_best_time`;
+    
+    if (!this.bestTime || time < this.bestTime) {
+      this.bestTime = time;
+      this.tasksStore.setGameData(timeKey, time);
+      
+      if (this.userId) {
+        eventBus.emit('economy:earn', {
+          userId: this.userId,
+          source: 'game:sudoku:win',
+          amount: 30,
+          metadata: {
+            difficulty: this.difficulty,
+            time: time,
+            errors: this.errors,
+            hints: this.hintsUsed
+          }
+        });
+      }
+      
+      eventBus.emit('game:score_updated', {
+        gameId: 'sudoku',
+        score: time,
+        reward: 30,
+        difficulty: this.difficulty
       });
+      
+      this._updateUI();
     }
     
-    eventBus.emit('game:score_updated', {
-      gameId: 'sudoku',
-      score: time,
-      reward: 30,
-      difficulty: this.difficulty
-    });
-    
-    this._updateUI();
+    const points = Math.max(100, Math.floor(1000 / (time / 60)));
+    if (points > this.highScore) {
+      this.highScore = points;
+      const highKey = `sudoku_${this.difficulty}_high_score`;
+      this.tasksStore.setGameData(highKey, points);
+    }
   }
-  
-  const points = Math.max(100, Math.floor(1000 / (time / 60)));
-  if (points > this.highScore) {
-    this.highScore = points;
-    const highKey = `sudoku_${this.difficulty}_high_score`;
-    this.tasksStore.setGameData(highKey, points);
-  }
-}
 
   private _render(): void {
     if (!this.container) return;
@@ -863,4 +865,4 @@ private _saveHighScore(): void {
 }
 
 (window as any).SudokuGame = SudokuGame;
-console.log('✅ SudokuGame v4.0.0 загружен (экономика через EventBus)');
+console.log('✅ SudokuGame v4.1.0 загружен');
