@@ -1,15 +1,16 @@
 // ============================================
 // src/ui/header.ts
 // Управление хедером, монетами, пользователем
-// Версия: 1.0.1 - FIXED: убран дублирующийся updateThemeLabel
+// Версия: 1.1.0 - исправлен импорт
 // ============================================
+
 import './header.css';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
 
 export function updateCoinsDisplay(): void {
-    const balance = tasksStore.getBalance() || 0;
+    const balance = questsStore.getBalance() || 0;
     const headerCoinEl = document.querySelector('.coin-amount');
     if (headerCoinEl) (headerCoinEl as HTMLElement).textContent = String(balance);
     
