@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/tasks/TasksModule.ts
 // Модуль заданий (геймификация)
-// Версия: 4.0.0 - ИЗМЕНЕНО: экономика через EventBus
+// Версия: 5.0.0 - обновлён для новой TasksStore
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -9,6 +9,7 @@ import { tasksStore } from '@/store/TasksStore';
 import { eventBus } from '@/core/event-bus';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { userStore } from '@/store/UserStore';
+import { DAILY_QUESTS, ACHIEVEMENTS } from '@/config/achievements';
 import type { IDailyQuest, IAchievement } from '@types';
 
 export class TasksModule {
@@ -80,7 +81,7 @@ export class TasksModule {
       </div>
     `;
 
-    this._subscribeToBalance();
+    this._subscribeToEvents();
     this.render();
 
     setTimeout(() => {
@@ -90,23 +91,41 @@ export class TasksModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ TasksModule v4.0.0 инициализирован (экономика через EventBus)');
+    console.log('✅ TasksModule v5.0.0 инициализирован');
   }
 
-  private _subscribeToBalance(): void {
-    const unsub = this.eventBus.on('economy:balance:updated', (data) => {
+  private _subscribeToEvents(): void {
+    const unsubBalance = this.eventBus.on('economy:balance:updated', (data) => {
       if (data.userId === this.userId) {
         this._updateBalanceUI(data.newBalance);
       }
     }, this);
-    this._subscriptions.push(unsub);
+    this._subscriptions.push(unsubBalance);
+
+    const unsubSync = this.eventBus.on('tasks:synced', () => {
+      this.render();
+    }, this);
+    this._subscriptions.push(unsubSync);
+
+    const unsubBonus = this.eventBus.on('tasks:daily_bonus_claimed', () => {
+      this.render();
+    }, this);
+    this._subscriptions.push(unsubBonus);
+
+    const unsubQuest = this.eventBus.on('tasks:quest_completed', () => {
+      this.render();
+    }, this);
+    this._subscriptions.push(unsubQuest);
+
+    const unsubAchievement = this.eventBus.on('tasks:achievement_unlocked', () => {
+      this.render();
+    }, this);
+    this._subscriptions.push(unsubAchievement);
   }
 
   private _updateBalanceUI(newBalance: number): void {
     const balanceEl = document.getElementById('tasks-balance');
-    if (balanceEl) {
-      balanceEl.textContent = String(newBalance);
-    }
+    if (balanceEl) balanceEl.textContent = String(newBalance);
   }
 
   render(): void {
@@ -117,14 +136,17 @@ export class TasksModule {
   }
 
   renderBalance(): void {
-    const balance = (window as any).economyStore?.getBalance() || 0;
+    const balance = this.tasksStore.getBalance();
+    const tokens = this.tasksStore.getTokens();
+    const streak = this.tasksStore.getStreak();
+
+    const balanceEl = document.getElementById('tasks-balance');
     const tokensEl = document.getElementById('tasks-tokens');
     const streakEl = document.getElementById('tasks-streak');
 
-    const balanceEl = document.getElementById('tasks-balance');
     if (balanceEl) balanceEl.textContent = String(balance);
-    if (tokensEl) tokensEl.textContent = String(this.tasksStore.getTokens());
-    if (streakEl) streakEl.textContent = String(this.tasksStore.streakDays || 0);
+    if (tokensEl) tokensEl.textContent = String(tokens);
+    if (streakEl) streakEl.textContent = String(streak);
   }
 
   renderDailyBonus(): void {
@@ -146,7 +168,7 @@ export class TasksModule {
     const list = document.getElementById('daily-quests-list');
     if (!list) return;
 
-    const quests = this.tasksStore.dailyQuests || [];
+    const quests = this.tasksStore.dailyQuests;
 
     if (quests.length === 0) {
       list.innerHTML = `<p style="font-size:12px; color:var(--app-text-tertiary); text-align:center; margin:10px 0;">Нет заданий</p>`;
@@ -201,7 +223,7 @@ export class TasksModule {
     const list = document.getElementById('achievements-list');
     if (!list) return;
 
-    const achievements = this.tasksStore.achievements || [];
+    const achievements = this.tasksStore.achievements;
 
     if (achievements.length === 0) {
       list.innerHTML = `<p style="font-size:12px; color:var(--app-text-tertiary); text-align:center; margin:10px 0;">Нет достижений</p>`;
@@ -255,70 +277,50 @@ export class TasksModule {
     }
   }
 
-  claimQuest(questId: string): void {
-    const quest = this.tasksStore.dailyQuests.find(q => q.id === questId);
-    if (!quest || !quest.completed || quest.claimed) return;
+  // ==========================================
+  // ДЕЙСТВИЯ
+  // ==========================================
 
-    if (this.userId) {
-      this.eventBus.emit('economy:earn', {
-        userId: this.userId,
-        source: 'task:daily',
-        amount: quest.reward,
-        metadata: {
-          quest_id: quest.id,
-          quest_title: quest.title,
-          type: 'daily_quest'
-        }
-      });
+  async claimQuest(questId: string): Promise<void> {
+    if (!this.userId) {
+      this.uiRenderer.showToast('⚠️ Ошибка авторизации', 'error', 1500);
+      return;
     }
 
-    quest.claimed = true;
-    this.tasksStore.save();
-
-    this.render();
-    this.uiRenderer.showToast(`🎉 +${quest.reward} монет!`, 'success', 1500);
-  }
-
-  claimAchievement(achievementId: string): void {
-    const ach = this.tasksStore.achievements.find(a => a.id === achievementId);
-    if (!ach || !ach.unlocked || ach.claimed) return;
-
-    if (this.userId) {
-      this.eventBus.emit('economy:earn', {
-        userId: this.userId,
-        source: 'achievement:unlock',
-        amount: ach.reward,
-        metadata: {
-          achievement_id: ach.id,
-          achievement_title: ach.title,
-          type: 'achievement'
-        }
-      });
-    }
-
-    ach.claimed = true;
-    this.tasksStore.save();
-
-    this.render();
-    this.uiRenderer.showToast(`🏆 Достижение получено!`, 'success', 1500);
-  }
-
-  claimDailyBonus(): void {
-    const bonus = this.tasksStore.claimDailyBonus();
-    if (bonus) {
-      if (this.userId) {
-        this.eventBus.emit('economy:earn', {
-          userId: this.userId,
-          source: 'daily:bonus',
-          amount: bonus.bonus,
-          metadata: {
-            streak: bonus.streak,
-            type: 'daily_bonus'
-          }
-        });
-      }
+    const result = await this.tasksStore.claimQuest(questId);
+    if (result) {
       this.render();
-      this.uiRenderer.showToast(`🎁 Ежедневный бонус: +${bonus.bonus} монет!`, 'success', 1500);
+      this.uiRenderer.showToast(`🎉 +${result.reward} монет!`, 'success', 1500);
+    } else {
+      this.uiRenderer.showToast('⚠️ Не удалось забрать награду', 'error', 1500);
+    }
+  }
+
+  async claimAchievement(achievementId: string): Promise<void> {
+    if (!this.userId) {
+      this.uiRenderer.showToast('⚠️ Ошибка авторизации', 'error', 1500);
+      return;
+    }
+
+    const result = await this.tasksStore.claimAchievement(achievementId);
+    if (result) {
+      this.render();
+      this.uiRenderer.showToast(`🏆 +${result.reward} монет!`, 'success', 1500);
+    } else {
+      this.uiRenderer.showToast('⚠️ Не удалось забрать награду', 'error', 1500);
+    }
+  }
+
+  async claimDailyBonus(): Promise<void> {
+    if (!this.userId) {
+      this.uiRenderer.showToast('⚠️ Ошибка авторизации', 'error', 1500);
+      return;
+    }
+
+    const result = await this.tasksStore.claimDailyBonus();
+    if (result) {
+      this.render();
+      this.uiRenderer.showToast(`🎁 Ежедневный бонус: +${result.bonus} монет! (стрик: ${result.streak})`, 'success', 2000);
     } else {
       this.uiRenderer.showToast('⏳ Бонус уже получен сегодня', 'info', 1500);
     }
@@ -330,27 +332,32 @@ export class TasksModule {
       return;
     }
 
-    const currentBalance = (window as any).economyStore?.getBalance() || 0;
+    const currentBalance = this.tasksStore.getBalance();
     if (currentBalance < coins) {
       this.uiRenderer.showToast('❌ Недостаточно монет', 'error', 1500);
       return;
     }
 
+    // Сначала списываем монеты через API
     this.eventBus.emit('economy:spend', {
       userId: this.userId,
       source: 'exchange:coins_to_tokens',
       amount: coins,
       metadata: {
         tokens_received: tokens,
-        rate: coins / tokens
-      }
+        rate: coins / tokens,
+      },
     });
 
+    // Затем добавляем токены локально
     this.tasksStore.addTokens(tokens, 'Обмен монет');
-
     this.render();
     this.uiRenderer.showToast(`🔄 Обмен: +${tokens} токенов`, 'success', 1500);
   }
+
+  // ==========================================
+  // УПРАВЛЕНИЕ МОДУЛЕМ
+  // ==========================================
 
   show(): void {
     console.log('📱 TasksModule.show() вызван');
@@ -398,4 +405,4 @@ export class TasksModule {
 }
 
 (window as any).TasksModule = TasksModule;
-console.log('✅ TasksModule v4.0.0 загружен (экономика через EventBus)');
+console.log('✅ TasksModule v5.0.0 загружен');
