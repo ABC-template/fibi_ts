@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/index.ts
 // Единый экспорт всех модулей
-// Версия: 2.0.0
+// Версия: 3.0.0 - удалены tasks и sponsors
 // ============================================
 
 // UI модули (рендереры)
@@ -10,10 +10,10 @@ export * from './ui';
 // Основные модули
 export * from './dashboard/DashboardModule';
 export * from './chat-list/ChatListModule';
-export * from './chat/ChatModule';
+export * include'./chat/ChatModule';
 export * from './organizer/OrganizerModule';
 export * from './profile/ProfileModule';
-export * from './tasks/TasksModule';
+export * from './quests/QuestsModule';
 export * from './games/GamesModule';
 
 // Chat подмодули
@@ -25,3 +25,8 @@ export * from './chat/media';
 // Вспомогательные
 export * from './trash';
 export * from './export-local';
+
+// Новые модули
+export * from './coins/CoinsModule';
+export * from './referral/ReferralModule';
+export * from './admin/AdminModule';
