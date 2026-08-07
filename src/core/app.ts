@@ -53,7 +53,10 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v9.0.9 начал загрузку');
+// ✅ НОВОЕ: ЭКОНОМИЧЕСКОЕ ЯДРО
+import '@/economy';
+
+console.log('🚀 App v9.0.9 начал загрузку (с экономическим ядром)');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -104,6 +107,11 @@ function bindUIToWindow(): void {
     window.eventBus = eventBus;
     
     window.chatSend = chatSend;
+    
+    // ✅ НОВОЕ: экономика в window
+    window.economyManager = (window as any).economyManager;
+    window.economyStore = (window as any).economyStore;
+    window.economyService = (window as any).economyService;
     
     console.log('✅ UI привязан к window');
 }
@@ -336,6 +344,16 @@ async function initApp(): Promise<void> {
     organizerStore.load();
     tasksStore.load();
 
+    // ✅ НОВОЕ: загружаем баланс в EconomyStore
+    if ((window as any).economyStore) {
+        try {
+            await (window as any).economyStore.loadBalance();
+            console.log('💰 Баланс загружен в EconomyStore');
+        } catch (err) {
+            console.warn('⚠️ Не удалось загрузить баланс:', err);
+        }
+    }
+
     // ВЫЗЫВАЕМ НОВЫЙ МЕТОД ИЗ ChatStore — УДАЛЯЕМ ВСЕ ПУСТЫЕ ЧАТЫ
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
@@ -516,7 +534,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v9.0.9 успешно загружено');
+        console.log('✅ Приложение v9.0.9 успешно загружено (с экономическим ядром)');
     }, 500);
 }
 
@@ -543,6 +561,13 @@ function setupEventSubscriptions(): void {
     eventBus.on('chat:restored', updateDrawer);
     eventBus.on('chat:renamed', () => renderChatsInDrawer());
     eventBus.on('chat:trash_cleared', () => updateDrawerTrashCount());
+
+    // ✅ НОВОЕ: подписка на обновление баланса для UI
+    eventBus.on('economy:balance:updated', (data) => {
+        document.querySelectorAll('.coin-amount, .balance-display').forEach(el => {
+            (el as HTMLElement).textContent = String(data.newBalance);
+        });
+    });
 
     setupNetworkListeners();
 
@@ -598,4 +623,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v9.0.9 полностью загружен (удалён дублирующийся запуск)');
+console.log('✅ app.ts v9.0.9 полностью загружен (с экономическим ядром)');
