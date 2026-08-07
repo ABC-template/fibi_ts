@@ -1,11 +1,11 @@
 // ============================================
 // src/modules/games/sudoku/SudokuGame.ts
 // Описание: Классическое Судоку
-// Версия: 4.1.0 - добавлен tasksStore
+// Версия: 4.2.0 - исправлен импорт
 // ============================================
 
 import './sudoku.css';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 
@@ -54,7 +54,7 @@ export class SudokuGame {
   private highEl: HTMLElement | null = null;
   private overlayEl: HTMLElement | null = null;
 
-  private tasksStore = tasksStore; // 👈 добавляем
+  private questsStore = questsStore;
 
   constructor() {}
 
@@ -198,10 +198,10 @@ export class SudokuGame {
 
   private _loadHighScores(): void {
     const key = `sudoku_${this.difficulty}_high_score`;
-    this.highScore = this.tasksStore.getGameData<number>(key, 0);
+    this.highScore = this.questsStore.getGameData<number>(key, 0);
     
     const timeKey = `sudoku_${this.difficulty}_best_time`;
-    this.bestTime = this.tasksStore.getGameData<number | null>(timeKey, null);
+    this.bestTime = this.questsStore.getGameData<number | null>(timeKey, null);
   }
 
   private _saveHighScore(): void {
@@ -212,7 +212,7 @@ export class SudokuGame {
     
     if (!this.bestTime || time < this.bestTime) {
       this.bestTime = time;
-      this.tasksStore.setGameData(timeKey, time);
+      this.questsStore.setGameData(timeKey, time);
       
       if (this.userId) {
         eventBus.emit('economy:earn', {
@@ -242,7 +242,7 @@ export class SudokuGame {
     if (points > this.highScore) {
       this.highScore = points;
       const highKey = `sudoku_${this.difficulty}_high_score`;
-      this.tasksStore.setGameData(highKey, points);
+      this.questsStore.setGameData(highKey, points);
     }
   }
 
@@ -865,4 +865,4 @@ export class SudokuGame {
 }
 
 (window as any).SudokuGame = SudokuGame;
-console.log('✅ SudokuGame v4.1.0 загружен');
+console.log('✅ SudokuGame v4.2.0 загружен');
