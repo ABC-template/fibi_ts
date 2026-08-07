@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyStore.ts
-// Описание: Хранилище для UI (кеш баланса)
-// Версия: 1.0.0
+// Хранилище для UI (кеш баланса)
+// Версия: 2.0.0 - обновлён
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -10,6 +10,8 @@ import type { IEconomyBalanceUpdatedEvent } from './event-types';
 
 interface IEconomyStoreData {
   balance: number;
+  total_earned: number;
+  total_spent: number;
   lastUpdated: string | null;
   transactions: any[];
 }
@@ -24,11 +26,16 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     if (Object.keys(this._data).length === 0) {
       this._data = {
         balance: 0,
+        total_earned: 0,
+        total_spent: 0,
         lastUpdated: null,
         transactions: [],
       };
       this.save();
     }
+
+    if (this._data.total_earned === undefined) this._data.total_earned = 0;
+    if (this._data.total_spent === undefined) this._data.total_spent = 0;
 
     this.subscribeToEvents();
   }
@@ -45,7 +52,7 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
       this._data.balance = event.newBalance;
       this._data.lastUpdated = new Date().toISOString();
       this.save();
-      this._emitChange('economy:balance:changed', { 
+      this._emitChange('economy:balance:changed', {
         balance: event.newBalance,
         delta: event.delta,
         source: event.source,
@@ -62,7 +69,6 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
 
   async loadBalance(): Promise<void> {
     if (!this.userId) {
-      // Пробуем получить userId из Telegram
       const tg = (window as any).Telegram?.WebApp;
       const user = tg?.initDataUnsafe?.user;
       if (user?.id) {
@@ -74,12 +80,20 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
 
     try {
       const { economyService } = await import('./EconomyService');
-      const balance = await economyService.getBalance(this.userId);
-      this._data.balance = balance;
-      this._data.lastUpdated = new Date().toISOString();
-      this.save();
-      this._emitChange('economy:balance:loaded', { balance });
-      console.log(`💰 Баланс загружен: ${balance}`);
+      const result = await economyService.getBalance(this.userId);
+      if (result.success) {
+        this._data.balance = result.balance;
+        this._data.total_earned = result.total_earned;
+        this._data.total_spent = result.total_spent;
+        this._data.lastUpdated = new Date().toISOString();
+        this.save();
+        this._emitChange('economy:balance:loaded', {
+          balance: result.balance,
+          total_earned: result.total_earned,
+          total_spent: result.total_spent,
+        });
+        console.log(`💰 Баланс загружен: ${result.balance}`);
+      }
     } catch (err) {
       console.error('❌ Ошибка загрузки баланса:', err);
     }
@@ -87,6 +101,19 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
 
   getBalance(): number {
     return this._data.balance || 0;
+  }
+
+  getStats(): { total_earned: number; total_spent: number } {
+    return {
+      total_earned: this._data.total_earned || 0,
+      total_spent: this._data.total_spent || 0,
+    };
+  }
+
+  setStats(total_earned: number, total_spent: number): void {
+    this._data.total_earned = total_earned;
+    this._data.total_spent = total_spent;
+    this.save();
   }
 
   updateBalance(userId: number, newBalance: number): void {
@@ -100,6 +127,8 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
   clear(): void {
     this._data = {
       balance: 0,
+      total_earned: 0,
+      total_spent: 0,
       lastUpdated: null,
       transactions: [],
     };
