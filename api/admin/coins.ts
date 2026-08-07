@@ -1,7 +1,7 @@
 // ============================================
 // api/admin/coins.ts
 // Управление монетами (для creator)
-// Версия: 1.0.0
+// Версия: 2.0.0 - ИЗМЕНЕНО: через EconomyService
 // ============================================
 
 import {
@@ -11,7 +11,6 @@ import {
   jsonResponse,
   errorResponse,
   getSupabaseConfig,
-  supabaseRPC,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
@@ -40,6 +39,8 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const config = getSupabaseConfig('service');
+    
+    const { supabaseRPC } = await import('../_lib/supabase-client');
 
     if (action === 'add') {
       const result = await supabaseRPC(
@@ -49,6 +50,22 @@ export default async function handler(request: Request): Promise<Response> {
           p_amount: amount,
           p_source: `admin_${Date.now()}`,
           p_description: reason || 'Административное начисление',
+        },
+        config
+      );
+
+      await supabaseRPC(
+        'log_economy_audit',
+        {
+          p_user_id: user_id,
+          p_event_type: 'ADJUST',
+          p_source: `admin_manual_${Date.now()}`,
+          p_amount: amount,
+          p_balance_before: (result?.balance_before || 0) - amount,
+          p_balance_after: result?.new_balance || 0,
+          p_metadata: { reason: reason || 'Административное начисление' },
+          p_ip_address: request.headers.get('cf-connecting-ip') || null,
+          p_user_agent: request.headers.get('user-agent') || null,
         },
         config
       );
@@ -68,6 +85,22 @@ export default async function handler(request: Request): Promise<Response> {
           p_amount: amount,
           p_source: `admin_${Date.now()}`,
           p_description: reason || 'Административное списание',
+        },
+        config
+      );
+
+      await supabaseRPC(
+        'log_economy_audit',
+        {
+          p_user_id: user_id,
+          p_event_type: 'ADJUST',
+          p_source: `admin_manual_${Date.now()}`,
+          p_amount: -amount,
+          p_balance_before: (result?.balance_before || 0) + amount,
+          p_balance_after: result?.new_balance || 0,
+          p_metadata: { reason: reason || 'Административное списание' },
+          p_ip_address: request.headers.get('cf-connecting-ip') || null,
+          p_user_agent: request.headers.get('user-agent') || null,
         },
         config
       );
