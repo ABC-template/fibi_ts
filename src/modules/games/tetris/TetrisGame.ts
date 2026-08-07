@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/games/tetris/TetrisGame.ts
 // Описание: Классический Тетрис
-// Версия: 5.0.0 - ИЗМЕНЕНО: экономика через EventBus
+// Версия: 5.1.0 - добавлен tasksStore
 // ============================================
 
 import './tetris.css';
@@ -93,6 +93,8 @@ export class TetrisGame {
   private pauseBtn: HTMLElement | null = null;
   private resetBtn: HTMLElement | null = null;
 
+  private tasksStore = tasksStore; // 👈 добавляем
+
   constructor() {}
 
   init(container: HTMLElement): void {
@@ -115,7 +117,7 @@ export class TetrisGame {
     this.isPaused = false;
     this._isClearingLines = false;
     
-    console.log('🧩 Тетрис v5.0.0 инициализирован (экономика через EventBus)');
+    console.log('🧩 Тетрис v5.1.0 инициализирован');
   }
 
   private _subscribeToBalance(): void {
@@ -138,27 +140,27 @@ export class TetrisGame {
     }
   }
 
-private _loadStats(): void {
-  this.highScore = this.tasksStore.getGameData<number>('tetris_high_score', 0);
-  this.totalGames = this.tasksStore.getGameData<number>('tetris_total_games', 0);
-  this.totalLines = this.tasksStore.getGameData<number>('tetris_total_lines', 0);
-  this.bestScore = this.tasksStore.getGameData<number>('tetris_best_score', 0);
-  this.gamesWon = this.tasksStore.getGameData<number>('tetris_games_won', 0);
-  
-  const savedAchievements = this.tasksStore.getGameData<Record<string, boolean>>('tetris_achievements', {});
-  if (savedAchievements) {
-    this.achievements = { ...this.achievements, ...savedAchievements };
+  private _loadStats(): void {
+    this.highScore = this.tasksStore.getGameData<number>('tetris_high_score', 0);
+    this.totalGames = this.tasksStore.getGameData<number>('tetris_total_games', 0);
+    this.totalLines = this.tasksStore.getGameData<number>('tetris_total_lines', 0);
+    this.bestScore = this.tasksStore.getGameData<number>('tetris_best_score', 0);
+    this.gamesWon = this.tasksStore.getGameData<number>('tetris_games_won', 0);
+    
+    const savedAchievements = this.tasksStore.getGameData<Record<string, boolean>>('tetris_achievements', {});
+    if (savedAchievements) {
+      this.achievements = { ...this.achievements, ...savedAchievements };
+    }
   }
-}
 
-private _saveStats(): void {
-  this.tasksStore.setGameData('tetris_high_score', this.highScore);
-  this.tasksStore.setGameData('tetris_total_games', this.totalGames);
-  this.tasksStore.setGameData('tetris_total_lines', this.totalLines);
-  this.tasksStore.setGameData('tetris_best_score', this.bestScore);
-  this.tasksStore.setGameData('tetris_games_won', this.gamesWon);
-  this.tasksStore.setGameData('tetris_achievements', this.achievements);
-}
+  private _saveStats(): void {
+    this.tasksStore.setGameData('tetris_high_score', this.highScore);
+    this.tasksStore.setGameData('tetris_total_games', this.totalGames);
+    this.tasksStore.setGameData('tetris_total_lines', this.totalLines);
+    this.tasksStore.setGameData('tetris_best_score', this.bestScore);
+    this.tasksStore.setGameData('tetris_games_won', this.gamesWon);
+    this.tasksStore.setGameData('tetris_achievements', this.achievements);
+  }
 
   start(): void {
     if (this.isRunning) return;
@@ -952,4 +954,4 @@ private _saveStats(): void {
 }
 
 (window as any).TetrisGame = TetrisGame;
-console.log('✅ TetrisGame v5.0.0 загружен (экономика через EventBus)');
+console.log('✅ TetrisGame v5.1.0 загружен');
