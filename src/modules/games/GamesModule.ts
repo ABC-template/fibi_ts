@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/games/GamesModule.ts
 // Модуль игр (контейнер) с полноэкранным режимом
-// Версия: 6.0.0 - ДОБАВЛЕНО: подписка на баланс
+// Версия: 6.1.0 - исправлены типы
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -51,7 +51,7 @@ export class GamesModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ GamesModule v6.0.0 инициализирован');
+    console.log('✅ GamesModule v6.1.0 инициализирован');
   }
 
   private _subscribeToBalance(): void {
@@ -126,10 +126,10 @@ export class GamesModule {
   }
 
   private _updateHighScores(): void {
-    const tetrisScore = this.tasksStore.get('tetris_high_score') || 0;
-    const sudokuScore = this.tasksStore.get('sudoku_high_score') || 0;
-    const snakeScore = this.tasksStore.get('snake_high_score') || 0;
-    const hangmanScore = this.tasksStore.get('hangman_high_score') || 0;
+    const tetrisScore = this.tasksStore.getGameData<number>('tetris_high_score', 0);
+    const sudokuScore = this.tasksStore.getGameData<number>('sudoku_high_score', 0);
+    const snakeScore = this.tasksStore.getGameData<number>('snake_high_score', 0);
+    const hangmanScore = this.tasksStore.getGameData<number>('hangman_high_score', 0);
 
     const tetrisEl = document.getElementById('tetris-high-score');
     const sudokuEl = document.getElementById('sudoku-high-score');
@@ -483,4 +483,4 @@ export class GamesModule {
 }
 
 (window as any).GamesModule = GamesModule;
-console.log('✅ GamesModule v6.0.0 загружен (подписка на баланс)');
+console.log('✅ GamesModule v6.1.0 загружен');
