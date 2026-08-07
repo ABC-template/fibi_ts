@@ -1,7 +1,7 @@
 // ============================================
 // src/services/api.ts
 // Базовый API-клиент с JWT и sync_token
-// Версия: 6.0.0 - добавлены методы экономики
+// Версия: 7.0.0 - добавлены методы для заданий
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -118,7 +118,6 @@ export class ApiClient {
   // ==========================================
 
   async request<T = any>(endpoint: string, options: IApiRequestOptions = {}): Promise<T> {
-    // Загружаем свежие токены
     this.loadTokens();
     
     const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint}`;
@@ -134,9 +133,6 @@ export class ApiClient {
     
     if (this.syncToken) {
       headers['x-sync-token'] = this.syncToken;
-      console.log(`📤 Отправляем sync_token: ${this.syncToken.substring(0, 8)}...`);
-    } else {
-      console.log('📤 sync_token не отправлен (не найден)');
     }
     
     const timeout = options.timeout || this.timeout;
@@ -312,12 +308,9 @@ export class ApiClient {
   }
 
   // ==========================================
-  // ✅ НОВЫЕ МЕТОДЫ ДЛЯ ЭКОНОМИКИ
+  // ✅ МЕТОДЫ ДЛЯ ЭКОНОМИКИ
   // ==========================================
 
-  /**
-   * Начислить монеты
-   */
   async earnCoins(
     userId: number,
     amount: number,
@@ -334,9 +327,6 @@ export class ApiClient {
     });
   }
 
-  /**
-   * Списать монеты
-   */
   async spendCoins(
     userId: number,
     amount: number,
@@ -353,18 +343,44 @@ export class ApiClient {
     });
   }
 
-  /**
-   * Получить баланс
-   */
   async getBalance(): Promise<any> {
     return this.get('/economy/balance');
   }
 
-  /**
-   * Получить историю транзакций
-   */
   async getTransactions(limit: number = 50, offset: number = 0): Promise<any> {
     return this.get(`/economy/history?limit=${limit}&offset=${offset}`);
+  }
+
+  // ==========================================
+  // ✅ МЕТОДЫ ДЛЯ ЗАДАНИЙ
+  // ==========================================
+
+  async syncTasks(): Promise<any> {
+    return this.post('/tasks/sync');
+  }
+
+  async getDailyBonusStatus(): Promise<any> {
+    return this.get('/tasks/daily-bonus/status');
+  }
+
+  async claimDailyBonus(): Promise<any> {
+    return this.post('/tasks/daily-bonus/claim');
+  }
+
+  async updateQuestProgress(questId: string, increment: number = 1): Promise<any> {
+    return this.post('/tasks/quests/progress', { questId, increment });
+  }
+
+  async claimQuestReward(questId: string): Promise<any> {
+    return this.post('/tasks/quests/claim', { questId });
+  }
+
+  async updateAchievementProgress(achievementId: string, increment: number = 1): Promise<any> {
+    return this.post('/tasks/achievements/progress', { achievementId, increment });
+  }
+
+  async claimAchievementReward(achievementId: string): Promise<any> {
+    return this.post('/tasks/achievements/claim', { achievementId });
   }
 
   // ==========================================
@@ -449,4 +465,4 @@ export class ApiClient {
 
 // Создаем экземпляр
 export const apiClient = new ApiClient();
-console.log('✅ ApiClient v6.0.0 загружен');
+console.log('✅ ApiClient v7.0.0 загружен');
