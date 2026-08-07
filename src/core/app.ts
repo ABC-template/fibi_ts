@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 9.1.0 - исправлена инициализация экономики
+// Версия: 9.2.0 - обновлена инициализация заданий
 // ============================================
 
 import './config';
@@ -53,7 +53,7 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v9.1.0 начал загрузку');
+console.log('🚀 App v9.2.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -165,7 +165,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 9.1.0
+                    Версия 9.2.0
                 </div>
             </div>
         `;
@@ -454,14 +454,12 @@ async function initApp(): Promise<void> {
             // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR
             initEruda(result.role);
 
-            // ✅ НОВОЕ: ИНИЦИАЛИЗАЦИЯ ЭКОНОМИЧЕСКОГО ЯДРА ПОСЛЕ АВТОРИЗАЦИИ
+            // ✅ ИНИЦИАЛИЗАЦИЯ ЭКОНОМИЧЕСКОГО ЯДРА
             try {
-                // Загружаем экономические модули
                 const { economyManager, economyStore } = await import('@/economy');
                 window.economyManager = economyManager;
                 window.economyStore = economyStore;
                 
-                // Загружаем баланс
                 if (economyStore) {
                     await economyStore.loadBalance();
                     console.log('💰 Баланс загружен в EconomyStore');
@@ -469,6 +467,14 @@ async function initApp(): Promise<void> {
                 console.log('✅ Экономическое ядро инициализировано');
             } catch (err) {
                 console.warn('⚠️ Не удалось инициализировать экономическое ядро:', err);
+            }
+
+            // ✅ СИНХРОНИЗАЦИЯ ЗАДАНИЙ
+            try {
+                await tasksStore.sync();
+                console.log('✅ Задания синхронизированы');
+            } catch (err) {
+                console.warn('⚠️ Не удалось синхронизировать задания:', err);
             }
 
             updateSplashProgress(95, '🎬 Завершение...');
@@ -530,7 +536,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v9.1.0 успешно загружено (с экономическим ядром)');
+        console.log('✅ Приложение v9.2.0 успешно загружено (с синхронизацией заданий)');
     }, 500);
 }
 
@@ -563,6 +569,58 @@ function setupEventSubscriptions(): void {
         document.querySelectorAll('.coin-amount, .balance-display').forEach(el => {
             (el as HTMLElement).textContent = String(data.newBalance);
         });
+    });
+
+    // ✅ НОВОЕ: обновление заданий после действий
+    eventBus.on('chat:message_added', () => {
+        tasksStore.updateQuest('send_message_1').catch(() => {});
+        tasksStore.updateQuest('send_message_5').catch(() => {});
+    });
+
+    eventBus.on('organizer:todo_added', () => {
+        tasksStore.updateQuest('add_todo').catch(() => {});
+    });
+
+    eventBus.on('organizer:todo_toggled', (data) => {
+        if (data.isCompleted) {
+            tasksStore.updateQuest('complete_todo_3').catch(() => {});
+        }
+    });
+
+    eventBus.on('organizer:reminder_added', () => {
+        tasksStore.updateQuest('create_reminder').catch(() => {});
+    });
+
+    // Достижения
+    eventBus.on('chat:created', () => {
+        tasksStore.updateAchievement('first_chat').catch(() => {});
+    });
+
+    eventBus.on('chat:message_added', () => {
+        tasksStore.updateAchievement('chat_100').catch(() => {});
+    });
+
+    eventBus.on('organizer:todo_added', () => {
+        tasksStore.updateAchievement('todo_50').catch(() => {});
+    });
+
+    eventBus.on('organizer:reminder_added', () => {
+        tasksStore.updateAchievement('reminder_10').catch(() => {});
+    });
+
+    eventBus.on('tasks:daily_bonus_claimed', (data) => {
+        if (data.streak >= 7) {
+            tasksStore.updateAchievement('streak_7').catch(() => {});
+        }
+        if (data.streak >= 30) {
+            tasksStore.updateAchievement('streak_30').catch(() => {});
+        }
+    });
+
+    eventBus.on('economy:balance:updated', (data) => {
+        if (data.newBalance >= 100) {
+            tasksStore.updateAchievement('coins_100').catch(() => {});
+        }
     });
 
     setupNetworkListeners();
@@ -619,4 +677,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v9.1.0 полностью загружен (с экономическим ядром)');
+console.log('✅ app.ts v9.2.0 полностью загружен (с синхронизацией заданий)');
