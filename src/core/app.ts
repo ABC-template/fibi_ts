@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 9.0.9 - С ЭКОНОМИЧЕСКИМ ЯДРОМ
+// Версия: 9.0.9 - FIXED: удалён дублирующийся запуск, Eruda статическая
 // ============================================
 
 import './config';
@@ -53,10 +53,7 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { TasksModule } from '@/modules/tasks/TasksModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-// ✅ ДОБАВЛЕНО: ЭКОНОМИЧЕСКОЕ ЯДРО
-import '@/economy';
-
-console.log('🚀 App v9.0.9 начал загрузку (с экономическим ядром)');
+console.log('🚀 App v9.0.9 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -107,11 +104,6 @@ function bindUIToWindow(): void {
     window.eventBus = eventBus;
     
     window.chatSend = chatSend;
-    
-    // ✅ ДОБАВЛЕНО: экономика в window
-    window.economyManager = (window as any).economyManager;
-    window.economyStore = (window as any).economyStore;
-    window.economyService = (window as any).economyService;
     
     console.log('✅ UI привязан к window');
 }
@@ -193,6 +185,8 @@ function initEruda(role: string): void {
         return;
     }
 
+    // Eruda уже загружена статически из index.html
+    // Просто инициализируем её
     if (typeof (window as any).eruda !== 'undefined') {
         try {
             (window as any).eruda.init();
@@ -342,16 +336,7 @@ async function initApp(): Promise<void> {
     organizerStore.load();
     tasksStore.load();
 
-    // ✅ ДОБАВЛЕНО: загружаем баланс в EconomyStore
-    if ((window as any).economyStore) {
-        try {
-            await (window as any).economyStore.loadBalance();
-            console.log('💰 Баланс загружен в EconomyStore');
-        } catch (err) {
-            console.warn('⚠️ Не удалось загрузить баланс:', err);
-        }
-    }
-
+    // ВЫЗЫВАЕМ НОВЫЙ МЕТОД ИЗ ChatStore — УДАЛЯЕМ ВСЕ ПУСТЫЕ ЧАТЫ
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
         console.log(`🧹 При загрузке очищено ${cleaned} пустых чатов (HARD DELETE)`);
@@ -531,7 +516,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v9.0.9 успешно загружено (с экономическим ядром)');
+        console.log('✅ Приложение v9.0.9 успешно загружено');
     }, 500);
 }
 
@@ -558,13 +543,6 @@ function setupEventSubscriptions(): void {
     eventBus.on('chat:restored', updateDrawer);
     eventBus.on('chat:renamed', () => renderChatsInDrawer());
     eventBus.on('chat:trash_cleared', () => updateDrawerTrashCount());
-
-    // ✅ ДОБАВЛЕНО: подписка на обновление баланса для UI
-    eventBus.on('economy:balance:updated', (data) => {
-        document.querySelectorAll('.coin-amount, .balance-display').forEach(el => {
-            (el as HTMLElement).textContent = String(data.newBalance);
-        });
-    });
 
     setupNetworkListeners();
 
@@ -620,4 +598,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v9.0.9 полностью загружен (с экономическим ядром)');
+console.log('✅ app.ts v9.0.9 полностью загружен (удалён дублирующийся запуск)');
