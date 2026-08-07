@@ -1,12 +1,13 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре
-// Версия: 1.1.0 - добавлены новые пункты меню
+// Версия: 1.2.0 - исправлен импорт
 // ============================================
+
 import './drawer.css';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 import { eventBus } from '@/core/event-bus';
 import { modalManager } from '@/core/modal-manager';
 import { navigationState } from '@/core/navigation-state';
@@ -531,7 +532,7 @@ export function appendDrawerNav(container: HTMLElement): void {
             label: 'Задания',
             action: () => {
                 closeDrawer();
-                window.moduleLoader.load('sponsors');
+                window.moduleLoader.load('quests');
             },
             show: true,
         },
@@ -580,7 +581,6 @@ export function appendDrawerNav(container: HTMLElement): void {
                     const nextTheme = themes[(currentIndex + 1) % themes.length];
                     themeManager.setTheme(nextTheme);
                     updateThemeLabel(nextTheme);
-                    // Обновляем текст кнопки
                     const labelEl = document.getElementById('drawer-theme-label');
                     if (labelEl) {
                         const names = { 'light': 'Светлая', 'amoled': 'AMOLED' };
@@ -600,10 +600,10 @@ export function appendDrawerNav(container: HTMLElement): void {
                     '☁️ Синхронизированные данные (PRO) восстановятся из облака.';
 
                 const doClear = (): void => {
-                    if (window.tasksStore) {
-                        window.tasksStore._data = {};
-                        window.tasksStore.save();
-                        window.tasksStore.clearJWT();
+                    if (window.questsStore) {
+                        window.questsStore._data = {};
+                        window.questsStore.save();
+                        window.questsStore.clearJWT();
                     }
                     if (window.chatStore) {
                         window.chatStore._data = {};
@@ -647,7 +647,6 @@ export function appendDrawerNav(container: HTMLElement): void {
         },
     ];
 
-    // Рендерим основные пункты
     for (const item of menuItems) {
         if (!item.show) continue;
 
@@ -692,12 +691,10 @@ export function appendDrawerNav(container: HTMLElement): void {
         nav.appendChild(el);
     }
 
-    // Разделитель перед настройками
     const divider2 = document.createElement('div');
     divider2.style.cssText = 'height: 1px; background: rgba(212,175,55,0.08); margin: 4px 20px;';
     nav.appendChild(divider2);
 
-    // Рендерим настройки
     for (const item of settingsItems) {
         if (!item.show) continue;
 
@@ -739,7 +736,6 @@ export function appendDrawerNav(container: HTMLElement): void {
         nav.appendChild(el);
     }
 
-    // Версия
     const version = document.createElement('div');
     version.style.cssText = 'padding: 8px 20px 4px 20px; font-size: 11px; color: var(--app-text-tertiary); text-align: center;';
     version.textContent = 'Версия 9.0.0';
@@ -747,7 +743,6 @@ export function appendDrawerNav(container: HTMLElement): void {
 
     container.appendChild(nav);
 
-    // Обновляем счетчик корзины после рендеринга
     setTimeout(() => updateDrawerTrashCount(), 100);
 }
 
@@ -756,7 +751,7 @@ export function appendDrawerNav(container: HTMLElement): void {
 // ==========================================
 
 export function updateDrawerCoins(): void {
-    const balance = tasksStore.getBalance() || 0;
+    const balance = questsStore.getBalance() || 0;
     const coinEl = document.getElementById('drawer-coins-amount');
     if (coinEl) coinEl.textContent = String(balance);
 }
@@ -878,4 +873,4 @@ export function setupDrawerEventListeners(): void {
 (window as any).renameChatFromDrawer = renameChatFromDrawer;
 (window as any).deleteChatFromDrawer = deleteChatFromDrawer;
 
-console.log('✅ drawer.ts v1.1.0 загружен (с новыми пунктами меню)');
+console.log('✅ drawer.ts v1.2.0 загружен');
