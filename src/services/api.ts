@@ -351,37 +351,37 @@ export class ApiClient {
     return this.get(`/economy/history?limit=${limit}&offset=${offset}`);
   }
 
-  // ==========================================
-  // ✅ МЕТОДЫ ДЛЯ ЗАДАНИЙ
-  // ==========================================
+// ============================================
+// ✅ МЕТОДЫ ДЛЯ ЗАДАНИЙ (с передачей награды)
+// ============================================
 
-  async syncTasks(): Promise<any> {
-    return this.post('/tasks/sync');
-  }
+async syncTasks(): Promise<any> {
+  return this.post('/tasks/sync');
+}
 
-  async getDailyBonusStatus(): Promise<any> {
-    return this.get('/tasks/daily-bonus/status');
-  }
+async getDailyBonusStatus(): Promise<any> {
+  return this.get('/tasks/daily-bonus/status');
+}
 
-  async claimDailyBonus(): Promise<any> {
-    return this.post('/tasks/daily-bonus/claim');
-  }
+async claimDailyBonus(): Promise<any> {
+  return this.post('/tasks/daily-bonus/claim');
+}
 
-  async updateQuestProgress(questId: string, increment: number = 1): Promise<any> {
-    return this.post('/tasks/quests/progress', { questId, increment });
-  }
+async updateQuestProgress(questId: string, increment: number = 1): Promise<any> {
+  return this.post('/tasks/quests/progress', { questId, increment });
+}
 
-  async claimQuestReward(questId: string): Promise<any> {
-    return this.post('/tasks/quests/claim', { questId });
-  }
+async claimQuestReward(questId: string, reward: number): Promise<any> {
+  return this.post('/tasks/quests/claim', { questId, reward }); // 👈 reward с клиента
+}
 
-  async updateAchievementProgress(achievementId: string, increment: number = 1): Promise<any> {
-    return this.post('/tasks/achievements/progress', { achievementId, increment });
-  }
+async updateAchievementProgress(achievementId: string, increment: number = 1): Promise<any> {
+  return this.post('/tasks/achievements/progress', { achievementId, increment });
+}
 
-  async claimAchievementReward(achievementId: string): Promise<any> {
-    return this.post('/tasks/achievements/claim', { achievementId });
-  }
+async claimAchievementReward(achievementId: string, reward: number): Promise<any> {
+  return this.post('/tasks/achievements/claim', { achievementId, reward }); // 👈 reward с клиента
+}
 
   // ==========================================
   // СТРИМИНГ
