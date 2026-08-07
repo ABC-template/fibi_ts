@@ -1,15 +1,16 @@
 // ============================================
 // src/modules/profile/ProfileModule.ts
 // Полноценная страница профиля
-// Версия: 4.0.0 - TypeScript
+// Версия: 4.1.0 - исправлен импорт
 // ============================================
+
 import './profile.css';
 import { headerManager } from '@/core/header-manager';
 import { navigationState } from '@/core/navigation-state';
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 import { themeManager } from '@/core/theme-manager';
 import type { ThemeType } from '@/core/theme-manager';
 
@@ -22,7 +23,7 @@ export class ProfileModule {
   private eventBus = eventBus;
   private chatStore = chatStore;
   private userStore = userStore;
-  private tasksStore = tasksStore;
+  private questsStore = questsStore;
   private themeManager = themeManager;
 
   constructor(container: HTMLElement) {
@@ -390,7 +391,7 @@ export class ProfileModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ ProfileModule v4.0.0 инициализирован');
+    console.log('✅ ProfileModule v4.1.0 инициализирован');
   }
 
   // ==========================================
@@ -449,7 +450,7 @@ export class ProfileModule {
     this._updateRole(this.userStore.role);
 
     if (coinsEl) {
-      coinsEl.textContent = String(this.tasksStore.getBalance() || 0);
+      coinsEl.textContent = String(this.questsStore.getBalance() || 0);
     }
 
     this._updateLimits(this.userStore.usedToday || 0, this.userStore.dailyLimit || 0);
@@ -587,10 +588,10 @@ export class ProfileModule {
     '☁️ Синхронизированные данные (PRO) восстановятся из облака.';
 
   const doClear = (): void => {
-    if ((window as any).tasksStore) {
-      (window as any).tasksStore._data = {};
-      (window as any).tasksStore.save();
-      (window as any).tasksStore.clearJWT();
+    if ((window as any).questsStore) {
+      (window as any).questsStore._data = {};
+      (window as any).questsStore.save();
+      (window as any).questsStore.clearJWT();
     }
     if ((window as any).chatStore) {
       (window as any).chatStore._data = {};
@@ -634,4 +635,4 @@ export class ProfileModule {
   }
 };
 
-console.log('✅ ProfileModule v4.0.0 загружен');
+console.log('✅ ProfileModule v4.1.0 загружен');
