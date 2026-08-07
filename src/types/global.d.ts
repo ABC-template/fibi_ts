@@ -244,4 +244,34 @@ declare global {
     }
 }
 
+// ==========================================
+// ECONOMY
+// ==========================================
+
+import type { 
+  IEconomyEarnEvent, 
+  IEconomySpendEvent, 
+  IEconomyBalanceUpdatedEvent,
+  IEconomyErrorEvent 
+} from '@/economy/event-types';
+
+declare global {
+  interface Window {
+    // Economy
+    economyManager: any;
+    economyStore: any;
+    economyService: any;
+  }
+}
+
+// Расширяем типы для EventBus
+declare module '@/core/event-bus' {
+  interface EventBus {
+    emit<T = any>(event: 'economy:earn', data: IEconomyEarnEvent, sender?: any): void;
+    emit<T = any>(event: 'economy:spend', data: IEconomySpendEvent, sender?: any): void;
+    emit<T = any>(event: 'economy:balance:updated', data: IEconomyBalanceUpdatedEvent, sender?: any): void;
+    emit<T = any>(event: 'economy:error', data: IEconomyErrorEvent, sender?: any): void;
+  }
+}
+
 export {};
