@@ -1,12 +1,12 @@
 // ============================================
 // src/utils/global.ts
 // Глобальные функции для window
-// Версия: 1.0.1 - FIXED: добавлен импорт TopicId
+// Версия: 1.1.0 - исправлен импорт
 // ============================================
 
 import type { TopicId } from '@types';
 import { chatStore } from '@/store/ChatStore';
-import { tasksStore } from '@/store/TasksStore';
+import { questsStore } from '@/store/QuestsStore';
 import { userStore } from '@/store/UserStore';
 import { organizerStore } from '@/store/OrganizerStore';
 import { chatService } from '@/services/chats';
@@ -53,7 +53,7 @@ export function setupGlobalFunctions(): void {
     window.chatStore = chatStore;
     window.userStore = userStore;
     window.organizerStore = organizerStore;
-    window.tasksStore = tasksStore;
+    window.questsStore = questsStore;
 
     // ==========================================
     // SERVICES
@@ -214,12 +214,12 @@ export function setupGlobalFunctions(): void {
         console.log('🪙 [goToTasks] Переход в задания');
         closeDrawer({ instant: true });
         if (navigationState) {
-            navigationState.navigate('tasks', {}, { addToHistory: true });
+            navigationState.navigate('quests', {}, { addToHistory: true });
         } else if (moduleLoader) {
-            moduleLoader.load('tasks');
+            moduleLoader.load('quests');
         }
         if (navigation) {
-            navigation.setActive('tasks');
+            navigation.setActive('quests');
         }
     };
 
@@ -272,7 +272,6 @@ export function setupGlobalFunctions(): void {
     };
 }
 
-// ✅ ФУНКЦИЯ ВЫНЕСЕНА ЗА ПРЕДЕЛЫ setupGlobalFunctions
 function isValidTopic(topic: string): boolean {
     const allowed: TopicId[] = ['code', 'creative', 'fast', 'kitchen', 'analytics'];
     return allowed.includes(topic as TopicId);
