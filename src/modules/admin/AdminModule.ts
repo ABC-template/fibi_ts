@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Админ-панель (только для creator)
-// Версия: 2.1.0 - ИСПРАВЛЕН: setUserLocked → toggleUserLock
+// Версия: 3.0.0 - добавлена вкладка "Задания"
 // ============================================
 
 import { adminStore } from './AdminStore';
@@ -9,9 +9,10 @@ import { userStore } from '@/store/UserStore';
 import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { questsStore } from '@/store/QuestsStore';
 import type { UUID } from '@types';
 
-type AdminTab = 'dashboard' | 'tasks' | 'coins' | 'referrals' | 'users' | 'economy' | 'audit';
+type AdminTab = 'dashboard' | 'tasks' | 'coins' | 'referrals' | 'users' | 'economy' | 'audit' | 'quests';
 
 export class AdminModule {
   private container: HTMLElement;
@@ -23,6 +24,7 @@ export class AdminModule {
   private userStore = userStore;
   private adminStore = adminStore;
   private uiRenderer = uiRenderer;
+  private questsStore = questsStore;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -49,7 +51,7 @@ export class AdminModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v2.1.0 инициализирован (с управлением экономикой)');
+    console.log('✅ AdminModule v3.0.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -122,6 +124,7 @@ export class AdminModule {
     const tabs: { id: AdminTab; label: string; icon: string }[] = [
       { id: 'dashboard', label: '📊 Обзор', icon: 'layout-dashboard' },
       { id: 'tasks', label: '📋 Задания', icon: 'clipboard-list' },
+      { id: 'quests', label: '🎯 Квесты', icon: 'target' },
       { id: 'coins', label: '💰 Монеты', icon: 'coins' },
       { id: 'referrals', label: '🤝 Рефералы', icon: 'users' },
       { id: 'users', label: '👤 Пользователи', icon: 'user' },
@@ -153,6 +156,7 @@ export class AdminModule {
     switch (this._activeTab) {
       case 'dashboard': return this._renderDashboard();
       case 'tasks': return this._renderTasksTab();
+      case 'quests': return this._renderQuestsTab();
       case 'coins': return this._renderCoinsTab();
       case 'referrals': return this._renderReferralsTab();
       case 'users': return this._renderUsersTab();
@@ -486,6 +490,74 @@ export class AdminModule {
     `;
   }
 
+  // ==========================================
+  // НОВАЯ ВКЛАДКА: КВЕСТЫ
+  // ==========================================
+
+  private _renderQuestsTab(): string {
+    const quests = this.questsStore.getQuests();
+
+    return `
+      <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
+        <div style="font-size: 14px; font-weight: 600; color: var(--app-text-primary); margin-bottom: 12px;">
+          🎯 Управление квестами
+        </div>
+        <div style="font-size: 12px; color: var(--app-text-tertiary); margin-bottom: 12px;">
+          Здесь отображаются все задания пользователей. Для управления заданиями используется админ-панель в разделе "Задания".
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px;">
+          <div style="background: var(--app-bg-tertiary); padding: 12px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 20px; font-weight: 700; color: var(--app-accent-primary);">${quests.length}</div>
+            <div style="font-size: 11px; color: var(--app-text-tertiary);">Всего</div>
+          </div>
+          <div style="background: var(--app-bg-tertiary); padding: 12px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 20px; font-weight: 700; color: #27ae60;">${quests.filter(q => q.completed).length}</div>
+            <div style="font-size: 11px; color: var(--app-text-tertiary);">Выполнено</div>
+          </div>
+          <div style="background: var(--app-bg-tertiary); padding: 12px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 20px; font-weight: 700; color: #f1c40f;">${quests.filter(q => q.claimed).length}</div>
+            <div style="font-size: 11px; color: var(--app-text-tertiary);">Награды получены</div>
+          </div>
+        </div>
+
+        <div style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+          ${quests.length === 0 ? `
+            <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">
+              Нет активных квестов
+            </div>
+          ` : quests.slice(0, 50).map((q: any) => `
+            <div style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding: 8px 12px;
+              background: var(--app-bg-tertiary);
+              border-radius: 8px;
+              border-left: 3px solid ${q.completed ? '#27ae60' : q.claimed ? '#f1c40f' : '#3498db'};
+              font-size: 12px;
+            ">
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 500; color: var(--app-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  ${typeof q.title === 'string' ? q.title : (q.title?.ru || q.title?.en || 'Без названия')}
+                </div>
+                <div style="font-size: 10px; color: var(--app-text-tertiary);">
+                  ${q.type} • ${q.progress}/${q.target}
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                <span style="font-size: 11px; font-weight: 600; color: ${q.completed ? '#27ae60' : q.claimed ? '#f1c40f' : '#3498db'};">
+                  ${q.completed ? '✅' : q.claimed ? '💰' : '⏳'}
+                </span>
+                <span style="font-size: 11px; color: #f1c40f;">+${q.reward_coins}🪙</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   private _renderCoinsTab(): string {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
@@ -592,7 +664,7 @@ export class AdminModule {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
         <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">👤 Управление пользователями</div>
-        
+
         <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
           <input id="admin-user-id" type="number" placeholder="Telegram ID" style="
             flex: 1;
@@ -683,7 +755,7 @@ export class AdminModule {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
         <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">⚙️ Правила начисления монет</div>
-        
+
         <div style="font-size: 12px; color: var(--app-text-tertiary); margin-bottom: 12px;">
           Изменения вступают в силу мгновенно. Правила с суммой 0 используют сумму из события.
         </div>
@@ -715,7 +787,7 @@ export class AdminModule {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
         <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">📜 Аудит экономических операций</div>
-        
+
         <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
           <input id="audit-user-filter" type="number" placeholder="ID пользователя" style="
             flex: 1;
@@ -981,7 +1053,7 @@ export class AdminModule {
 
       (window as any).closeModal();
       this.uiRenderer?.showToast('✅ Правило обновлено', 'success', 1500);
-      
+
       await this.reloadRules();
     } catch (err) {
       console.error('❌ Ошибка сохранения правила:', err);
@@ -1202,8 +1274,7 @@ export class AdminModule {
         (document.getElementById('admin-coin-user') as HTMLInputElement).value = '';
         (document.getElementById('admin-coin-amount') as HTMLInputElement).value = '';
         (document.getElementById('admin-coin-reason') as HTMLInputElement).value = '';
-        
-        // Обновляем баланс в UI
+
         if ((window as any).economyStore) {
           await (window as any).economyStore.loadBalance();
         }
@@ -1418,6 +1489,9 @@ export class AdminModule {
     if (this._activeTab === 'audit') {
       this.loadAudit();
     }
+    if (this._activeTab === 'quests') {
+      this.questsStore.sync().catch(() => {});
+    }
 
     if ((window as any).navigation) {
       (window as any).navigation.hide();
@@ -1450,4 +1524,4 @@ export class AdminModule {
 (window as any).AdminModule = AdminModule;
 (window as any).adminModule = new AdminModule(document.createElement('div'));
 
-console.log('✅ AdminModule v2.1.0 загружен (с управлением экономикой)');
+console.log('✅ AdminModule v3.0.0 загружен');
