@@ -1,7 +1,7 @@
 // ============================================
 // src/services/api.ts
 // Базовый API-клиент с JWT и sync_token
-// Версия: 5.0.0 - TypeScript
+// Версия: 6.0.0 - добавлены методы экономики
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -175,7 +175,6 @@ export class ApiClient {
         if (response.status === 401 || response.status === 403) {
           console.warn(`⚠️ Ошибка аутентификации ${response.status}, пробуем обновить JWT...`);
           
-          // Пробуем обновить через AuthService
           const authService = (window as any).authService;
           if (authService) {
             try {
@@ -313,6 +312,62 @@ export class ApiClient {
   }
 
   // ==========================================
+  // ✅ НОВЫЕ МЕТОДЫ ДЛЯ ЭКОНОМИКИ
+  // ==========================================
+
+  /**
+   * Начислить монеты
+   */
+  async earnCoins(
+    userId: number,
+    amount: number,
+    source: string,
+    description: string,
+    metadata?: Record<string, any>
+  ): Promise<any> {
+    return this.post('/economy/earn', {
+      userId,
+      amount,
+      source,
+      description,
+      metadata: metadata || {},
+    });
+  }
+
+  /**
+   * Списать монеты
+   */
+  async spendCoins(
+    userId: number,
+    amount: number,
+    source: string,
+    description: string,
+    metadata?: Record<string, any>
+  ): Promise<any> {
+    return this.post('/economy/spend', {
+      userId,
+      amount,
+      source,
+      description,
+      metadata: metadata || {},
+    });
+  }
+
+  /**
+   * Получить баланс
+   */
+  async getBalance(): Promise<any> {
+    return this.get('/economy/balance');
+  }
+
+  /**
+   * Получить историю транзакций
+   */
+  async getTransactions(limit: number = 50, offset: number = 0): Promise<any> {
+    return this.get(`/economy/history?limit=${limit}&offset=${offset}`);
+  }
+
+  // ==========================================
   // СТРИМИНГ
   // ==========================================
 
@@ -394,4 +449,4 @@ export class ApiClient {
 
 // Создаем экземпляр
 export const apiClient = new ApiClient();
-console.log('✅ ApiClient v5.0.0 загружен');
+console.log('✅ ApiClient v6.0.0 загружен');
