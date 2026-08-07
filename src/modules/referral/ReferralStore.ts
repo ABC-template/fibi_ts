@@ -1,16 +1,18 @@
 // ============================================
 // src/modules/referral/ReferralStore.ts
 // Локальное хранилище рефералов
-// Версия: 1.0.0
+// Версия: 2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
+import { eventBus } from '@/core/event-bus';
 import type { UUID, ISODateString } from '@types';
 
 export interface IReferral {
   id: UUID;
+  referrer_id: number;
   referred_id: number;
-  referred_username: string;
+  referred_username: string | null;
   status: 'pending' | 'active' | 'rewarded';
   created_at: ISODateString;
   activated_at?: ISODateString;
@@ -36,7 +38,6 @@ export interface IReferralStoreData {
   last_sync: ISODateString | null;
 }
 
-// Конфигурация ступеней реферальной системы
 export const REFERRAL_TIERS = [
   { from: 0, to: 100, reward: 10, name: 'bronze' as const },
   { from: 101, to: 500, reward: 5, name: 'silver' as const },
@@ -44,7 +45,7 @@ export const REFERRAL_TIERS = [
   { from: 1001, to: Infinity, reward: 1, name: 'platinum' as const },
 ];
 
-export const REFERRAL_REWARD_LIMIT = 500; // макс монет с рефералов (ступенчато)
+export const REFERRAL_REWARD_LIMIT = 500;
 
 export class ReferralStore extends BaseStore<IReferralStoreData> {
   constructor() {
@@ -63,18 +64,23 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
 
     if (!this._data.referrals) this._data.referrals = [];
     if (this._data.total_reward === undefined) this._data.total_reward = 0;
+
+    this._subscribeToBalance();
   }
 
-  /**
-   * Получить список рефералов
-   */
+  private _subscribeToBalance(): void {
+    eventBus.on('economy:balance:updated', (data) => {
+      this._emitChange('referral:balance_updated', { 
+        userId: data.userId, 
+        newBalance: data.newBalance 
+      });
+    }, this);
+  }
+
   getReferrals(): IReferral[] {
     return this._data.referrals || [];
   }
 
-  /**
-   * Получить статистику
-   */
   getStats(): IReferralStats {
     const referrals = this._data.referrals || [];
     const total = referrals.length;
@@ -82,7 +88,6 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
     const active = referrals.filter(r => r.status === 'active').length;
     const rewarded = referrals.filter(r => r.status === 'rewarded').length;
 
-    // Определяем текущий уровень
     let current_tier: IReferralStats['current_tier'] = 'bronze';
     for (const tier of REFERRAL_TIERS) {
       if (total >= tier.from && total <= tier.to) {
@@ -91,7 +96,6 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
       }
     }
 
-    // Прогресс до следующего уровня
     let next_tier_progress = 0;
     for (let i = 0; i < REFERRAL_TIERS.length; i++) {
       const tier = REFERRAL_TIERS[i];
@@ -108,7 +112,6 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
       }
     }
 
-    // Проверяем лимит
     const referral_limit_reached = this._data.total_reward >= REFERRAL_REWARD_LIMIT;
 
     return {
@@ -123,9 +126,6 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
     };
   }
 
-  /**
-   * Получить награду за реферала (в зависимости от текущего уровня)
-   */
   getRewardForReferral(): number {
     const total = this._data.referrals?.length || 0;
     for (const tier of REFERRAL_TIERS) {
@@ -133,23 +133,16 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
         return tier.reward;
       }
     }
-    return 1; // fallback
+    return 1;
   }
 
-  /**
-   * Добавить реферала
-   */
   addReferral(referral: IReferral): void {
     this._data.referrals.push(referral);
     this.save();
-
     console.log(`🤝 Новый реферал: ${referral.referred_username} (${referral.status})`);
     this._emitChange('referral:added', { referral });
   }
 
-  /**
-   * Обновить статус реферала
-   */
   updateReferralStatus(referralId: UUID, status: IReferral['status']): void {
     const referral = this._data.referrals.find(r => r.id === referralId);
     if (!referral) {
@@ -170,10 +163,7 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
     this._emitChange('referral:status_changed', { referralId, status });
   }
 
-  /**
-   * Начислить награду за реферала
-   */
-  rewardReferral(referralId: UUID, amount: number): void {
+  markReferralRewarded(referralId: UUID, amount: number): void {
     const referral = this._data.referrals.find(r => r.id === referralId);
     if (!referral) {
       console.warn(`⚠️ Реферал ${referralId} не найден`);
@@ -185,51 +175,27 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
       return;
     }
 
-    // Проверяем лимит
-    if (this._data.total_reward + amount > REFERRAL_REWARD_LIMIT) {
-      const remaining = REFERRAL_REWARD_LIMIT - this._data.total_reward;
-      if (remaining <= 0) {
-        console.warn(`⚠️ Достигнут лимит реферальных наград (${REFERRAL_REWARD_LIMIT})`);
-        return;
-      }
-      // Начисляем только остаток
-      console.log(`⚠️ Лимит достигнут, начисляем ${remaining} вместо ${amount}`);
-      this._data.total_reward += remaining;
-      referral.reward_amount = remaining;
-    } else {
-      this._data.total_reward += amount;
-      referral.reward_amount = amount;
-    }
-
+    this._data.total_reward += amount;
     referral.status = 'rewarded';
+    referral.reward_amount = amount;
     referral.rewarded_at = new Date().toISOString();
 
     this.save();
-    console.log(`💰 Начислено ${amount} монет за реферала ${referralId}`);
+    console.log(`💰 Реферал ${referralId} отмечен как награждённый (${amount} монет)`);
     this._emitChange('referral:rewarded', { referralId, amount });
   }
 
-  /**
-   * Получить реферальную ссылку
-   */
   getReferralLink(): string | null {
     return this._data.referral_link;
   }
 
-  /**
-   * Установить реферальную ссылку
-   */
   setReferralLink(link: string): void {
     this._data.referral_link = link;
     this.save();
     console.log(`🔗 Реферальная ссылка установлена: ${link}`);
   }
 
-  /**
-   * Синхронизировать данные с сервера
-   */
   sync(data: { referrals: IReferral[]; total_reward: number; referral_link: string }): void {
-    // Мержим рефералов (избегаем дублей по id)
     const existingIds = new Set(this._data.referrals.map(r => r.id));
     const newReferrals = data.referrals.filter(r => !existingIds.has(r.id));
     this._data.referrals = [...this._data.referrals, ...newReferrals];
@@ -237,14 +203,10 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
     this._data.referral_link = data.referral_link || null;
     this._data.last_sync = new Date().toISOString();
     this.save();
-
     console.log(`🔄 Рефералы синхронизированы (${this._data.referrals.length} всего)`);
     this._emitChange('referral:synced', { referrals: this._data.referrals });
   }
 
-  /**
-   * Очистить все данные
-   */
   clear(): void {
     this._data = {
       referrals: [],
@@ -259,4 +221,4 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
 }
 
 export const referralStore = new ReferralStore();
-console.log('✅ ReferralStore v1.0.0 загружен');
+console.log('✅ ReferralStore v2.0.0 загружен');
