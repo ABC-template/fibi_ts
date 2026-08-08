@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 10.2.0 - исправлены questsStore и questsModule
+// Версия: 10.3.0 - исправлен daily_login для всех пользователей
 // ============================================
 
 import './config';
@@ -53,7 +53,7 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v10.2.0 начал загрузку');
+console.log('🚀 App v10.3.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -165,7 +165,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 10.2.0
+                    Версия 10.3.0
                 </div>
             </div>
         `;
@@ -393,6 +393,15 @@ async function initApp(): Promise<void> {
             updateCoinsDisplay();
             updateDrawerTrashCount();
 
+            // ✅ НОВОЕ: ЕЖЕДНЕВНЫЙ ВХОД ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+            // Это должно выполняться ДО проверки isMember
+            try {
+                await questsStore.updateProgress('daily_login');
+                console.log('✅ Ежедневный вход отмечен для пользователя', uid);
+            } catch (err) {
+                console.warn('⚠️ Не удалось отметить ежедневный вход:', err);
+            }
+
             // TRIAL → PRO
             const previousRole = localStorage.getItem('user_role');
             const isFirstTimePro = isPro && result.syncToken === null;
@@ -424,41 +433,32 @@ async function initApp(): Promise<void> {
 
             localStorage.setItem('user_role', result.role || 'trial');
 
-if (result.isMember || result.role === 'admin' || result.role === 'creator') {
-    console.log(`👤 Пользователь авторизован: ${result.role}`);
-    
-    // ✅ НОВОЕ: Обновляем прогресс ежедневного входа
-    try {
-        await questsStore.updateProgress('daily_login');
-        console.log('✅ Ежедневный вход отмечен');
-    } catch (err) {
-        console.warn('⚠️ Не удалось отметить ежедневный вход:', err);
-    }
-    
-    if (isPro) {
-        console.log('🔄 Синхронизация включена (PRO)');
-        if (syncService) {
-            const userId = userStore.userId;
-            if (userId) syncService.subscribe(userId);
-        }
-        initExportButtons();
-    }
-    if (chatUI) {
-        setTimeout(() => {
-            const cleaned2 = chatStore.cleanupAllEmptyChats();
-            if (cleaned2 > 0) {
-                console.log(`🧹 При загрузке (отложенной) очищено ${cleaned2} пустых чатов`);
+            if (result.isMember || result.role === 'admin' || result.role === 'creator') {
+                console.log(`👤 Пользователь авторизован: ${result.role}`);
+                if (isPro) {
+                    console.log('🔄 Синхронизация включена (PRO)');
+                    if (syncService) {
+                        const userId = userStore.userId;
+                        if (userId) syncService.subscribe(userId);
+                    }
+                    initExportButtons();
+                }
+                if (chatUI) {
+                    setTimeout(() => {
+                        const cleaned2 = chatStore.cleanupAllEmptyChats();
+                        if (cleaned2 > 0) {
+                            console.log(`🧹 При загрузке (отложенной) очищено ${cleaned2} пустых чатов`);
+                        }
+                    }, 5000);
+                }
+            } else {
+                if (window.showGuest) {
+                    window.showGuest({
+                        msg: '403',
+                        joke: 'Для доступа к ИИ необходимо подписаться на канал!'
+                    });
+                }
             }
-        }, 5000);
-    }
-} else {
-    if (window.showGuest) {
-        window.showGuest({
-            msg: '403',
-            joke: 'Для доступа к ИИ необходимо подписаться на канал!'
-        });
-    }
-}
 
             // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR
             initEruda(result.role);
@@ -493,26 +493,18 @@ if (result.isMember || result.role === 'admin' || result.role === 'creator') {
     }
 
     // ✅ ШАГ 10
-if (tg) {
-    tg.onEvent('message', async (message: any) => {
-        console.log('📨 ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ БОТА:', message);
-        if (message.text === '🔄' && userStore.canSync()) {
-            console.log('✅ СИГНАЛ ОБНОВЛЕНИЯ РАСПОЗНАН!');
-            if (uiRenderer) uiRenderer.showSyncStatus('syncing');
-            if (window.questsModule) window.questsModule.show();
-            if (uiRenderer) uiRenderer.showSyncStatus('success');
-            
-            // ✅ НОВОЕ: Обновляем ежедневный вход при push-уведомлении
-            try {
-                await questsStore.updateProgress('daily_login');
-                console.log('✅ Ежедневный вход отмечен (из push)');
-            } catch (err) {
-                console.warn('⚠️ Не удалось отметить ежедневный вход (из push):', err);
+    if (tg) {
+        tg.onEvent('message', async (message: any) => {
+            console.log('📨 ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ БОТА:', message);
+            if (message.text === '🔄' && userStore.canSync()) {
+                console.log('✅ СИГНАЛ ОБНОВЛЕНИЯ РАСПОЗНАН!');
+                if (uiRenderer) uiRenderer.showSyncStatus('syncing');
+                if (window.questsModule) window.questsModule.show();
+                if (uiRenderer) uiRenderer.showSyncStatus('success');
             }
-        }
-    });
-    console.log('📨 Push-подписка активирована');
-}
+        });
+        console.log('📨 Push-подписка активирована');
+    }
 
     // ✅ ШАГ 11
     updateSplashProgress(98, '🚀 Загрузка интерфейса...');
@@ -553,7 +545,7 @@ if (tg) {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v10.2.0 успешно загружено (с единой системой заданий)');
+        console.log('✅ Приложение v10.3.0 успешно загружено (с единой системой заданий)');
     }, 500);
 }
 
@@ -668,4 +660,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v10.2.0 полностью загружен (с единой системой заданий)');
+console.log('✅ app.ts v10.3.0 полностью загружен (daily_login для всех пользователей)');
