@@ -1,7 +1,7 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 7.0.0 - удалены Tasks и Sponsors
+// Версия: 7.1.0 - удален SponsorsModule
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -17,7 +17,6 @@ import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 import { CoinsModule } from '@/modules/coins/CoinsModule';
 import { ReferralModule } from '@/modules/referral/ReferralModule';
-import { SponsorsModule } from '@/modules/sponsors/SponsorsModule';
 import { AdminModule } from '@/modules/admin/AdminModule';
 
 export interface IModuleOptions {
@@ -38,7 +37,7 @@ export class ModuleLoader {
   constructor() {
     this.container = document.getElementById('app-screen');
     this._registerAllModules();
-    console.log('✅ ModuleLoader v7.0.0 загружен');
+    console.log('✅ ModuleLoader v7.1.0 загружен');
   }
 
   /**
@@ -61,7 +60,6 @@ export class ModuleLoader {
     // Новые модули
     this.register('coins', CoinsModule);
     this.register('referral', ReferralModule);
-    this.register('sponsors', SponsorsModule);
     this.register('admin', AdminModule);
 
     this._registered = true;
@@ -367,4 +365,4 @@ export const moduleLoader = new ModuleLoader();
 // Привязываем к window для глобального доступа
 (window as any).moduleLoader = moduleLoader;
 
-console.log('✅ ModuleLoader v7.0.0 загружен');
+console.log('✅ ModuleLoader v7.1.0 загружен');
