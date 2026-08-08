@@ -1,7 +1,7 @@
 // ============================================
 // src/store/QuestsStore.ts
 // Хранилище заданий (без достижений)
-// Версия: 1.2.0 - удалены достижения
+// Версия: 1.4.0 - исправлен quest_id на external_id
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -25,7 +25,7 @@ export interface IQuest {
 
 export interface IUserQuest {
   id: string;
-  quest_id: string;
+  quest_id: string;        // = external_id из БД
   user_quest_id: string;
   type: 'daily' | 'sponsor' | 'event';
   category: string;
@@ -133,10 +133,27 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 
       const result = await apiClient.get('/quests/my');
 
-      if (result.success) {
-        this._data.quests = result.quests || [];
+      if (result.success && result.quests) {
+        // ✅ Преобразуем данные: external_id -> quest_id
+        const quests = result.quests.map((q: any) => ({
+          ...q,
+          quest_id: q.external_id || q.id,  // используем external_id как quest_id
+        }));
+
+        console.log('📥 Получено квестов:', quests.length);
+        console.log('📥 quest_id список:', quests.map((q: any) => q.quest_id));
+
+        this._data.quests = quests;
         this._data.lastSync = new Date().toISOString();
         this.save();
+
+        // ✅ ПРОВЕРЯЕМ daily_login
+        const login = this._data.quests.find((q: any) => q.quest_id === 'daily_login');
+        if (login) {
+          console.log(`✅ daily_login найден: progress=${login.progress}, completed=${login.completed}`);
+        } else {
+          console.warn('⚠️ daily_login НЕ найден в синхронизированных данных');
+        }
 
         this._emitChange('quests:synced', {
           count: this._data.quests.length,
@@ -179,10 +196,12 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
     return this.getQuestsByType('event');
   }
 
-  // Удаляем getAchievements()
-
   getQuest(userQuestId: string): IUserQuest | undefined {
     return (this._data.quests || []).find(q => q.user_quest_id === userQuestId);
+  }
+
+  getQuestByExternalId(externalId: string): IUserQuest | undefined {
+    return (this._data.quests || []).find(q => q.quest_id === externalId);
   }
 
   getStats(): { total: number; completed: number; claimed: number } {
@@ -199,26 +218,42 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   // ==========================================
 
   async updateProgress(questId: string, increment: number = 1): Promise<boolean> {
-    if (!this.userId) return false;
-
-    const quest = this._data.quests.find(q => q.quest_id === questId);
-    if (quest && (quest.completed || quest.claimed)) {
+    if (!this.userId) {
+      console.warn('⚠️ [updateProgress] Нет userId');
       return false;
     }
 
+    // Проверяем кэш по quest_id (external_id)
+    const quest = this._data.quests.find(q => q.quest_id === questId);
+    if (quest && (quest.completed || quest.claimed)) {
+      console.log(`ℹ️ [updateProgress] Квест ${questId} уже выполнен или получен`);
+      return true;
+    }
+
     try {
+      console.log(`📤 [updateProgress] Отправляем запрос для ${questId}, инкремент: ${increment}`);
+
       const result = await apiClient.post('/quests/progress', {
         questId,
         increment,
       });
 
+      console.log(`📥 [updateProgress] Ответ:`, result);
+
       if (result.success) {
+        // Обновляем кэш
         const q = this._data.quests.find(q => q.quest_id === questId);
         if (q) {
           q.progress = result.progress || 0;
           q.completed = result.completed || false;
           q.claimed = result.claimed || false;
           this.save();
+
+          console.log(`✅ [updateProgress] Квест ${questId} обновлён: progress=${q.progress}, completed=${q.completed}`);
+        } else {
+          // Если квеста нет в кеше — делаем полную синхронизацию
+          console.log(`🔄 [updateProgress] Квест ${questId} не найден в кеше, делаем синхронизацию`);
+          await this.sync();
         }
 
         if (result.completed) {
@@ -228,6 +263,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
         return true;
       }
 
+      console.warn(`⚠️ [updateProgress] API вернул ошибку:`, result);
       return false;
     } catch (err) {
       console.error('❌ [QuestsStore.updateProgress] Error:', err);
@@ -374,4 +410,4 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 }
 
 export const questsStore = new QuestsStore();
-console.log('✅ QuestsStore v1.2.0 загружен (без достижений)');
+console.log('✅ QuestsStore v1.4.0 загружен (исправлен quest_id)');
