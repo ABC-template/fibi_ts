@@ -1,12 +1,13 @@
 // ============================================
 // src/store/QuestsStore.ts
 // Хранилище заданий (единая система)
-// Версия: 1.0.0
+// Версия: 1.1.0 - добавлены getGameData, setGameData, getBalance
 // ============================================
 
 import { BaseStore } from './BaseStore';
 import { apiClient } from '@/services/api';
 import { eventBus } from '@/core/event-bus';
+import { economyStore } from '@/economy/EconomyStore';
 
 export interface IQuest {
   id: string;
@@ -46,6 +47,7 @@ export interface IUserQuest {
 interface IQuestsCacheData {
   quests: IUserQuest[];
   catalog: IQuest[];
+  gameData: Record<string, any>;
   lastSync: string | null;
   lastResetDate: string | null;
 }
@@ -62,6 +64,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
       this._data = {
         quests: [],
         catalog: [],
+        gameData: {},
         lastSync: null,
         lastResetDate: null,
       };
@@ -70,6 +73,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 
     if (!this._data.quests) this._data.quests = [];
     if (!this._data.catalog) this._data.catalog = [];
+    if (!this._data.gameData) this._data.gameData = {};
 
     this.subscribeToEvents();
   }
@@ -81,6 +85,33 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
     }, this);
 
     console.log('📡 QuestsStore подписан на события');
+  }
+
+  // ==========================================
+  // БАЛАНС (из EconomyStore)
+  // ==========================================
+
+  getBalance(): number {
+    return economyStore.getBalance();
+  }
+
+  // ==========================================
+  // ИГРОВЫЕ ДАННЫЕ
+  // ==========================================
+
+  getGameData<T>(key: string, defaultValue: T): T {
+    if (this._data.gameData && key in this._data.gameData) {
+      return this._data.gameData[key] as T;
+    }
+    return defaultValue;
+  }
+
+  setGameData<T>(key: string, value: T): void {
+    if (!this._data.gameData) {
+      this._data.gameData = {};
+    }
+    this._data.gameData[key] = value;
+    this.save();
   }
 
   // ==========================================
@@ -322,6 +353,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
     this._data = {
       quests: [],
       catalog: [],
+      gameData: {},
       lastSync: null,
       lastResetDate: null,
     };
@@ -347,4 +379,4 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 }
 
 export const questsStore = new QuestsStore();
-console.log('✅ QuestsStore v1.0.0 загружен');
+console.log('✅ QuestsStore v1.1.0 загружен');
