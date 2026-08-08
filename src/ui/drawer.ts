@@ -1,7 +1,7 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре
-// Версия: 1.2.0 - исправлен импорт
+// Версия: 1.3.0 - используем questsStore.getBalance()
 // ============================================
 
 import './drawer.css';
@@ -873,4 +873,4 @@ export function setupDrawerEventListeners(): void {
 (window as any).renameChatFromDrawer = renameChatFromDrawer;
 (window as any).deleteChatFromDrawer = deleteChatFromDrawer;
 
-console.log('✅ drawer.ts v1.2.0 загружен');
+console.log('✅ drawer.ts v1.3.0 загружен');
