@@ -1,7 +1,7 @@
 // ============================================
 // src/store/QuestsStore.ts
-// Хранилище заданий (единая система)
-// Версия: 1.1.0 - добавлены getGameData, setGameData, getBalance
+// Хранилище заданий (без достижений)
+// Версия: 1.2.0 - удалены достижения
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -11,7 +11,7 @@ import { economyStore } from '@/economy/EconomyStore';
 
 export interface IQuest {
   id: string;
-  type: 'daily' | 'achievement' | 'sponsor' | 'event';
+  type: 'daily' | 'sponsor' | 'event';
   category: string;
   external_id?: string;
   title: Record<string, string>;
@@ -27,7 +27,7 @@ export interface IUserQuest {
   id: string;
   quest_id: string;
   user_quest_id: string;
-  type: 'daily' | 'achievement' | 'sponsor' | 'event';
+  type: 'daily' | 'sponsor' | 'event';
   category: string;
   title: Record<string, string>;
   description?: Record<string, string>;
@@ -131,7 +131,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
       this._isSyncing = true;
       console.log('🔄 [QuestsStore] Синхронизация...');
 
-      // Получаем мои задания
       const result = await apiClient.get('/quests/my');
 
       if (result.success) {
@@ -172,10 +171,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
     return this.getQuestsByType('daily');
   }
 
-  getAchievements(): IUserQuest[] {
-    return this.getQuestsByType('achievement');
-  }
-
   getSponsorQuests(): IUserQuest[] {
     return this.getQuestsByType('sponsor');
   }
@@ -183,6 +178,8 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   getEventQuests(): IUserQuest[] {
     return this.getQuestsByType('event');
   }
+
+  // Удаляем getAchievements()
 
   getQuest(userQuestId: string): IUserQuest | undefined {
     return (this._data.quests || []).find(q => q.user_quest_id === userQuestId);
@@ -204,7 +201,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   async updateProgress(questId: string, increment: number = 1): Promise<boolean> {
     if (!this.userId) return false;
 
-    // Проверяем кэш
     const quest = this._data.quests.find(q => q.quest_id === questId);
     if (quest && (quest.completed || quest.claimed)) {
       return false;
@@ -217,7 +213,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
       });
 
       if (result.success) {
-        // Обновляем кэш
         const q = this._data.quests.find(q => q.quest_id === questId);
         if (q) {
           q.progress = result.progress || 0;
@@ -379,4 +374,4 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 }
 
 export const questsStore = new QuestsStore();
-console.log('✅ QuestsStore v1.1.0 загружен');
+console.log('✅ QuestsStore v1.2.0 загружен (без достижений)');
