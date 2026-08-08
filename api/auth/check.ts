@@ -1,7 +1,7 @@
 // ============================================
 // api/auth/check.ts
 // Описание: Проверка подписки и авторизации (с JWT)
-// Версия: 4.1.0 - исправлены импорты через index
+// Версия: 4.2.0 - закомментировано авто-назначение admin
 // ============================================
 
 import {
@@ -135,6 +135,10 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
+    // ==========================================
+    // ПРОВЕРКА ПОДПИСКИ НА КАНАЛ
+    // ⚠️ ЗАКОММЕНТИРОВАНО АВТО-НАЗНАЧЕНИЕ ADMIN
+    // ==========================================
     if (!['admin', 'creator', 'premium'].includes(role)) {
       const channelId = process.env.CHANNEL_ID?.trim();
       const botToken = process.env.BOT_TOKEN?.trim();
@@ -149,24 +153,29 @@ export default async function handler(request: Request): Promise<Response> {
             const status = data.result.status;
             const isMember = ['member', 'administrator', 'creator', 'owner'].includes(status);
 
-            if (['administrator', 'creator'].includes(status)) {
-              role = 'admin';
-              dailyLimit = 9999;
-              syncEnabled = true;
-              if (dbUser && dbUser.role !== 'admin') {
-                await supabaseFetch(
-                  `users?telegram_id=eq.${telegramId}`,
-                  {
-                    method: 'PATCH',
-                    body: JSON.stringify({ role: 'admin' })
-                  },
-                  config
-                );
-              }
-            } else if (isMember) {
-              role = 'trial';
-              dailyLimit = 5;
-              syncEnabled = false;
+            // ⚠️ ЗАКОММЕНТИРОВАНО: авто-назначение admin для администраторов канала
+            // if (['administrator', 'creator'].includes(status)) {
+            //     role = 'admin';
+            //     dailyLimit = 9999;
+            //     syncEnabled = true;
+            //     if (dbUser && dbUser.role !== 'admin') {
+            //         await supabaseFetch(
+            //             `users?telegram_id=eq.${telegramId}`,
+            //             {
+            //                 method: 'PATCH',
+            //                 body: JSON.stringify({ role: 'admin' })
+            //             },
+            //             config
+            //         );
+            //     }
+            // } else 
+            
+            if (isMember) {
+              // Используем роль из БД, не перезаписываем
+              console.log(`✅ Пользователь ${telegramId} подписан на канал, роль из БД: ${role}`);
+            } else {
+              console.log(`ℹ️ Пользователь ${telegramId} НЕ подписан на канал`);
+              // Если не подписан, оставляем как есть (роль уже установлена выше)
             }
           }
         } catch (err) {
