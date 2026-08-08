@@ -591,34 +591,10 @@ function setupEventSubscriptions(): void {
         questsStore.updateProgress('create_reminder').catch(() => {});
     });
 
-    // Достижения
-    eventBus.on('chat:created', () => {
-        questsStore.updateProgress('first_chat').catch(() => {});
-    });
-
-    eventBus.on('chat:message_added', () => {
-        questsStore.updateProgress('chat_100').catch(() => {});
-    });
-
-    eventBus.on('organizer:todo_added', () => {
-        questsStore.updateProgress('todo_50').catch(() => {});
-    });
-
-    eventBus.on('organizer:reminder_added', () => {
-        questsStore.updateProgress('reminder_10').catch(() => {});
-    });
-
     // Стрик через ежедневный бонус
     eventBus.on('quests:quest_completed', (data) => {
         if (data.questId === 'daily_login') {
             // Стрик обновляется через RPC
-        }
-    });
-
-    // Монеты
-    eventBus.on('economy:balance:updated', (data) => {
-        if (data.newBalance >= 100) {
-            questsStore.updateProgress('coins_100').catch(() => {});
         }
     });
 
