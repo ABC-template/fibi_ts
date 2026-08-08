@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 10.1.0 - исправлены импорты
+// Версия: 10.2.0 - исправлены questsStore и questsModule
 // ============================================
 
 import './config';
@@ -53,7 +53,7 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
-console.log('🚀 App v10.1.0 начал загрузку');
+console.log('🚀 App v10.2.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -165,7 +165,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 10.1.0
+                    Версия 10.2.0
                 </div>
             </div>
         `;
@@ -336,7 +336,7 @@ async function initApp(): Promise<void> {
 
     const cleaned = chatStore.cleanupAllEmptyChats();
     if (cleaned > 0) {
-        console.log(`🧹 При загрузке очищено ${cleaned} пустых чатов (HARD DELETE)`);
+        console.log(`🧹 При загрузке очищено ${cleaned} пустых чатов`);
     }
 
     const uid = user?.id;
@@ -536,7 +536,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v10.1.0 успешно загружено (с единой системой заданий)');
+        console.log('✅ Приложение v10.2.0 успешно загружено (с единой системой заданий)');
     }, 500);
 }
 
@@ -675,4 +675,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v10.1.0 полностью загружен (с единой системой заданий)');
+console.log('✅ app.ts v10.2.0 полностью загружен (с единой системой заданий)');
