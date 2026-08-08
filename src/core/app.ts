@@ -581,10 +581,13 @@ function setupEventSubscriptions(): void {
     });
 
     // ✅ НОВОЕ: автоматическое обновление заданий
-    eventBus.on('chat:message_added', () => {
+    eventBus.on('chat:message_added', (data) => {
+    // ✅ Считаем только сообщения пользователя
+    if (data.message && data.message.type === 'user-msg') {
         questsStore.updateProgress('send_message_1').catch(() => {});
         questsStore.updateProgress('send_message_5').catch(() => {});
-    });
+    }
+});
 
     eventBus.on('organizer:todo_added', () => {
         questsStore.updateProgress('add_todo').catch(() => {});
