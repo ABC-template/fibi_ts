@@ -424,32 +424,41 @@ async function initApp(): Promise<void> {
 
             localStorage.setItem('user_role', result.role || 'trial');
 
-            if (result.isMember || result.role === 'admin' || result.role === 'creator') {
-                console.log(`👤 Пользователь авторизован: ${result.role}`);
-                if (isPro) {
-                    console.log('🔄 Синхронизация включена (PRO)');
-                    if (syncService) {
-                        const userId = userStore.userId;
-                        if (userId) syncService.subscribe(userId);
-                    }
-                    initExportButtons();
-                }
-                if (chatUI) {
-                    setTimeout(() => {
-                        const cleaned2 = chatStore.cleanupAllEmptyChats();
-                        if (cleaned2 > 0) {
-                            console.log(`🧹 При загрузке (отложенной) очищено ${cleaned2} пустых чатов`);
-                        }
-                    }, 5000);
-                }
-            } else {
-                if (window.showGuest) {
-                    window.showGuest({
-                        msg: '403',
-                        joke: 'Для доступа к ИИ необходимо подписаться на канал!'
-                    });
-                }
+if (result.isMember || result.role === 'admin' || result.role === 'creator') {
+    console.log(`👤 Пользователь авторизован: ${result.role}`);
+    
+    // ✅ НОВОЕ: Обновляем прогресс ежедневного входа
+    try {
+        await questsStore.updateProgress('daily_login');
+        console.log('✅ Ежедневный вход отмечен');
+    } catch (err) {
+        console.warn('⚠️ Не удалось отметить ежедневный вход:', err);
+    }
+    
+    if (isPro) {
+        console.log('🔄 Синхронизация включена (PRO)');
+        if (syncService) {
+            const userId = userStore.userId;
+            if (userId) syncService.subscribe(userId);
+        }
+        initExportButtons();
+    }
+    if (chatUI) {
+        setTimeout(() => {
+            const cleaned2 = chatStore.cleanupAllEmptyChats();
+            if (cleaned2 > 0) {
+                console.log(`🧹 При загрузке (отложенной) очищено ${cleaned2} пустых чатов`);
             }
+        }, 5000);
+    }
+} else {
+    if (window.showGuest) {
+        window.showGuest({
+            msg: '403',
+            joke: 'Для доступа к ИИ необходимо подписаться на канал!'
+        });
+    }
+}
 
             // ✅ АКТИВАЦИЯ ERUDA ДЛЯ ADMIN/CREATOR
             initEruda(result.role);
@@ -484,18 +493,26 @@ async function initApp(): Promise<void> {
     }
 
     // ✅ ШАГ 10
-    if (tg) {
-        tg.onEvent('message', async (message: any) => {
-            console.log('📨 ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ БОТА:', message);
-            if (message.text === '🔄' && userStore.canSync()) {
-                console.log('✅ СИГНАЛ ОБНОВЛЕНИЯ РАСПОЗНАН!');
-                if (uiRenderer) uiRenderer.showSyncStatus('syncing');
-                if (window.questsModule) window.questsModule.show();
-                if (uiRenderer) uiRenderer.showSyncStatus('success');
+if (tg) {
+    tg.onEvent('message', async (message: any) => {
+        console.log('📨 ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ БОТА:', message);
+        if (message.text === '🔄' && userStore.canSync()) {
+            console.log('✅ СИГНАЛ ОБНОВЛЕНИЯ РАСПОЗНАН!');
+            if (uiRenderer) uiRenderer.showSyncStatus('syncing');
+            if (window.questsModule) window.questsModule.show();
+            if (uiRenderer) uiRenderer.showSyncStatus('success');
+            
+            // ✅ НОВОЕ: Обновляем ежедневный вход при push-уведомлении
+            try {
+                await questsStore.updateProgress('daily_login');
+                console.log('✅ Ежедневный вход отмечен (из push)');
+            } catch (err) {
+                console.warn('⚠️ Не удалось отметить ежедневный вход (из push):', err);
             }
-        });
-        console.log('📨 Push-подписка активирована');
-    }
+        }
+    });
+    console.log('📨 Push-подписка активирована');
+}
 
     // ✅ ШАГ 11
     updateSplashProgress(98, '🚀 Загрузка интерфейса...');
