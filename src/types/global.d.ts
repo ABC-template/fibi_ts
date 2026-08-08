@@ -1,7 +1,7 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.2.0 - добавлен InputManager
+// Версия: 2.3.0 - добавлены questsStore и questsModule
 // ============================================
 
 import type { TopicId, TopicFilter, UUID } from '@types/index';
@@ -154,6 +154,7 @@ declare global {
         userStore: any;
         organizerStore: any;
         tasksStore: any;
+        questsStore: any;
 
         // ==========================================
         // SERVICES
@@ -182,6 +183,7 @@ declare global {
         profileModule: any;
         tasksModule: any;
         gamesModule: any;
+        questsModule: any;
 
         // ==========================================
         // CONFIG
