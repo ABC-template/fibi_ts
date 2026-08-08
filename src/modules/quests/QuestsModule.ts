@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/quests/QuestsModule.ts
-// Модуль заданий (единая система)
-// Версия: 1.0.0
+// Модуль заданий (без достижений)
+// Версия: 2.0.0 - удалены достижения
 // ============================================
 
 import './quests.css';
@@ -12,7 +12,7 @@ import { uiRenderer } from '@/modules/ui/renderer';
 import { userStore } from '@/store/UserStore';
 import type { IUserQuest } from '@/store/QuestsStore';
 
-type QuestTab = 'daily' | 'achievement' | 'sponsor' | 'event';
+type QuestTab = 'daily' | 'sponsor' | 'event';
 
 export class QuestsModule {
   private container: HTMLElement;
@@ -50,9 +50,6 @@ export class QuestsModule {
           <button class="quests-tab ${this._activeTab === 'daily' ? 'active' : ''}" data-tab="daily">
             📅 Ежедневные
           </button>
-          <button class="quests-tab ${this._activeTab === 'achievement' ? 'active' : ''}" data-tab="achievement">
-            🏆 Достижения
-          </button>
           <button class="quests-tab ${this._activeTab === 'sponsor' ? 'active' : ''}" data-tab="sponsor">
             🤝 Спонсоры
           </button>
@@ -78,7 +75,7 @@ export class QuestsModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ QuestsModule v1.0.0 инициализирован');
+    console.log('✅ QuestsModule v2.0.0 инициализирован (без достижений)');
   }
 
   private _bindEvents(): void {
@@ -151,8 +148,6 @@ export class QuestsModule {
     switch (this._activeTab) {
       case 'daily':
         return this._renderQuestList('daily', '📅 Ежедневные задания');
-      case 'achievement':
-        return this._renderQuestList('achievement', '🏆 Достижения');
       case 'sponsor':
         return this._renderQuestList('sponsor', '🤝 Спонсорские задания');
       case 'event':
@@ -282,7 +277,7 @@ export class QuestsModule {
   }
 
   // ==========================================
-  // ДЕЙСТВИЯ (вызываются из UI)
+  // ДЕЙСТВИЯ
   // ==========================================
 
   async claim(userQuestId: string): Promise<void> {
@@ -348,7 +343,6 @@ export class QuestsModule {
       }
     }, 100);
 
-    // Синхронизация при показе
     this.questsStore.sync().catch(() => {});
 
     console.log('✅ QuestsModule показан и обновлён');
@@ -375,4 +369,4 @@ export class QuestsModule {
 }
 
 (window as any).QuestsModule = QuestsModule;
-console.log('✅ QuestsModule v1.0.0 загружен');
+console.log('✅ QuestsModule v2.0.0 загружен (без достижений)');
