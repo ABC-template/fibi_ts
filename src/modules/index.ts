@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/index.ts
 // Единый экспорт всех модулей
-// Версия: 3.0.0 - удалены tasks и sponsors
+// Версия: 3.1.0 - удален SponsorsModule
 // ============================================
 
 // UI модули (рендереры)
@@ -29,5 +29,4 @@ export * from './export-local';
 // Новые модули
 export * from './coins/CoinsModule';
 export * from './referral/ReferralModule';
-export * from './sponsors/SponsorsModule';
 export * from './admin/AdminModule';
