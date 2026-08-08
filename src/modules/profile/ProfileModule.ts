@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/profile/ProfileModule.ts
 // Полноценная страница профиля
-// Версия: 4.1.0 - исправлен импорт
+// Версия: 4.2.0 - используем questsStore.getBalance()
 // ============================================
 
 import './profile.css';
@@ -391,7 +391,7 @@ export class ProfileModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ ProfileModule v4.1.0 инициализирован');
+    console.log('✅ ProfileModule v4.2.0 инициализирован');
   }
 
   // ==========================================
@@ -635,4 +635,4 @@ export class ProfileModule {
   }
 };
 
-console.log('✅ ProfileModule v4.1.0 загружен');
+console.log('✅ ProfileModule v4.2.0 загружен');
