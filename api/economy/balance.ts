@@ -1,6 +1,6 @@
 // ============================================
 // api/economy/balance.ts
-// Получение баланса пользователя
+// Получение балансов (коины + токены)
 // Версия: 2.0.0
 // ============================================
 
@@ -17,55 +17,51 @@ import {
 export const config = { runtime: 'edge' };
 
 export default async function handler(request: Request): Promise<Response> {
-  // CORS
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
-  // Только GET
   if (request.method !== 'GET') {
     return errorResponse('Method Not Allowed', 405);
   }
 
   try {
-    // 1. Аутентификация
     const auth = await authenticate(request);
     if (auth.error) {
       return errorResponse(auth.error, auth.status || 401);
     }
 
     const userId = auth.userId!;
-
-    // 2. Получаем конфигурацию Supabase
     const config = getSupabaseConfig('service');
 
-    // 3. Вызываем RPC
+    // Получаем балансы через RPC
     const result = await supabaseRPC(
-      'get_user_balance',
-      {
-        p_user_id: userId,
-      },
+      'get_user_balances',
+      { p_user_id: userId },
       config
     );
 
-    // 4. Обрабатываем результат
     if (!result || typeof result !== 'object') {
-      console.error('[economy/balance] Invalid RPC response:', result);
-      return errorResponse('Failed to get balance', 500);
+      return errorResponse('Failed to get balances', 500);
     }
 
     if (result.success === false) {
-      return errorResponse(result.error || 'Failed to get balance', 400);
+      return errorResponse(result.error || 'Failed to get balances', 400);
     }
 
-    // 5. Возвращаем успешный ответ
     return jsonResponse({
       success: true,
-      balance: result.balance || 0,
-      total_earned: result.total_earned || 0,
-      total_spent: result.total_spent || 0,
+      coins: {
+        balance: result.coins?.balance || 0,
+        total_earned: result.coins?.total_earned || 0,
+        total_spent: result.coins?.total_spent || 0,
+      },
+      tokens: {
+        bonus: result.tokens?.bonus || 0,
+        permanent: result.tokens?.permanent || 0,
+        total: (result.tokens?.bonus || 0) + (result.tokens?.permanent || 0),
+      },
       is_locked: result.is_locked || false,
     });
-
   } catch (err) {
     console.error('[economy/balance] Error:', err);
     return errorResponse((err as Error).message, 500);
