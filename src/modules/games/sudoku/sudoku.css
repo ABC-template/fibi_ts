@@ -1,0 +1,343 @@
+/* ============================================
+   sudoku.css - Стили для игры Судоку
+   Версия: 2.0.0 - TypeScript
+   ============================================ */
+
+.sudoku-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 6px;
+    user-select: none;
+    -webkit-user-select: none;
+    height: 100%;
+    justify-content: center;
+}
+
+.sudoku-board-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 450px;
+    aspect-ratio: 1 / 1;
+}
+
+.sudoku-board {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    gap: 1px;
+    background: var(--app-border-color);
+    border: 3px solid var(--app-text-secondary);
+    border-radius: 8px;
+    padding: 2px;
+    width: 100%;
+    height: 100%;
+    touch-action: manipulation;
+}
+
+.sudoku-cell {
+    background: var(--app-bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    position: relative;
+    aspect-ratio: 1 / 1;
+    font-family: var(--app-font-family);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Границы для блоков 3x3 */
+.sudoku-cell:nth-child(3n) {
+    border-right: 2px solid var(--app-text-secondary);
+}
+.sudoku-cell:nth-child(9n) {
+    border-right: none;
+}
+.sudoku-cell:nth-child(n+19):nth-child(-n+27) {
+    border-bottom: 2px solid var(--app-text-secondary);
+}
+.sudoku-cell:nth-child(n+46):nth-child(-n+54) {
+    border-bottom: 2px solid var(--app-text-secondary);
+}
+
+.sudoku-cell:active {
+    transform: scale(0.92);
+}
+
+.sudoku-cell.given {
+    color: var(--app-text-primary);
+    font-weight: 700;
+}
+
+.sudoku-cell.user {
+    color: var(--app-accent-primary);
+    font-weight: 600;
+}
+
+.sudoku-cell.error {
+    color: var(--app-accent-danger) !important;
+    background: rgba(231, 76, 60, 0.15);
+    animation: shake 0.3s ease;
+}
+
+.sudoku-cell.selected {
+    background: var(--app-accent-glow);
+    box-shadow: inset 0 0 0 2px var(--app-accent-primary);
+}
+
+.sudoku-cell.highlight {
+    background: rgba(212, 175, 55, 0.08);
+}
+
+.sudoku-cell.same-number {
+    background: rgba(212, 175, 55, 0.12);
+}
+
+.sudoku-cell.hint {
+    animation: hintPulse 0.6s ease 2;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
+
+@keyframes hintPulse {
+    0% { background: rgba(46, 204, 113, 0); }
+    50% { background: rgba(46, 204, 113, 0.4); }
+    100% { background: rgba(46, 204, 113, 0); }
+}
+
+.sudoku-info-panel {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 14px;
+    padding: 6px 12px;
+    background: var(--app-bg-tertiary);
+    border-radius: 10px;
+    border: 1px solid var(--app-border-color-light);
+    width: 100%;
+    max-width: 450px;
+}
+
+.sudoku-info-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--app-text-secondary);
+}
+
+.sudoku-info-item .value {
+    font-weight: 700;
+    color: var(--app-accent-primary);
+    min-width: 20px;
+    text-align: center;
+}
+
+.sudoku-info-item .value.danger {
+    color: var(--app-accent-danger);
+}
+
+.sudoku-numbers {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 4px;
+    width: 100%;
+    max-width: 450px;
+}
+
+.sudoku-num-btn {
+    padding: 8px 0;
+    border-radius: 8px;
+    border: 1px solid var(--app-border-color-light);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: var(--app-font-family);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sudoku-num-btn:active {
+    transform: scale(0.92);
+    background: var(--app-accent-glow);
+}
+
+.sudoku-num-btn.completed {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.sudoku-num-btn .count {
+    display: block;
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--app-text-tertiary);
+    margin-top: 1px;
+}
+
+.sudoku-controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 450px;
+}
+
+.sudoku-controls .sudoku-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--app-border-color-light);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: var(--app-font-family);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 36px;
+}
+
+.sudoku-controls .sudoku-btn:active {
+    transform: scale(0.92);
+    background: var(--app-accent-glow);
+}
+
+.sudoku-controls .sudoku-btn.primary {
+    background: var(--app-gradient-primary);
+    color: var(--app-text-inverse);
+    border: none;
+}
+
+.sudoku-controls .sudoku-btn.danger {
+    color: var(--app-accent-danger);
+    border-color: rgba(231, 76, 60, 0.2);
+}
+
+.sudoku-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-radius: 8px;
+    z-index: 10;
+    padding: 20px;
+    text-align: center;
+}
+
+.sudoku-overlay h3 {
+    color: var(--app-text-primary);
+    font-size: 22px;
+    margin: 0 0 4px 0;
+}
+
+.sudoku-overlay .score {
+    color: var(--app-accent-primary);
+    font-size: 18px;
+    font-weight: 700;
+    margin: 4px 0;
+}
+
+.sudoku-overlay .sub {
+    color: var(--app-text-tertiary);
+    font-size: 14px;
+    margin: 4px 0 12px 0;
+}
+
+/* Адаптив */
+@media (max-width: 480px) {
+    .sudoku-cell {
+        font-size: 16px;
+    }
+    
+    .sudoku-info-item {
+        font-size: 11px;
+    }
+    
+    .sudoku-num-btn {
+        font-size: 15px;
+        padding: 6px 0;
+    }
+    
+    .sudoku-controls .sudoku-btn {
+        font-size: 11px;
+        padding: 4px 10px;
+        min-height: 30px;
+    }
+}
+
+@media (min-width: 600px) {
+    .sudoku-cell {
+        font-size: 28px;
+    }
+    
+    .sudoku-num-btn {
+        font-size: 22px;
+        padding: 10px 0;
+    }
+}
+
+/* Полноэкранный режим */
+.game-fullscreen .sudoku-container {
+    max-width: 100%;
+    padding: 4px;
+    gap: 6px;
+}
+
+.game-fullscreen .sudoku-board-wrapper {
+    max-width: min(90vw, 80vh);
+}
+
+.game-fullscreen .sudoku-cell {
+    font-size: clamp(14px, 3.5vw, 28px);
+}
+
+.game-fullscreen .sudoku-info-panel {
+    max-width: min(90vw, 80vh);
+    padding: 4px 10px;
+    gap: 4px 10px;
+}
+
+.game-fullscreen .sudoku-numbers {
+    max-width: min(90vw, 80vh);
+}
+
+.game-fullscreen .sudoku-controls {
+    max-width: min(90vw, 80vh);
+}
+
+.game-fullscreen .sudoku-num-btn {
+    padding: 4px 0;
+    font-size: clamp(14px, 2.5vw, 18px);
+}
+
+.game-fullscreen .sudoku-info-item {
+    font-size: clamp(10px, 1.8vw, 13px);
+}

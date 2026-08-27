@@ -1,0 +1,261 @@
+/* ============================================
+   src/modules/quests/quests.css
+   Стили для модуля заданий
+   Версия: 1.0.0
+   ============================================ */
+
+.quests-container {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.quests-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 16px 0;
+  color: var(--app-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quests-title .lucide {
+  width: 24px;
+  height: 24px;
+}
+
+/* ===== ВКЛАДКИ ===== */
+.quests-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--app-bg-tertiary);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.quests-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-family: var(--app-font-family);
+}
+
+.quests-tab.active {
+  background: var(--app-accent-primary);
+  color: var(--app-text-inverse);
+}
+
+/* ===== КОНТЕНТ ===== */
+.quests-content {
+  flex: 1;
+  overflow-y: auto;
+  animation: fadeIn 0.2s ease;
+}
+
+.quests-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--app-border-color-light);
+  margin-bottom: 12px;
+}
+
+.quests-list-header span:last-child {
+  font-size: 12px;
+  color: var(--app-text-tertiary);
+  font-weight: 400;
+}
+
+/* ===== СПИСОК ===== */
+.quests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quests-item {
+  background: var(--app-bg-secondary);
+  border-radius: 12px;
+  padding: 14px;
+  border: 1px solid var(--app-border-color-light);
+  transition: all 0.2s ease;
+}
+
+.quests-item.completed {
+  opacity: 0.6;
+}
+
+.quests-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.quests-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  flex: 1;
+}
+
+.quests-item-reward {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1c40f;
+  flex-shrink: 0;
+}
+
+.quests-item-desc {
+  font-size: 12px;
+  color: var(--app-text-tertiary);
+  margin-top: 4px;
+}
+
+/* ===== ПРОГРЕСС ===== */
+.quests-item-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.quests-item-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--app-bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.quests-item-progress-fill {
+  height: 100%;
+  background: var(--app-gradient-primary);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.quests-item-progress-text {
+  font-size: 11px;
+  color: var(--app-text-tertiary);
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ===== ДЕЙСТВИЯ ===== */
+.quests-item-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.quests-action-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--app-font-family);
+}
+
+.quests-action-btn:active {
+  transform: scale(0.95);
+}
+
+.quests-action-btn.primary {
+  background: var(--app-bg-tertiary);
+  color: var(--app-text-primary);
+  border: 1px solid var(--app-border-color);
+}
+
+.quests-action-btn.claim {
+  background: var(--app-gradient-primary);
+  color: var(--app-text-inverse);
+  border: none;
+}
+
+.quests-status-badge {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ===== ПУСТОЙ СОСТОЯНИЕ ===== */
+.quests-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--app-text-tertiary);
+}
+
+.quests-empty div {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.quests-empty p {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  margin: 0;
+}
+
+.quests-empty span {
+  font-size: 13px;
+}
+
+/* ===== АДАПТИВНОСТЬ ===== */
+@media (max-width: 480px) {
+  .quests-tab {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+
+  .quests-item {
+    padding: 12px;
+  }
+
+  .quests-item-title {
+    font-size: 13px;
+  }
+
+  .quests-action-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+}
+
+/* ===== АНИМАЦИИ ===== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

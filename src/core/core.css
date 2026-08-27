@@ -1,0 +1,495 @@
+/* ============================================
+   src/core/core.css
+   Глобальные стили приложения
+   Версия: 2.1.0 - добавлена нижняя навигация
+   ============================================ */
+
+:root {
+    --app-bg-primary: #0A0A0A;
+    --app-bg-secondary: rgba(20, 20, 20, 0.8);
+    --app-bg-tertiary: rgba(40, 40, 40, 0.6);
+    --app-bg-input: rgba(255, 255, 255, 0.05);
+    --app-bg-hover: rgba(212, 175, 55, 0.1);
+    --app-text-primary: #FFFFFF;
+    --app-text-secondary: #E8E0D0;
+    --app-text-tertiary: #A89880;
+    --app-text-inverse: #1A1A0A;
+    --app-accent-primary: #D4AF37;
+    --app-accent-secondary: #C5A059;
+    --app-accent-glow: rgba(212, 175, 55, 0.15);
+    --app-accent-success: #D4AF37;
+    --app-accent-warning: #F5A623;
+    --app-accent-danger: #E74C3C;
+    --app-gradient-primary: linear-gradient(135deg, #D4AF37 0%, #C5A059 50%, #A88830 100%);
+    --app-gradient-header: linear-gradient(180deg, rgba(212, 175, 55, 0.3) 0%, transparent 100%);
+    --app-gradient-bg: linear-gradient(180deg, #1A1A0A 0%, #0A0A0A 100%);
+    --app-msg-user-bg: rgba(212, 175, 55, 0.15);
+    --app-msg-user-text: #FFFFFF;
+    --app-border-color: rgba(212, 175, 55, 0.15);
+    --app-border-color-light: rgba(212, 175, 55, 0.08);
+    --app-border-color-active: rgba(212, 175, 55, 0.4);
+    --app-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.6);
+    --app-shadow-md: 0 4px 20px rgba(0, 0, 0, 0.7);
+    --app-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.8);
+    --app-shadow-glow: 0 0 30px rgba(212, 175, 55, 0.1);
+    --app-shadow-input: 0 -2px 20px rgba(0, 0, 0, 0.5);
+    --app-radius-sm: 8px;
+    --app-radius-md: 12px;
+    --app-radius-lg: 16px;
+    --app-radius-xl: 20px;
+    --app-radius-full: 50%;
+    --app-spacing-xs: 4px;
+    --app-spacing-sm: 8px;
+    --app-spacing-md: 12px;
+    --app-spacing-lg: 16px;
+    --app-spacing-xl: 20px;
+    --app-spacing-2xl: 24px;
+    --app-spacing-3xl: 32px;
+    --app-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+    --app-font-size-xs: 12px;
+    --app-font-size-sm: 13px;
+    --app-font-size-md: 15px;
+    --app-font-size-lg: 17px;
+    --app-font-size-xl: 19px;
+    --app-font-size-2xl: 22px;
+    --app-font-size-3xl: 28px;
+    --app-opacity-disabled: 0.4;
+    --app-opacity-hint: 0.6;
+    --app-transition-fast: 0.15s ease;
+    --app-transition-medium: 0.3s ease;
+    --app-transition-slow: 0.5s ease;
+    --app-z-overlay: 1000;
+    --app-z-modal: 2000;
+    --app-z-input: 1005;
+    --app-z-fab: 97;
+    --app-z-header: 50;
+    --app-z-drawer: 1500;
+}
+
+body[data-theme="light"] {
+    --app-bg-primary: #FAF8F0;
+    --app-bg-secondary: rgba(255, 252, 245, 0.9);
+    --app-bg-tertiary: rgba(212, 175, 55, 0.08);
+    --app-bg-input: rgba(0, 0, 0, 0.03);
+    --app-text-primary: #1A1A0A;
+    --app-text-secondary: #4A4030;
+    --app-text-tertiary: #8A8068;
+    --app-text-inverse: #FFFFFF;
+    --app-border-color: rgba(212, 175, 55, 0.2);
+    --app-border-color-light: rgba(212, 175, 55, 0.1);
+    --app-shadow-glow: 0 0 30px rgba(212, 175, 55, 0.08);
+    --app-msg-user-bg: rgba(212, 175, 55, 0.12);
+    --app-msg-user-text: #1A1A0A;
+    --app-gradient-bg: linear-gradient(180deg, #FFFCF5 0%, #F5F0E8 100%);
+}
+
+body[data-theme="amoled"] {
+    --app-bg-primary: #000000;
+    --app-bg-secondary: rgba(10, 10, 10, 0.9);
+    --app-bg-tertiary: rgba(20, 20, 20, 0.6);
+    --app-text-primary: #FFFFFF;
+    --app-text-secondary: #E8E0D0;
+    --app-text-tertiary: #808068;
+    --app-msg-user-bg: rgba(212, 175, 55, 0.12);
+    --app-msg-user-text: #FFFFFF;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    height: 100dvh;
+    overflow: hidden;
+    width: 100vw;
+    background: var(--app-gradient-bg);
+}
+
+body {
+    font-family: var(--app-font-family);
+    background: var(--app-bg-primary);
+    color: var(--app-text-primary);
+    transition: background var(--app-transition-medium), color var(--app-transition-medium);
+    display: flex;
+    flex-direction: column;
+}
+
+.hidden { display: none !important; }
+
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--app-text-tertiary); border-radius: 3px; opacity: 0.3; }
+::-webkit-scrollbar-thumb:hover { background: var(--app-accent-primary); }
+
+/* ===== КНОПКИ ===== */
+.btn {
+    background: var(--app-accent-primary);
+    color: var(--app-text-inverse);
+    border: none;
+    padding: var(--app-spacing-md) var(--app-spacing-xl);
+    border-radius: var(--app-radius-md);
+    font-weight: 600;
+    font-size: var(--app-font-size-md);
+    cursor: pointer;
+    transition: all var(--app-transition-fast);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--app-spacing-sm);
+    min-height: 44px;
+}
+
+.btn .lucide { width: 18px; height: 18px; stroke: currentColor; }
+.btn:active { transform: scale(0.96); opacity: 0.85; }
+.btn-secondary { background: var(--app-bg-tertiary); color: var(--app-text-primary); }
+.btn-danger { background: var(--app-accent-danger); color: white; }
+
+/* ===== АНИМАЦИИ ===== */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes voicePulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.6); }
+    70% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(231, 76, 60, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
+
+/* ===== МОДУЛИ ===== */
+.module-container {
+    flex: 1;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+}
+
+.module-container:not(.hidden) { display: flex; }
+
+/* ===== ТЕМА ===== */
+.theme-selector-btn {
+    flex: 1;
+    min-width: 80px;
+    padding: var(--app-spacing-md) var(--app-spacing-lg);
+    border: 2px solid var(--app-border-color);
+    border-radius: var(--app-radius-md);
+    background: var(--app-bg-secondary);
+    color: var(--app-text-primary);
+    font-size: var(--app-font-size-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--app-transition-medium);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--app-spacing-sm);
+    min-height: 44px;
+}
+
+.theme-selector-btn .lucide { width: 18px; height: 18px; stroke: currentColor; }
+.theme-selector-btn:active { transform: scale(0.95); }
+.theme-selector-btn.active {
+    border-color: var(--app-accent-primary);
+    background: var(--app-accent-glow);
+    color: var(--app-accent-primary);
+    box-shadow: var(--app-shadow-glow);
+}
+
+/* ===== GUEST SCREEN ===== */
+#guest-screen {
+    padding: 60px var(--app-spacing-2xl);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: var(--app-spacing-lg);
+}
+
+#guest-screen #error-title {
+    font-size: var(--app-font-size-3xl);
+    font-weight: 700;
+    background: var(--app-gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+#guest-screen #joke-text {
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-size-lg);
+    max-width: 320px;
+}
+
+/* ===== APP SCREEN ===== */
+#app-screen {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+    flex: 1;
+}
+
+/* ===== НИЖНЯЯ НАВИГАЦИЯ (стиль как в Telegram) ===== */
+.bottom-nav {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    background: rgba(10, 10, 10, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    justify-content: space-around;
+    padding: 4px 8px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
+    z-index: 100;
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    max-width: 600px;
+    margin: 0 auto;
+    transition: all 0.3s ease;
+}
+
+/* Для светлой темы */
+body[data-theme="light"] .bottom-nav {
+    background: rgba(255, 252, 245, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Для AMOLED темы */
+body[data-theme="amoled"] .bottom-nav {
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.bottom-nav.hidden { 
+    display: none; 
+}
+
+/* ===== КНОПКИ НАВИГАЦИИ ===== */
+.nav-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 0 2px 0;
+    border: none;
+    background: transparent;
+    color: var(--app-text-tertiary);
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.1, 0.8, 0.25, 1);
+    min-height: 44px;
+    position: relative;
+    font-family: var(--app-font-family);
+    -webkit-tap-highlight-color: transparent;
+    border-radius: 20px;
+    gap: 1px;
+}
+
+.nav-tab .nav-icon {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+    transition: all 0.25s cubic-bezier(0.1, 0.8, 0.25, 1);
+}
+
+.nav-tab .nav-label {
+    font-size: 9px;
+    font-weight: 500;
+    margin-top: 1px;
+    transition: all 0.25s ease;
+    opacity: 0.7;
+}
+
+.nav-tab:active { 
+    transform: scale(0.90); 
+}
+
+.nav-tab.active { 
+    color: var(--app-accent-primary); 
+}
+
+.nav-tab.active .nav-icon { 
+    transform: scale(1.05); 
+}
+
+.nav-tab.active .nav-label {
+    opacity: 1;
+    color: var(--app-accent-primary);
+}
+
+/* ===== ЦЕНТРАЛЬНАЯ КНОПКА (с акцентом) ===== */
+.nav-tab.center-tab {
+    position: relative;
+}
+
+.nav-tab.center-tab .nav-icon {
+    width: 28px;
+    height: 28px;
+}
+
+.nav-tab.center-tab .nav-label {
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.nav-tab.center-tab::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 2.5px;
+    background: var(--app-gradient-primary);
+    border-radius: 4px;
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.nav-tab.center-tab.active::before {
+    opacity: 1;
+    width: 28px;
+}
+
+/* ===== АДАПТИВНОСТЬ ===== */
+
+/* Маленькие телефоны (до 400px) */
+@media (max-width: 400px) {
+    .bottom-nav {
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
+        border-radius: 22px;
+        padding: 3px 6px;
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 3px);
+    }
+    
+    .nav-tab {
+        min-height: 38px;
+        padding: 4px 0 1px 0;
+    }
+    
+    .nav-tab .nav-icon {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .nav-tab .nav-label {
+        font-size: 8px;
+    }
+    
+    .nav-tab.center-tab .nav-icon {
+        width: 24px;
+        height: 24px;
+    }
+    
+    .nav-tab.center-tab .nav-label {
+        font-size: 9px;
+    }
+    
+    .nav-tab.center-tab::before {
+        width: 18px;
+        height: 2px;
+    }
+    
+    .nav-tab.center-tab.active::before {
+        width: 22px;
+    }
+}
+
+/* Средние телефоны (400-600px) */
+@media (min-width: 401px) and (max-width: 600px) {
+    .bottom-nav {
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        border-radius: 24px;
+        padding: 4px 8px;
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
+    }
+}
+
+/* Большие телефоны и планшеты (600px+) */
+@media (min-width: 601px) {
+    .bottom-nav {
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        border-radius: 32px;
+        padding: 4px 12px;
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
+        max-width: 520px;
+    }
+    
+    .nav-tab .nav-icon {
+        width: 26px;
+        height: 26px;
+    }
+    
+    .nav-tab.center-tab .nav-icon {
+        width: 30px;
+        height: 30px;
+    }
+}
+
+/* Планшеты и десктопы (шире 768px) */
+@media (min-width: 768px) {
+    .bottom-nav {
+        max-width: 480px;
+        bottom: 24px;
+        border-radius: 36px;
+        padding: 6px 14px;
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    }
+    
+    .nav-tab {
+        min-height: 48px;
+    }
+    
+    .nav-tab .nav-icon {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .nav-tab .nav-label {
+        font-size: 10px;
+    }
+    
+    .nav-tab.center-tab .nav-icon {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .nav-tab.center-tab .nav-label {
+        font-size: 11px;
+    }
+}

@@ -1,0 +1,365 @@
+// ============================================
+// src/core/input-manager.ts
+// Управление капсулой ввода
+// Версия: 2.5.0 - FIXED: автофокус и клавиатура на мобильных
+// ============================================
+
+import { eventBus } from './event-bus';
+
+export class InputManager {
+  private eventBus = eventBus;
+  private _subscriptions: Array<() => void> = [];
+  private _isExpanded: boolean = false;
+  private _overlayHandler: ((e: Event) => void) | null = null;
+  private _focusTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    this._subscribeToEvents();
+    console.log('✅ InputManager v2.5.0 инициализирован');
+  }
+
+  private _subscribeToEvents(): void {
+    const unsubExpand = this.eventBus.on('input:expand', () => {
+      console.log('📡 InputManager: получено событие input:expand');
+      this.expandInputArea();
+    }, this);
+    this._subscriptions.push(unsubExpand);
+
+    const unsubCollapse = this.eventBus.on('input:collapse', () => {
+      console.log('📡 InputManager: получено событие input:collapse');
+      this.collapseInputArea();
+    }, this);
+    this._subscriptions.push(unsubCollapse);
+
+    const unsubClear = this.eventBus.on('input:clear', () => {
+      console.log('📡 InputManager: получено событие input:clear');
+      this.clearUserText();
+    }, this);
+    this._subscriptions.push(unsubClear);
+
+    const unsubFocus = this.eventBus.on('input:focus', () => {
+      console.log('📡 InputManager: получено событие input:focus');
+      this.focusInput();
+    }, this);
+    this._subscriptions.push(unsubFocus);
+
+    console.log('📡 InputManager подписан на события');
+  }
+
+  private _getElements(): {
+    userInput: HTMLTextAreaElement | null;
+    inputArea: HTMLElement | null;
+    chatContainer: HTMLElement | null;
+    fabBtn: HTMLElement | null;
+    overlay: HTMLElement | null;
+    clearBtn: HTMLElement | null;
+  } {
+    return {
+      userInput: document.getElementById('user-input') as HTMLTextAreaElement,
+      inputArea: document.getElementById('input-area'),
+      chatContainer: document.getElementById('chat-container'),
+      fabBtn: document.getElementById('fab-open-input'),
+      overlay: document.getElementById('input-overlay'),
+      clearBtn: document.getElementById('clear-input-btn')
+    };
+  }
+
+private _resizeTextArea(userInput: HTMLTextAreaElement, clearBtn: HTMLElement | null): void {
+  if (!userInput) return;
+  
+  userInput.style.height = 'auto';
+  const maxHeight = 140;
+  const newHeight = Math.min(userInput.scrollHeight, maxHeight);
+  userInput.style.height = newHeight + 'px';
+
+  if (clearBtn) {
+    if (userInput.value.trim().length > 0) {
+      clearBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+    }
+  }
+}
+
+  private _attachOverlayHandler(overlay: HTMLElement): void {
+    if (this._overlayHandler) {
+      const oldOverlay = document.getElementById('input-overlay');
+      if (oldOverlay) {
+        oldOverlay.removeEventListener('click', this._overlayHandler);
+        console.log('🧹 Старый обработчик оверлея удален');
+      }
+      this._overlayHandler = null;
+    }
+
+    this._overlayHandler = (e: Event) => {
+      e.stopPropagation();
+      console.log('🔧 Оверлей нажат, закрываем капсулу');
+      this.collapseInputArea();
+    };
+
+    overlay.addEventListener('click', this._overlayHandler);
+    console.log('✅ Обработчик оверлея повешен');
+  }
+
+  private _detachOverlayHandler(): void {
+    if (this._overlayHandler) {
+      const overlay = document.getElementById('input-overlay');
+      if (overlay) {
+        overlay.removeEventListener('click', this._overlayHandler);
+        console.log('🧹 Обработчик оверлея удален');
+      }
+      this._overlayHandler = null;
+    }
+  }
+
+  expandInputArea(): void {
+    console.log('🔧 expandInputArea() вызван');
+    
+    if (this._isExpanded) {
+      console.log('⚠️ Капсула уже открыта');
+      return;
+    }
+
+    const elements = this._getElements();
+    const { fabBtn, overlay, inputArea, userInput, clearBtn } = elements;
+
+    if (!fabBtn || !overlay || !inputArea || !userInput) {
+      console.warn('⚠️ expandInputArea: не все элементы найдены', {
+        fabBtn: !!fabBtn,
+        overlay: !!overlay,
+        inputArea: !!inputArea,
+        userInput: !!userInput
+      });
+      return;
+    }
+
+    console.log('🔧 Все элементы найдены, открываем капсулу');
+
+    this._attachOverlayHandler(overlay);
+
+    fabBtn.style.opacity = '0';
+    fabBtn.style.pointerEvents = 'none';
+
+    overlay.classList.remove('hidden');
+
+    inputArea.classList.add('active');
+    inputArea.style.display = 'flex';
+    inputArea.style.opacity = '1';
+    inputArea.style.visibility = 'visible';
+    inputArea.style.transform = 'translateY(0)';
+    inputArea.style.pointerEvents = 'auto';
+
+    if (clearBtn) {
+      if (userInput.value.length > 0) {
+        clearBtn.classList.remove('hidden');
+      } else {
+        clearBtn.classList.add('hidden');
+      }
+    }
+
+    this._resizeTextArea(userInput, clearBtn);
+
+    const nav = document.getElementById('bottom-nav');
+    if (nav) {
+      nav.style.display = 'none';
+    }
+
+    if (this._focusTimeout) {
+      clearTimeout(this._focusTimeout);
+      this._focusTimeout = null;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        console.log('🎯 Попытка фокуса после рендеринга');
+        
+        try {
+          userInput.focus();
+          console.log('✅ focus() вызван');
+          
+          setTimeout(() => {
+            if (document.activeElement === userInput) {
+              console.log('✅ Фокус успешно установлен на userInput');
+            } else {
+              console.warn('⚠️ Фокус НЕ установлен на userInput. activeElement:', document.activeElement);
+              
+              setTimeout(() => {
+                console.log('🔄 Повторная попытка фокуса через 100ms');
+                userInput.focus();
+              }, 100);
+            }
+          }, 50);
+          
+        } catch (err) {
+          console.error('❌ Ошибка при вызове focus():', err);
+        }
+      });
+    });
+
+    try {
+      userInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      console.log('📜 Скролл к userInput');
+    } catch (err) {
+      console.warn('⚠️ Ошибка при скролле:', err);
+    }
+
+    this._isExpanded = true;
+    this.eventBus.emit('input:state_changed', { isExpanded: true });
+    console.log('✅ Капсула открыта, клавиатура должна появиться автоматически');
+  }
+
+  collapseInputArea(): void {
+    console.log('🔧 collapseInputArea() вызван');
+    
+    if (!this._isExpanded) {
+      console.log('⚠️ Капсула уже закрыта');
+      return;
+    }
+
+    if ((window as any).isVoiceRecording) {
+      console.log('⚠️ Идет запись голоса, капсула не закрывается');
+      return;
+    }
+
+    if (this._focusTimeout) {
+      clearTimeout(this._focusTimeout);
+      this._focusTimeout = null;
+    }
+
+    this._detachOverlayHandler();
+
+    const elements = this._getElements();
+    const { userInput, inputArea, overlay, fabBtn } = elements;
+
+    if (userInput) {
+      try {
+        userInput.blur();
+        console.log('👋 blur() вызван');
+      } catch (err) {
+        console.warn('⚠️ Ошибка при blur():', err);
+      }
+    }
+
+    if (inputArea) {
+      inputArea.classList.remove('active');
+      inputArea.classList.remove('keyboard-up');
+      inputArea.style.display = '';
+      inputArea.style.opacity = '';
+      inputArea.style.visibility = '';
+      inputArea.style.transform = '';
+      inputArea.style.pointerEvents = '';
+    }
+
+    if (overlay) {
+      overlay.classList.add('hidden');
+    }
+
+    if (fabBtn) {
+      fabBtn.style.opacity = '1';
+      fabBtn.style.pointerEvents = 'auto';
+    }
+
+    const nav = document.getElementById('bottom-nav');
+    if (nav) {
+      nav.style.display = 'flex';
+    }
+
+    this._isExpanded = false;
+    this.eventBus.emit('input:state_changed', { isExpanded: false });
+    console.log('✅ Капсула закрыта');
+  }
+
+  isExpanded(): boolean {
+    return this._isExpanded;
+  }
+
+  clearUserText(e?: Event): void {
+    if (e) e.stopPropagation();
+    
+    console.log('🔧 clearUserText() вызван');
+    
+    const elements = this._getElements();
+    const { userInput, clearBtn } = elements;
+
+    if (userInput) {
+      userInput.value = '';
+      userInput.style.height = 'auto';
+      userInput.focus();
+    }
+
+    if (clearBtn) {
+      clearBtn.classList.add('hidden');
+    }
+  }
+
+  focusInput(): void {
+    console.log('🔧 focusInput() вызван');
+    
+    const userInput = document.getElementById('user-input') as HTMLTextAreaElement;
+    if (userInput) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            userInput.focus();
+            console.log('🎯 Фокус на userInput вызван через focusInput()');
+          } catch (err) {
+            console.error('❌ Ошибка при focusInput():', err);
+          }
+        });
+      });
+    }
+  }
+
+  getInputText(): string {
+    const userInput = document.getElementById('user-input') as HTMLTextAreaElement;
+    return userInput?.value?.trim() || '';
+  }
+
+  setInputText(text: string): void {
+    console.log('🔧 setInputText() вызван');
+    
+    const elements = this._getElements();
+    const { userInput, clearBtn } = elements;
+
+    if (!userInput) return;
+    
+    userInput.value = text;
+    this._resizeTextArea(userInput, clearBtn);
+    
+    if (text.trim().length > 0 && clearBtn) {
+      clearBtn.classList.remove('hidden');
+    } else if (clearBtn) {
+      clearBtn.classList.add('hidden');
+    }
+  }
+
+  destroy(): void {
+    console.log('🗑️ InputManager.destroy()');
+    
+    this._detachOverlayHandler();
+    
+    if (this._focusTimeout) {
+      clearTimeout(this._focusTimeout);
+      this._focusTimeout = null;
+    }
+    
+    for (const unsub of this._subscriptions) {
+      try {
+        unsub();
+      } catch (e) {
+        console.warn('Ошибка отписки InputManager:', e);
+      }
+    }
+    this._subscriptions = [];
+    this._isExpanded = false;
+    console.log('📡 InputManager отписан от событий');
+  }
+}
+
+export const inputManager = new InputManager();
+
+(window as any).expandInputArea = inputManager.expandInputArea.bind(inputManager);
+(window as any).collapseInputArea = inputManager.collapseInputArea.bind(inputManager);
+(window as any).clearUserText = inputManager.clearUserText.bind(inputManager);
+
+console.log('✅ InputManager v2.5.0 загружен (FIXED: автофокус на мобильных)');

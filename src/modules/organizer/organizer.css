@@ -1,0 +1,371 @@
+/* ============================================
+   src/modules/organizer/organizer.css
+   Стили органайзера (To-Do, трекеры, напоминания)
+   Версия: 1.0.0
+   ============================================ */
+
+.organizer-container {
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 80px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.organizer-container h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+    color: var(--app-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.organizer-container h2 .lucide {
+    width: 24px;
+    height: 24px;
+}
+
+/* ===== ВКЛАДКИ ===== */
+.organizer-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--app-bg-tertiary);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+}
+
+.organizer-tab {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--app-text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--app-font-family);
+}
+
+.organizer-tab .lucide {
+    width: 16px;
+    height: 16px;
+}
+
+.organizer-tab.active {
+    background: var(--app-accent-primary);
+    color: var(--app-text-inverse);
+}
+
+.organizer-tab-panel {
+    flex: 1;
+    overflow-y: auto;
+    animation: fadeIn 0.2s ease;
+}
+
+/* ===== CARDS ===== */
+.organizer-card {
+    background: var(--app-bg-secondary);
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid var(--app-border-color-light);
+}
+
+.organizer-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.organizer-card-header span {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--app-text-primary);
+}
+
+.organizer-card-header .counter {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-tertiary);
+}
+
+/* ===== TO-DO ===== */
+.todo-input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.todo-input-row input {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 13px;
+    outline: none;
+    font-family: var(--app-font-family);
+}
+
+.todo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.todo-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--app-bg-tertiary);
+    padding: 10px 12px;
+    border-radius: 10px;
+    gap: 10px;
+}
+
+.todo-item-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    overflow: hidden;
+}
+
+.todo-item-left input[type="checkbox"] {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--app-accent-primary);
+    margin: 0;
+}
+
+.todo-item-left .todo-text {
+    font-size: 13px;
+    color: var(--app-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.todo-item-left .todo-text.completed {
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
+.todo-delete-btn {
+    background: transparent;
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 4px;
+}
+
+/* ===== НАПОМИНАНИЯ ===== */
+.reminder-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--app-bg-tertiary);
+    padding: 12px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.reminder-form input[type="text"] {
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-secondary);
+    color: var(--app-text-primary);
+    font-size: 13px;
+    outline: none;
+    font-family: var(--app-font-family);
+}
+
+.reminder-form .datetime-row {
+    display: flex;
+    gap: 6px;
+}
+
+.reminder-form .datetime-row input {
+    flex: 1;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-secondary);
+    color: var(--app-text-primary);
+    font-size: 12px;
+    outline: none;
+    font-family: var(--app-font-family);
+}
+
+.reminder-form .datetime-row input[type="time"] {
+    width: 90px;
+    flex: none;
+}
+
+.reminder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.reminder-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--app-bg-tertiary);
+    padding: 10px 12px;
+    border-radius: 10px;
+    gap: 10px;
+}
+
+.reminder-item .reminder-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.reminder-item .reminder-info .time {
+    font-size: 10px;
+    font-weight: bold;
+    color: var(--app-accent-primary);
+}
+
+.reminder-item .reminder-info .text {
+    font-size: 13px;
+    color: var(--app-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===== ТРЕКЕРЫ ===== */
+.tracker-card {
+    background: var(--app-bg-tertiary);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tracker-card .tracker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tracker-card .tracker-header .title {
+    font-weight: bold;
+    font-size: 14px;
+    color: var(--app-text-primary);
+}
+
+.tracker-card .tracker-log-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--app-bg-secondary);
+    padding: 8px;
+    border-radius: 10px;
+}
+
+.tracker-card .tracker-log-form .log-row {
+    display: flex;
+    gap: 6px;
+}
+
+.tracker-card .tracker-log-form .log-row input[type="text"] {
+    flex: 1;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 12px;
+    outline: none;
+    font-family: var(--app-font-family);
+}
+
+.tracker-card .tracker-log-form .log-row select {
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 11px;
+    outline: none;
+    font-family: var(--app-font-family);
+}
+
+.tracker-card .tracker-log-form textarea {
+    width: 100%;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--app-border-color);
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    font-size: 12px;
+    outline: none;
+    resize: none;
+    box-sizing: border-box;
+    font-family: var(--app-font-family);
+}
+
+.tracker-logs {
+    max-height: 120px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tracker-log-item {
+    background: var(--app-bg-tertiary);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tracker-log-item .log-date {
+    font-weight: bold;
+    color: var(--app-accent-primary);
+}
+
+.tracker-log-item .log-value {
+    color: var(--app-text-primary);
+}
+
+.tracker-log-item .log-note {
+    color: var(--app-text-tertiary);
+    font-style: italic;
+}
+
+.tracker-log-item .log-delete {
+    background: transparent;
+    border: none;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.4;
+}

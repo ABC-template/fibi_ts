@@ -1,0 +1,376 @@
+<!DOCTYPE html> 
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="color-scheme" content="dark">
+    <title>FIBI</title>
+    <!-- ==========================================
+         ✅ КРИТИЧЕСКИЕ ИНЛАЙН-СТИЛИ (выполняются мгновенно)
+    ========================================== -->
+    <style>
+        :root {
+  /* Перебиваем системные переменные Telegram на чистый черный */
+  --tg-theme-bg-color: #000000 !important;
+  --tg-theme-secondary-bg-color: #000000 !important;
+  --tg-theme-header-bg-color: #000000 !important;
+        }
+        /* Полный сброс и чёрный фон с первой миллисекунды */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            background: #000000 ;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+        }
+
+        /* Скрываем всё, что может мелькнуть до загрузки */
+        #app-screen {
+            display: none ;
+        }
+        #guest-screen {
+            display: none ;
+        }
+        #header {
+            display: none ;
+        }
+
+        /* Сплеш показываем сразу */
+        #splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100dvh;
+            background: #000000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            transition: opacity 0.6s ease, transform 0.6s ease;
+            will-change: opacity, transform;
+        }
+
+        .splash-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 32px;
+            max-width: 320px;
+            width: 100%;
+            text-align: center;
+            animation: splashFadeIn 0.8s ease;
+        }
+
+        .splash-logo-wrapper {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin-bottom: 4px;
+        }
+
+        .splash-logo {
+            width: 100%;
+            height: 100%;
+            animation: logoPulse 2.5s ease-in-out infinite;
+        }
+
+        .splash-ring {
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            width: 116px;
+            height: 116px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: #D4AF37;
+            border-right-color: #C5A059;
+            animation: ringSpin 3s linear infinite;
+            opacity: 0.6;
+        }
+
+        .splash-title {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #D4AF37 0%, #C5A059 50%, #A88830 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+            margin-top: -4px;
+        }
+
+        .splash-subtitle {
+            font-size: 13px;
+            color: #A89880;
+            font-weight: 400;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-top: -6px;
+        }
+
+        .splash-status-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+            width: 100%;
+        }
+
+        .splash-loader {
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(212, 175, 55, 0.15);
+            border-top-color: #D4AF37;
+            border-radius: 50%;
+            animation: spin 0.8s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+        }
+
+        .splash-status {
+            font-size: 14px;
+            color: #E8E0D0;
+            font-weight: 400;
+            margin: 0;
+            min-height: 24px;
+            transition: opacity 0.3s ease;
+        }
+
+        .splash-progress-wrapper {
+            width: 100%;
+            max-width: 240px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .splash-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(135deg, #D4AF37 0%, #C5A059 50%, #A88830 100%);
+            border-radius: 4px;
+            transition: width 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            will-change: width;
+        }
+
+        .splash-version {
+            font-size: 11px;
+            color: #A89880;
+            opacity: 0.4;
+            margin-top: 4px;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+        }
+
+        @keyframes splashFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes logoPulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.04);
+                opacity: 0.9;
+            }
+        }
+
+        @keyframes ringSpin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes splashFadeOut {
+            from {
+                opacity: 1;
+                transform: scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+        }
+
+        #splash-screen.hidden {
+            opacity: 0;
+            transform: scale(1.02);
+            pointer-events: none;
+        }
+
+        #splash-screen.hidden .splash-container {
+            animation: splashFadeOut 0.5s ease forwards;
+        }
+    </style>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- ==========================================
+         ✅ КРИТИЧЕСКИЙ СКРИПТ (выполняется ДО рендеринга)
+         Делает хедер чёрным мгновенно
+    ========================================== -->
+    <script>
+        (function() {
+            try {
+                const tg = window.Telegram?.WebApp;
+                if (tg) {
+                    // Мгновенно делаем хедер чёрным
+                    tg.setHeaderColor('#000000');
+                    tg.setBackgroundColor('#000000');
+                    tg.ready();
+                    tg.expand();
+
+                    // Сохраняем в глобальной переменной для дальнейшего использования
+                    window.__tg = tg;
+                    console.log('✅ Telegram WebApp настроен (чёрный хедер)');
+                }
+            } catch (e) {
+                console.warn('⚠️ Ошибка настройки Telegram:', e);
+            }
+        })();
+    </script>
+    <!-- ==========================================
+         ВНЕШНИЕ СТИЛИ (загружаются асинхронно)
+    ========================================== -->
+    <link rel="stylesheet" href="/src/core/core.css" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/src/ui/splash.css" media="print" onload="this.media='all'">
+    <!-- ==========================================
+         ВНЕШНИЕ БИБЛИОТЕКИ
+    ========================================== -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <!-- ✅ Eruda загружается статически, но НЕ инициализируется автоматически -->
+    <!-- Инициализация происходит в app.ts после проверки роли -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda@3.4.1/eruda.min.js"></script>
+</head>
+<body>
+
+<!-- ==========================================
+     ✅ СПЛЕШ-ЭКРАН (встроен в HTML, появляется мгновенно)
+========================================== -->
+<div id="splash-screen">
+    <div class="splash-container">
+        <div class="splash-logo-wrapper">
+            <svg class="splash-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="45" stroke="#D4AF37" stroke-width="2" opacity="0.3"/>
+                <text x="50" y="62" text-anchor="middle" font-size="36" font-weight="700" font-family="system-ui" fill="#D4AF37">F</text>
+            </svg>
+            <div class="splash-ring"></div>
+        </div>
+
+        <div class="splash-title">FIBI</div>
+        <div class="splash-subtitle">Versatile AI Assistant</div>
+
+        <div class="splash-status-wrapper">
+            <div class="splash-loader"></div>
+            <p class="splash-status" id="splash-status-text">🔮 Инициализация...</p>
+        </div>
+
+        <div class="splash-progress-wrapper">
+            <div class="splash-progress-bar" id="splash-progress-bar"></div>
+        </div>
+
+        <div class="splash-version">v8.0.0</div>
+    </div>
+</div>
+
+<!-- ==========================================
+     ОСТАЛЬНОЙ КОНТЕНТ (скрыт до загрузки)
+========================================== -->
+
+<!-- HEADER -->
+<div id="header" class="hidden">
+    <div class="header-glass">
+        <img id="user-avatar" src="" alt="Аватар" class="header-avatar" onclick="window.openDrawer()">
+        <div class="coins-badge" onclick="window.goToTasks()">
+            <span class="coin-icon">🪙</span>
+            <span class="coin-amount" id="header-coins-amount">0</span>
+        </div>
+    </div>
+    <div class="header-center" id="header-center"></div>
+    <div class="header-right" id="header-right"></div>
+</div>
+
+<!-- GUEST SCREEN -->
+<div id="guest-screen" class="hidden">
+    <h1 id="error-title">Доступ ограничен</h1>
+    <p id="joke-text"></p>
+    <a href="https://t.me" class="btn" style="text-decoration:none; display:inline-block;"></a>
+</div>
+
+<!-- APP SCREEN -->
+<div id="app-screen" style="display:none;"></div>
+
+<!-- УНИВЕРСАЛЬНАЯ МОДАЛКА -->
+<div id="universal-modal" class="hidden" style="display:none;">
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-content" id="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Заголовок</h3>
+                <button id="modal-close" class="modal-close-btn">
+                    <i data-lucide="x" style="width:24px;height:24px;"></i>
+                </button>
+            </div>
+            <div id="modal-body" class="modal-body"></div>
+            <div id="modal-footer" class="modal-footer hidden"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================
+     SUPABASE CLIENT
+========================================== -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+
+<!-- ==========================================
+     ТОЧКА ВХОДА (TypeScript)
+========================================== -->
+<script type="module" src="/src/core/config.ts"></script>
+<script type="module" src="/src/core/locale.ts"></script>
+<script type="module" src="/src/core/app.ts"></script>
+
+<!-- ==========================================
+     LUCIDE ИНИЦИАЛИЗАЦИЯ
+========================================== -->
+<script>
+    setTimeout(function() {
+        if (typeof lucide !== 'undefined') {
+            try {
+                lucide.createIcons();
+                console.log('✅ Lucide иконки созданы');
+            } catch(e) {
+                console.warn('⚠️ Ошибка создания иконок:', e);
+            }
+        }
+    }, 500);
+</script>
+
+</body>
+</html>
