@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 1.0.3 - защита от undefined
+// Версия: 1.0.4 - защита от undefined + комментарии
 // ============================================
 
 import './economy.css';
@@ -35,10 +35,11 @@ export class EconomyModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
+    // Настройка заголовка
     this.headerManager.setTitle('💰 Экономика');
     this.headerManager.setActions([]);
 
-    // ✅ Загружаем данные, но не ждем их блокирующе
+    // Загружаем данные, но не ждем их блокирующе
     try {
       await this.economyStore.loadBalances();
       await this.economyStore.loadConfig();
@@ -46,9 +47,11 @@ export class EconomyModule {
       console.warn('⚠️ Ошибка загрузки данных экономики:', err);
     }
 
+    // Рендерим модуль
     this._render();
     this._subscribeToEvents();
 
+    // Инициализируем иконки Lucide
     setTimeout(() => {
       if (typeof (window as any).lucide !== 'undefined') {
         (window as any).lucide.createIcons();
@@ -56,24 +59,29 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v1.0.3 инициализирован');
+    console.log('✅ EconomyModule v1.0.4 инициализирован');
   }
 
   private _subscribeToEvents(): void {
+    // Подписка на обновление коинов
     const unsubCoins = this.eventBus.on('economy:coins:updated', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsubCoins);
 
+    // Подписка на обновление токенов
     const unsubTokens = this.eventBus.on('economy:tokens:updated', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsubTokens);
 
+    // Подписка на загрузку конфига
     const unsubConfig = this.eventBus.on('economy:config:loaded', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsubConfig);
+
+    console.log('📡 EconomyModule подписан на события');
   }
 
   private _render(): void {
@@ -83,6 +91,7 @@ export class EconomyModule {
 
     this.container.innerHTML = `
       <div class="economy-container">
+        <!-- Панель подписки -->
         <div class="subscription-panel">
           <div class="tier-info">
             <span class="tier-name ${isPremium ? 'premium' : ''}">
@@ -97,6 +106,7 @@ export class EconomyModule {
           </button>
         </div>
 
+        <!-- Вкладки -->
         <div class="economy-tabs">
           <button class="economy-tab ${this._activeTab === 'coins' ? 'active' : ''}" 
                   data-tab="coins" 
@@ -110,6 +120,7 @@ export class EconomyModule {
           </button>
         </div>
 
+        <!-- Контент -->
         <div class="economy-tab-content" id="economy-tab-content">
           ${this._renderTabContent()}
         </div>
@@ -135,6 +146,7 @@ export class EconomyModule {
   }
 
   private _renderCoinsTab(): string {
+    // Получаем данные с защитой
     const balance = this.economyStore.getCoinBalance();
     const stats = this.economyStore.getCoinStats();
     const config = this.economyStore.getConfig();
@@ -145,12 +157,14 @@ export class EconomyModule {
     const maxPercent = config?.max_exchange_percent || 80;
 
     return `
+      <!-- Баланс -->
       <div class="economy-balance-card">
         <div class="label">Ваш баланс</div>
         <div class="balance">${balance} 🪙</div>
         <div class="sub">Всего заработано: ${stats.total_earned} • Потрачено: ${stats.total_spent}</div>
       </div>
 
+      <!-- Обмен -->
       ${isExchangeEnabled ? `
         <div class="exchange-widget">
           <div class="rate">
@@ -187,6 +201,7 @@ export class EconomyModule {
         </div>
       `}
 
+      <!-- История -->
       <div class="economy-history">
         <div class="title">
           📜 История транзакций
@@ -200,15 +215,18 @@ export class EconomyModule {
   }
 
   private _renderTokensTab(): string {
+    // Получаем данные с защитой
     const tokens = this.economyStore.getTokenBalances();
     const transactions = this.economyStore.getTransactions('tokens');
 
     return `
+      <!-- Баланс -->
       <div class="economy-balance-card">
         <div class="label">Ваши токены</div>
         <div class="balance">${tokens.total} ⚡</div>
       </div>
 
+      <!-- Детализация -->
       <div class="token-breakdown">
         <div class="token-item">
           <div class="value bonus">${tokens.bonus}</div>
@@ -222,6 +240,7 @@ export class EconomyModule {
         </div>
       </div>
 
+      <!-- История -->
       <div class="economy-history">
         <div class="title">
           📜 История транзакций
@@ -428,6 +447,7 @@ export class EconomyModule {
         ` : ''}
         
         <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
+          <!-- Пробный тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 2px solid ${trialUsed ? 'var(--app-border-color)' : 'var(--app-accent-primary)'}; opacity: ${trialUsed ? '0.6' : '1'};">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -449,6 +469,7 @@ export class EconomyModule {
             </div>
           </div>
 
+          <!-- Базовый тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -463,6 +484,7 @@ export class EconomyModule {
             </div>
           </div>
 
+          <!-- PRO тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-accent-primary);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -480,6 +502,7 @@ export class EconomyModule {
             </div>
           </div>
 
+          <!-- ULTIMATE тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -664,4 +687,4 @@ export class EconomyModule {
 (window as any).EconomyModule = EconomyModule;
 (window as any).economyModule = new EconomyModule(document.createElement('div'));
 
-console.log('✅ EconomyModule v1.0.3 загружен');
+console.log('✅ EconomyModule v1.0.4 загружен');
