@@ -1,10 +1,18 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 4.0.0 - добавлены токены
+// Версия: 4.0.0 - добавлены все методы для совместимости
 // ============================================
 
 import { apiClient } from '@/services/api';
+
+export interface ITransactionResult {
+  success: boolean;
+  newBalance: number;
+  transactionId?: string;
+  delta?: number;
+  error?: string;
+}
 
 export interface IBalanceResult {
   success: boolean;
@@ -88,6 +96,92 @@ export class EconomyService {
         coins: { balance: 0, total_earned: 0, total_spent: 0 },
         tokens: { bonus: 0, permanent: 0 },
         is_locked: false,
+      };
+    }
+  }
+
+  /**
+   * Начислить монеты (для совместимости с существующим кодом)
+   */
+  async addCoins(
+    userId: number,
+    amount: number,
+    source: string,
+    description: string,
+    metadata: Record<string, any> = {}
+  ): Promise<ITransactionResult> {
+    try {
+      const result = await apiClient.post('/economy/earn', {
+        userId,
+        amount,
+        source,
+        description,
+        metadata,
+      });
+
+      if (result.success) {
+        return {
+          success: true,
+          newBalance: result.newBalance || 0,
+          transactionId: result.transactionId || null,
+          delta: result.delta || amount,
+        };
+      }
+
+      return {
+        success: false,
+        newBalance: 0,
+        error: result.error || 'Failed to add coins',
+      };
+    } catch (err) {
+      console.error('[EconomyService.addCoins] Error:', err);
+      return {
+        success: false,
+        newBalance: 0,
+        error: (err as Error).message,
+      };
+    }
+  }
+
+  /**
+   * Списать монеты (для совместимости с существующим кодом)
+   */
+  async spendCoins(
+    userId: number,
+    amount: number,
+    source: string,
+    description: string,
+    metadata: Record<string, any> = {}
+  ): Promise<ITransactionResult> {
+    try {
+      const result = await apiClient.post('/economy/spend', {
+        userId,
+        amount,
+        source,
+        description,
+        metadata,
+      });
+
+      if (result.success) {
+        return {
+          success: true,
+          newBalance: result.newBalance || 0,
+          transactionId: result.transactionId || null,
+          delta: result.delta || -amount,
+        };
+      }
+
+      return {
+        success: false,
+        newBalance: 0,
+        error: result.error || 'Failed to spend coins',
+      };
+    } catch (err) {
+      console.error('[EconomyService.spendCoins] Error:', err);
+      return {
+        success: false,
+        newBalance: 0,
+        error: (err as Error).message,
       };
     }
   }
@@ -207,7 +301,6 @@ export class EconomyService {
         };
       }
 
-      // Дефолтные настройки
       return {
         success: true,
         config: {
@@ -230,6 +323,59 @@ export class EconomyService {
           whitelist_enabled: false,
         },
       };
+    }
+  }
+
+  /**
+   * Получить правила (для админки)
+   */
+  async getRules(limit: number = 50, offset: number = 0): Promise<any> {
+    try {
+      const result = await apiClient.get(`/economy/rules?limit=${limit}&offset=${offset}`);
+      if (result.success) {
+        return result;
+      }
+      return { success: false, rules: [], total: 0 };
+    } catch (err) {
+      console.error('[EconomyService.getRules] Error:', err);
+      return { success: false, rules: [], total: 0 };
+    }
+  }
+
+  /**
+   * Получить аудит (для админки)
+   */
+  async getAudit(
+    userId: number | null = null,
+    eventType: string | null = null,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<any> {
+    try {
+      let url = `/economy/audit?limit=${limit}&offset=${offset}`;
+      if (userId) url += `&userId=${userId}`;
+      if (eventType) url += `&type=${eventType}`;
+      const result = await apiClient.get(url);
+      if (result.success) {
+        return result;
+      }
+      return { success: false, logs: [], total: 0 };
+    } catch (err) {
+      console.error('[EconomyService.getAudit] Error:', err);
+      return { success: false, logs: [], total: 0 };
+    }
+  }
+
+  /**
+   * Блокировка/разблокировка пользователя (для админки)
+   */
+  async toggleUserLock(userId: number, locked: boolean): Promise<boolean> {
+    try {
+      const result = await apiClient.post('/economy/lock', { userId, locked });
+      return result.success === true;
+    } catch (err) {
+      console.error('[EconomyService.toggleUserLock] Error:', err);
+      return false;
     }
   }
 }
