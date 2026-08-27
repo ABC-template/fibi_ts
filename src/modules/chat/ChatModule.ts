@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
-// Страница чата (открывается из ChatListModule)
-// Версия: 8.9.0 - с ChatPatcher для точечных обновлений
+// Страница чата (с индикатором токенов)
+// Версия: 8.10.0 - добавлен индикатор токенов
 // ============================================
 import './chat.css';
 import { chatStore } from '@/store/ChatStore';
@@ -11,6 +11,7 @@ import { navigationState } from '@/core/navigation-state';
 import { moduleLoader } from '@/core/module-loader';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { ChatPatcher } from './ChatPatcher';
+import { economyStore } from '@/economy/EconomyStore';
 import { 
   getWelcomeText, 
   getTopic, 
@@ -29,6 +30,7 @@ export class ChatModule {
   private headerManager = headerManager;
   private navigationState = navigationState;
   private moduleLoader = moduleLoader;
+  private economyStore = economyStore;
 
   private _chatId: UUID | null = null;
   private _topic: TopicId | null = null;
@@ -52,7 +54,7 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.9.0 инициализирован (с ChatPatcher)');
+    console.log('✅ ChatModule v8.10.0 инициализирован (с индикатором токенов)');
   }
 
   private async _ensureVoiceFunction(): Promise<void> {
@@ -229,7 +231,44 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubOpen);
 
-    console.log('📡 ChatModule подписан на события (с патчингом)');
+    // ✅ Подписка на обновление токенов
+    const unsubTokens = this.eventBus.on('economy:tokens:updated', () => {
+      if (this._isShowing) {
+        this._updateTokenIndicator();
+      }
+    }, this);
+    this._subscriptions.push(unsubTokens);
+
+    console.log('📡 ChatModule подписан на события (с индикатором токенов)');
+  }
+
+  private _updateTokenIndicator(): void {
+    const indicator = document.getElementById('token-indicator');
+    if (!indicator) return;
+
+    const tokens = this.economyStore.getTokenBalances();
+    
+    if (tokens.total > 0) {
+      indicator.innerHTML = `
+        <span class="token-badge" title="Бонусные токены">
+          🎁 ${tokens.bonus}
+        </span>
+        <span class="token-badge" title="Постоянные токены">
+          💎 ${tokens.permanent}
+        </span>
+        <span class="token-badge total" title="Всего токенов">
+          ⚡ ${tokens.total}
+        </span>
+      `;
+      indicator.style.display = 'flex';
+    } else {
+      indicator.innerHTML = `
+        <span class="token-badge empty" title="Нет токенов">
+          ⚡ 0
+        </span>
+      `;
+      indicator.style.display = 'flex';
+    }
   }
 
   async show(params: Record<string, any> = {}): Promise<void> {
@@ -296,6 +335,7 @@ export class ChatModule {
 
     this._updateHeader();
     this._loadMessages();
+    this._updateTokenIndicator();
 
     this._isShowing = true;
     this.chatStore.setActiveChat(actualTopic, this._chatId);
@@ -324,11 +364,14 @@ export class ChatModule {
         this._loadMessages();
       }
       this._updateHeader();
+      this._updateTokenIndicator();
     }
   }
 
   private _render(): void {
     if (this._rendered) return;
+
+    const tokens = this.economyStore.getTokenBalances();
 
     this.container.innerHTML = `
       <div id="chat-page" style="
@@ -339,6 +382,70 @@ export class ChatModule {
         animation: fadeIn 0.3s ease;
         position: relative;
       ">
+        <!-- ✅ ИНДИКАТОР ТОКЕНОВ НАД ПОЛЕМ ВВОДА -->
+        <div id="token-indicator" style="
+          display: ${tokens.total > 0 ? 'flex' : 'flex'};
+          gap: 8px;
+          padding: 4px 16px;
+          background: var(--app-bg-secondary);
+          border-bottom: 1px solid var(--app-border-color-light);
+          font-size: 12px;
+          align-items: center;
+          justify-content: flex-end;
+          flex-shrink: 0;
+          min-height: 32px;
+        ">
+          ${tokens.total > 0 ? `
+            <span class="token-badge" title="Бонусные токены" style="
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 2px 8px;
+              border-radius: 12px;
+              background: rgba(241, 196, 15, 0.12);
+              color: #f1c40f;
+            ">
+              🎁 ${tokens.bonus}
+            </span>
+            <span class="token-badge" title="Постоянные токены" style="
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 2px 8px;
+              border-radius: 12px;
+              background: rgba(52, 152, 219, 0.12);
+              color: #3498db;
+            ">
+              💎 ${tokens.permanent}
+            </span>
+            <span class="token-badge total" title="Всего токенов" style="
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 2px 8px;
+              border-radius: 12px;
+              background: rgba(212, 175, 55, 0.12);
+              color: var(--app-accent-primary);
+              font-weight: 600;
+            ">
+              ⚡ ${tokens.total}
+            </span>
+          ` : `
+            <span class="token-badge empty" title="Нет токенов" style="
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 2px 8px;
+              border-radius: 12px;
+              background: rgba(231, 76, 60, 0.08);
+              color: #e74c3c;
+              font-size: 11px;
+            ">
+              ⚡ Нет токенов
+            </span>
+          `}
+        </div>
+
         <div id="chat-container" style="
           flex: 1;
           overflow-y: auto;
@@ -704,4 +811,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.9.0 загружен (с ChatPatcher для точечных обновлений)');
+console.log('✅ ChatModule v8.10.0 загружен (с индикатором токенов)');
