@@ -1,7 +1,7 @@
 // ============================================
 // api/chat/stream.ts
-// Описание: Стриминг ответов от ИИ
-// Версия: 3.3.0 - УЛУЧШЕНА ОБРАБОТКА ИНКРЕМЕНТА (только после полного стрима)
+// Стриминг ответов от ИИ с учетом токенов
+// Версия: 4.0.0 - добавлены токены
 // ============================================
 
 import {
@@ -12,11 +12,21 @@ import {
   getSupabaseConfig,
   checkUsageLimit,
   incrementUsage,
-  validateImageSize
+  validateImageSize,
 } from '../_lib/index';
 
 import { getModelConfig, getRotatedKeysPool } from '../chats/index';
 import { buildSystemPrompt, buildMessages } from './prompts';
+import {
+  checkTokenAvailability,
+  spendTokenForRequest,
+  getEconomyConfig,
+} from '../_lib/tokens';
+import {
+  checkOpenRouterLimit,
+  logOpenRouterUsage,
+  estimateTokens,
+} from '../_lib/tokens-usage';
 
 export const config = { runtime: 'edge' };
 
@@ -55,12 +65,12 @@ export default async function handler(request: Request): Promise<Response> {
 
     const { historyMessages = [], currentTopic, userLang, attachedImage } = body;
 
-    console.log('📨 [stream.js] Тема:', currentTopic);
-    console.log('📨 [stream.js] Есть фото:', !!attachedImage);
-    console.log('📨 [stream.js] История:', historyMessages.length);
+    console.log('📨 [stream] Тема:', currentTopic);
+    console.log('📨 [stream] Есть фото:', !!attachedImage);
+    console.log('📨 [stream] История:', historyMessages.length);
 
     // ==========================================
-    // ПРОВЕРКА ЛИМИТОВ
+    // 1. ПРОВЕРКА ЛИМИТОВ (существующая)
     // ==========================================
     const limitCheck = await checkUsageLimit(userId, config);
     if (!limitCheck.allowed) {
@@ -71,7 +81,23 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // ВАЛИДАЦИЯ ИЗОБРАЖЕНИЯ
+    // 2. ПРОВЕРКА ТОКЕНОВ (НОВОЕ!)
+    // ==========================================
+    const tokenCheck = await checkTokenAvailability(userId, 1, config);
+    if (!tokenCheck.available) {
+      const messages: Record<string, string> = {
+        'no_bonus_tokens': '⚠️ Бонусные токены закончились. Используйте постоянные токены.',
+        'no_tokens': '⚠️ У вас нет токенов. Получите их через обмен коинов или подписку.',
+        'insufficient_total': '⚠️ Недостаточно токенов для запроса.',
+      };
+      return errorResponse(
+        messages[tokenCheck.reason || 'no_tokens'] || 'Недостаточно токенов',
+        429
+      );
+    }
+
+    // ==========================================
+    // 3. ВАЛИДАЦИЯ ИЗОБРАЖЕНИЯ (существующая)
     // ==========================================
     const isVision = !!(attachedImage && attachedImage.trim().length > 0);
 
@@ -84,7 +110,6 @@ export default async function handler(request: Request): Promise<Response> {
         );
       }
 
-      // Только создатель может отправлять изображения
       if (userId !== MY_TELEGRAM_ID) {
         return errorResponse(
           '📸 Отправка изображений доступна только создателю приложения',
@@ -94,7 +119,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // ПРОВЕРКА КЛЮЧЕЙ
+    // 4. ПРОВЕРКА КЛЮЧЕЙ (существующая)
     // ==========================================
     const keysPool = getRotatedKeysPool();
     if (keysPool.length === 0) {
@@ -102,19 +127,33 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // СБОРКА СООБЩЕНИЙ
+    // 5. СБОРКА СООБЩЕНИЙ (существующая)
     // ==========================================
     const systemPrompt = buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision);
     const messages = buildMessages(systemPrompt, historyMessages, attachedImage || undefined);
 
-    // Получаем конфигурацию модели
     const modelConfig = getModelConfig(currentTopic || 'code', isVision);
 
-    console.log('📨 [stream.js] Модель:', modelConfig.model);
-    console.log('📨 [stream.js] Количество сообщений:', messages.length);
+    console.log('📨 [stream] Модель:', modelConfig.model);
+    console.log('📨 [stream] Количество сообщений:', messages.length);
 
     // ==========================================
-    // ОТПРАВКА ЗАПРОСА С РОТАЦИЕЙ КЛЮЧЕЙ
+    // 6. ОЦЕНКА ТОКЕНОВ ДЛЯ OPENROUTER (НОВОЕ!)
+    // ==========================================
+    const estimatedTokens = estimateTokens(messages, systemPrompt);
+    console.log(`📊 [stream] Оценка токенов OpenRouter: ~${estimatedTokens}`);
+
+    // Проверяем лимит OpenRouter
+    const openRouterCheck = await checkOpenRouterLimit(userId, estimatedTokens, config);
+    if (!openRouterCheck.allowed) {
+      return errorResponse(
+        openRouterCheck.error || 'Превышен лимит токенов OpenRouter',
+        429
+      );
+    }
+
+    // ==========================================
+    // 7. ОТПРАВКА ЗАПРОСА (существующая, с добавлением логов)
     // ==========================================
     let lastError: Error | null = null;
 
@@ -122,7 +161,7 @@ export default async function handler(request: Request): Promise<Response> {
       const currentKey = keysPool[k];
 
       try {
-        console.log(`📨 [stream.js] Пробуем ключ ROUTER_KEY${k}`);
+        console.log(`📨 [stream] Пробуем ключ ROUTER_KEY${k}`);
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
@@ -147,10 +186,10 @@ export default async function handler(request: Request): Promise<Response> {
           throw new Error(`OpenRouter API error ${response.status}: ${errorData.substring(0, 200)}`);
         }
 
-        console.log('✅ [stream.js] OpenRouter ответил, начинаем стрим');
+        console.log('✅ [stream] OpenRouter ответил, начинаем стрим');
 
         // ==========================================
-        // ПАРСИНГ SSE СТРИМА С ОТЛОЖЕННЫМ ИНКРЕМЕНТОМ
+        // 8. ПАРСИНГ SSE СТРИМА С ОТЛОЖЕННЫМ ИНКРЕМЕНТОМ
         // ==========================================
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
@@ -158,6 +197,9 @@ export default async function handler(request: Request): Promise<Response> {
         let accumulatedText = '';
         let streamCompleted = false;
         let chunksReceived = 0;
+        let totalPromptTokens = 0;
+        let totalCompletionTokens = 0;
+        let totalTokens = 0;
 
         const readable = new ReadableStream({
           async start(controller) {
@@ -187,6 +229,13 @@ export default async function handler(request: Request): Promise<Response> {
                         accumulatedText += content;
                         controller.enqueue(new TextEncoder().encode(content));
                       }
+                      
+                      // ✅ Сохраняем usage если есть
+                      if (data.usage) {
+                        totalPromptTokens = data.usage.prompt_tokens || 0;
+                        totalCompletionTokens = data.usage.completion_tokens || 0;
+                        totalTokens = data.usage.total_tokens || 0;
+                      }
                     } catch (e) {
                       // Игнорируем ошибки парсинга отдельных чанков
                     }
@@ -195,24 +244,49 @@ export default async function handler(request: Request): Promise<Response> {
               }
 
               // ==========================================
-              // ✅ ИНКРЕМЕНТИРУЕМ ТОЛЬКО ПОСЛЕ УСПЕШНОГО ЗАВЕРШЕНИЯ СТРИМА
+              // 9. ФИНАЛИЗАЦИЯ (списание токенов и логирование)
               // ==========================================
               if (streamCompleted && accumulatedText.trim().length > 0) {
-                console.log(`📊 [stream.js] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
+                console.log(`📊 [stream] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
+                
+                // ✅ Инкрементируем usage (существующая логика)
                 await incrementUsage(userId, config);
-                console.log(`✅ [stream.js] Инкремент выполнен: +1 к used_today`);
+                console.log(`✅ [stream] Инкремент выполнен: +1 к used_today`);
+
+                // ✅ СПИСЫВАЕМ ТОКЕН ЗА ЗАПРОС (НОВОЕ!)
+                const spendResult = await spendTokenForRequest(userId, config);
+                if (spendResult.success) {
+                  console.log(`✅ [stream] Токен списан: bonus=${spendResult.bonus_after}, permanent=${spendResult.permanent_after}`);
+                } else {
+                  console.warn(`⚠️ [stream] Не удалось списать токен: ${spendResult.error}`);
+                }
+
+                // ✅ ЛОГИРУЕМ ИСПОЛЬЗОВАНИЕ OPENROUTER (НОВОЕ!)
+                if (totalTokens > 0) {
+                  await logOpenRouterUsage(
+                    userId,
+                    {
+                      prompt_tokens: totalPromptTokens,
+                      completion_tokens: totalCompletionTokens,
+                      total_tokens: totalTokens,
+                      model: modelConfig.model,
+                      topic: currentTopic || 'code',
+                      user_lang: userLang || 'ru',
+                    },
+                    config
+                  );
+                  console.log(`✅ [stream] OpenRouter usage сохранен: ${totalTokens} токенов`);
+                }
               } else if (streamCompleted && accumulatedText.trim().length === 0) {
-                console.warn(`⚠️ [stream.js] Стрим завершен, но ответ пустой. Инкремент НЕ выполнен.`);
+                console.warn(`⚠️ [stream] Стрим завершен, но ответ пустой. Инкремент НЕ выполнен.`);
               }
 
               controller.close();
             } catch (err) {
               console.error('❌ Ошибка в стриме:', err);
               
-              // ==========================================
               // ⚠️ ПРИ ОШИБКЕ ИНКРЕМЕНТ НЕ ВЫПОЛНЯЕТСЯ
-              // ==========================================
-              console.warn(`⚠️ [stream.js] Стрим прерван ошибкой. Инкремент НЕ выполнен.`);
+              console.warn(`⚠️ [stream] Стрим прерван ошибкой. Инкремент НЕ выполнен.`);
               
               controller.error(err);
             }
@@ -223,6 +297,10 @@ export default async function handler(request: Request): Promise<Response> {
           'X-Accel-Buffering': 'no',
           'Cache-Control': 'no-cache, no-transform',
           'Content-Type': 'text/plain; charset=utf-8',
+          // ✅ Отправляем остаток токенов (НОВОЕ!)
+          'X-Token-Remaining': String(tokenCheck.total - 1),
+          'X-Token-Bonus': String(tokenCheck.bonus - (tokenCheck.bonus > 0 ? 1 : 0)),
+          'X-Token-Permanent': String(tokenCheck.permanent - (tokenCheck.bonus === 0 ? 1 : 0)),
           ...corsHeaders
         };
 
