@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/index.ts
 // Единый экспорт всех модулей
-// Версия: 3.1.0 - удален SponsorsModule
+// Версия: 4.0.0 - добавлен EconomyModule, удален CoinsModule
 // ============================================
 
 // UI модули (рендереры)
@@ -16,6 +16,9 @@ export * from './profile/ProfileModule';
 export * from './quests/QuestsModule';
 export * from './games/GamesModule';
 
+// Новый модуль экономики (заменяет CoinsModule)
+export * from './economy/EconomyModule';
+
 // Chat подмодули
 export * from './chat/send';
 export * from './chat/stream';
@@ -26,7 +29,8 @@ export * from './chat/media';
 export * from './trash';
 export * from './export-local';
 
-// Новые модули
-export * from './coins/CoinsModule';
+// Модули (без coins - заменен на economy)
 export * from './referral/ReferralModule';
 export * from './admin/AdminModule';
+
+// ❌ CoinsModule УДАЛЕН (заменен на EconomyModule)
