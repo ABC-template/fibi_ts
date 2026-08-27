@@ -1,7 +1,7 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 7.1.0 - удален SponsorsModule
+// Версия: 8.0.0 - удален CoinsModule
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -15,7 +15,7 @@ import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
 import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
-import { CoinsModule } from '@/modules/coins/CoinsModule';
+import { EconomyModule } from '@/modules/economy/EconomyModule';
 import { ReferralModule } from '@/modules/referral/ReferralModule';
 import { AdminModule } from '@/modules/admin/AdminModule';
 
@@ -37,7 +37,7 @@ export class ModuleLoader {
   constructor() {
     this.container = document.getElementById('app-screen');
     this._registerAllModules();
-    console.log('✅ ModuleLoader v7.1.0 загружен');
+    console.log('✅ ModuleLoader v8.0.0 загружен');
   }
 
   /**
@@ -58,7 +58,7 @@ export class ModuleLoader {
     this.register('profile', ProfileModule);
 
     // Новые модули
-    this.register('coins', CoinsModule);
+    this.register('economy', EconomyModule);  // ✅ Вместо CoinsModule
     this.register('referral', ReferralModule);
     this.register('admin', AdminModule);
 
@@ -365,4 +365,4 @@ export const moduleLoader = new ModuleLoader();
 // Привязываем к window для глобального доступа
 (window as any).moduleLoader = moduleLoader;
 
-console.log('✅ ModuleLoader v7.1.0 загружен');
+console.log('✅ ModuleLoader v8.0.0 загружен');
