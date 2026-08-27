@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 1.0.0
+// Версия: 1.0.1 - исправлены типы UserStore
 // ============================================
 
 import './economy.css';
@@ -38,7 +38,6 @@ export class EconomyModule {
     this.headerManager.setTitle('💰 Экономика');
     this.headerManager.setActions([]);
 
-    // Загружаем данные
     await this.economyStore.loadBalances();
     await this.economyStore.loadConfig();
 
@@ -52,7 +51,7 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v1.0.0 инициализирован');
+    console.log('✅ EconomyModule v1.0.1 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -73,10 +72,10 @@ export class EconomyModule {
   }
 
   private _render(): void {
-    const user = this.userStore;
-    const isPremium = user.isPro();
-    const premiumUntil = user._data.premium_until || null;
-    const trialUsed = user._data.trialUsed || false;
+    // ✅ ИСПРАВЛЕНО: используем геттеры userStore
+    const isPremium = this.userStore.isPro();
+    const premiumUntil = this.userStore.premiumUntil;
+    const trialUsed = this.userStore.trialUsed;
 
     this.container.innerHTML = `
       <div class="economy-container">
@@ -258,7 +257,6 @@ export class EconomyModule {
         amountClass += ' negative';
       }
 
-      // Для токенов определяем тип
       if (isTokens) {
         if (t.type === 'bonus') amountClass += ' bonus';
         if (t.type === 'exchange_in' || t.type === 'permanent') amountClass += ' permanent';
@@ -301,14 +299,12 @@ export class EconomyModule {
     if (this._activeTab === tab) return;
     this._activeTab = tab;
 
-    // Обновляем кнопки
     document.querySelectorAll('.economy-tab').forEach(btn => {
       const element = btn as HTMLElement;
       const isActive = element.dataset.tab === tab;
       element.classList.toggle('active', isActive);
     });
 
-    // Обновляем контент
     this._updateUI();
   }
 
@@ -406,10 +402,8 @@ export class EconomyModule {
           2000
         );
 
-        // Обновляем UI
         this._updateUI();
 
-        // Событие для обновления других частей приложения
         this.eventBus.emit('economy:tokens:updated', {
           bonus: result.token_balance_bonus,
           permanent: result.token_balance_permanent,
@@ -424,9 +418,8 @@ export class EconomyModule {
   }
 
   async openSubscriptionModal(): Promise<void> {
-    const user = this.userStore;
-    const isPremium = user.isPro();
-    const trialUsed = user._data.trialUsed || false;
+    const isPremium = this.userStore.isPro();
+    const trialUsed = this.userStore.trialUsed;
 
     const content = `
       <div style="padding: 4px 0;">
@@ -434,7 +427,7 @@ export class EconomyModule {
           <div style="background: rgba(39, 174, 96, 0.08); border-radius: 12px; padding: 12px; margin-bottom: 16px; border: 1px solid rgba(39, 174, 96, 0.2);">
             <div style="font-weight: 600; color: #27ae60;">⭐ У вас активна PRO-подписка</div>
             <div style="font-size: 13px; color: var(--app-text-secondary); margin-top: 4px;">
-              Действует до: ${user._data.premium_until ? new Date(user._data.premium_until).toLocaleDateString() : 'навсегда'}
+              Действует до: ${this.userStore.premiumUntil ? new Date(this.userStore.premiumUntil).toLocaleDateString() : 'навсегда'}
             </div>
           </div>
         ` : ''}
@@ -525,24 +518,25 @@ export class EconomyModule {
   }
 
   async activateTrial(): Promise<void> {
-    if (this.userStore._data.trialUsed) {
+    if (this.userStore.trialUsed) {
       this.uiRenderer?.showToast('⚠️ Пробный период уже был использован', 'error', 1500);
       return;
     }
 
     try {
-      // Здесь будет API вызов для активации пробного периода
-      // Пока эмулируем
-      this.userStore._data.trialUsed = true;
-      this.userStore._data.role = 'premium';
-      this.userStore._data.premium_until = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      this.userStore.markTrialUsed();
+      this.userStore.setRole('premium', 100, true);
+      // Устанавливаем дату окончания через 3 дня
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 3);
+      // Используем any для доступа к приватному полю
+      (this.userStore as any)._data.premium_until = expiry.toISOString();
       this.userStore.save();
 
       this.uiRenderer?.showToast('🎉 Пробный период активирован! 3 дня PRO', 'success', 3000);
       this.modalManager.close();
       this._render();
 
-      // Обновляем другие части приложения
       this.eventBus.emit('user:role_changed', {
         oldRole: 'trial',
         newRole: 'premium',
@@ -588,11 +582,8 @@ export class EconomyModule {
     if (!confirm) return;
 
     try {
-      // Здесь будет API вызов для покупки
-      // Пока эмулируем
       this.economyStore.updateCoinBalance(balance - price);
       
-      // Добавляем постоянные токены за подписку
       const tokenBonus: Record<string, number> = {
         basic: 100,
         pro: 500,
@@ -606,15 +597,14 @@ export class EconomyModule {
         currentTokens.permanent + tokens
       );
 
-      // Обновляем подписку
       const days: Record<string, number> = {
         basic: 30,
         pro: 90,
         ultimate: 365,
       };
 
-      this.userStore._data.role = 'premium';
-      this.userStore._data.premium_until = new Date(Date.now() + days[tier] * 24 * 60 * 60 * 1000).toISOString();
+      this.userStore.setRole('premium', 100, true);
+      (this.userStore as any)._data.premium_until = new Date(Date.now() + days[tier] * 24 * 60 * 60 * 1000).toISOString();
       this.userStore.save();
 
       this.uiRenderer?.showToast(
@@ -625,7 +615,6 @@ export class EconomyModule {
       this.modalManager.close();
       this._render();
 
-      // Обновляем другие части приложения
       this.eventBus.emit('user:role_changed', {
         oldRole: 'trial',
         newRole: 'premium',
@@ -683,8 +672,7 @@ export class EconomyModule {
   }
 }
 
-// Привязываем к window
 (window as any).EconomyModule = EconomyModule;
 (window as any).economyModule = new EconomyModule(document.createElement('div'));
 
-console.log('✅ EconomyModule v1.0.0 загружен');
+console.log('✅ EconomyModule v1.0.1 загружен');
