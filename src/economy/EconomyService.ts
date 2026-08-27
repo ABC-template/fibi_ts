@@ -1,165 +1,142 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 3.0.0 - полностью переписан
+// Версия: 4.0.0 - добавлены токены
 // ============================================
 
 import { apiClient } from '@/services/api';
 
-export interface ITransactionResult {
-  success: boolean;
-  newBalance: number;
-  transactionId?: string;
-  delta?: number;
-  error?: string;
-}
-
 export interface IBalanceResult {
   success: boolean;
-  balance: number;
-  total_earned: number;
-  total_spent: number;
+  coins: {
+    balance: number;
+    total_earned: number;
+    total_spent: number;
+  };
+  tokens: {
+    bonus: number;
+    permanent: number;
+  };
   is_locked: boolean;
 }
 
-export interface ITransaction {
-  id: string;
-  amount: number;
-  type: string;
-  source: string;
-  description: string;
-  balance_after: number;
-  currency: string;
-  created_at: string;
+export interface IExchangeResult {
+  success: boolean;
+  coins_spent: number;
+  tokens_received: number;
+  new_coin_balance: number;
+  token_balance_bonus: number;
+  token_balance_permanent: number;
+  exchange_rate: number;
+  error?: string;
+}
+
+export interface IConfigResult {
+  success: boolean;
+  config: {
+    exchange_enabled: boolean;
+    exchange_rate: number;
+    max_exchange_percent: number;
+    bonus_tokens_per_day: number;
+    whitelist_enabled: boolean;
+  };
 }
 
 export interface IHistoryResult {
   success: boolean;
-  transactions: ITransaction[];
+  transactions: any[];
   total: number;
   limit: number;
   offset: number;
+  type: string;
 }
 
 export class EconomyService {
   /**
-   * Начислить монеты пользователю
+   * Получить полный баланс (коины + токены)
    */
-  async addCoins(
-    userId: number,
-    amount: number,
-    source: string,
-    description: string,
-    metadata: Record<string, any> = {}
-  ): Promise<ITransactionResult> {
-    try {
-      const result = await apiClient.post('/economy/earn', {
-        userId,
-        amount,
-        source,
-        description,
-        metadata,
-      });
-
-      if (result.success) {
-        return {
-          success: true,
-          newBalance: result.newBalance || 0,
-          transactionId: result.transactionId || null,
-          delta: result.delta || amount,
-        };
-      }
-
-      return {
-        success: false,
-        newBalance: 0,
-        error: result.error || 'Failed to add coins',
-      };
-    } catch (err) {
-      console.error('[EconomyService.addCoins] Error:', err);
-      return {
-        success: false,
-        newBalance: 0,
-        error: (err as Error).message,
-      };
-    }
-  }
-
-  /**
-   * Списать монеты у пользователя
-   */
-  async spendCoins(
-    userId: number,
-    amount: number,
-    source: string,
-    description: string,
-    metadata: Record<string, any> = {}
-  ): Promise<ITransactionResult> {
-    try {
-      const result = await apiClient.post('/economy/spend', {
-        userId,
-        amount,
-        source,
-        description,
-        metadata,
-      });
-
-      if (result.success) {
-        return {
-          success: true,
-          newBalance: result.newBalance || 0,
-          transactionId: result.transactionId || null,
-          delta: result.delta || -amount,
-        };
-      }
-
-      return {
-        success: false,
-        newBalance: 0,
-        error: result.error || 'Failed to spend coins',
-      };
-    } catch (err) {
-      console.error('[EconomyService.spendCoins] Error:', err);
-      return {
-        success: false,
-        newBalance: 0,
-        error: (err as Error).message,
-      };
-    }
-  }
-
-  /**
-   * Получить баланс пользователя
-   */
-  async getBalance(userId: number): Promise<IBalanceResult> {
+  async getFullBalance(userId: number): Promise<IBalanceResult> {
     try {
       const result = await apiClient.get('/economy/balance');
-
+      
       if (result.success) {
         return {
           success: true,
-          balance: result.balance || 0,
-          total_earned: result.total_earned || 0,
-          total_spent: result.total_spent || 0,
+          coins: {
+            balance: result.coins?.balance || 0,
+            total_earned: result.coins?.total_earned || 0,
+            total_spent: result.coins?.total_spent || 0,
+          },
+          tokens: {
+            bonus: result.tokens?.bonus || 0,
+            permanent: result.tokens?.permanent || 0,
+          },
           is_locked: result.is_locked || false,
         };
       }
 
       return {
         success: false,
-        balance: 0,
-        total_earned: 0,
-        total_spent: 0,
+        coins: { balance: 0, total_earned: 0, total_spent: 0 },
+        tokens: { bonus: 0, permanent: 0 },
         is_locked: false,
       };
     } catch (err) {
-      console.error('[EconomyService.getBalance] Error:', err);
+      console.error('[EconomyService.getFullBalance] Error:', err);
       return {
         success: false,
-        balance: 0,
-        total_earned: 0,
-        total_spent: 0,
+        coins: { balance: 0, total_earned: 0, total_spent: 0 },
+        tokens: { bonus: 0, permanent: 0 },
         is_locked: false,
+      };
+    }
+  }
+
+  /**
+   * Обмен коинов на токены
+   */
+  async exchangeCoinsToTokens(
+    userId: number,
+    coinsAmount: number
+  ): Promise<IExchangeResult> {
+    try {
+      const result = await apiClient.post('/economy/exchange', {
+        coins_amount: coinsAmount,
+      });
+
+      if (result.success) {
+        return {
+          success: true,
+          coins_spent: result.coins_spent || 0,
+          tokens_received: result.tokens_received || 0,
+          new_coin_balance: result.new_coin_balance || 0,
+          token_balance_bonus: result.token_balance_bonus || 0,
+          token_balance_permanent: result.token_balance_permanent || 0,
+          exchange_rate: result.exchange_rate || 1,
+        };
+      }
+
+      return {
+        success: false,
+        coins_spent: 0,
+        tokens_received: 0,
+        new_coin_balance: 0,
+        token_balance_bonus: 0,
+        token_balance_permanent: 0,
+        exchange_rate: 0,
+        error: result.error || 'Exchange failed',
+      };
+    } catch (err) {
+      console.error('[EconomyService.exchangeCoinsToTokens] Error:', err);
+      return {
+        success: false,
+        coins_spent: 0,
+        tokens_received: 0,
+        new_coin_balance: 0,
+        token_balance_bonus: 0,
+        token_balance_permanent: 0,
+        exchange_rate: 0,
+        error: (err as Error).message,
       };
     }
   }
@@ -169,12 +146,13 @@ export class EconomyService {
    */
   async getHistory(
     userId: number,
+    type: 'coins' | 'tokens' = 'coins',
     limit: number = 50,
     offset: number = 0
   ): Promise<IHistoryResult> {
     try {
       const result = await apiClient.get(
-        `/economy/history?limit=${limit}&offset=${offset}`
+        `/economy/history?type=${type}&limit=${limit}&offset=${offset}`
       );
 
       if (result.success) {
@@ -184,6 +162,7 @@ export class EconomyService {
           total: result.total || 0,
           limit: result.limit || limit,
           offset: result.offset || offset,
+          type: result.type || type,
         };
       }
 
@@ -193,6 +172,7 @@ export class EconomyService {
         total: 0,
         limit,
         offset,
+        type,
       };
     } catch (err) {
       console.error('[EconomyService.getHistory] Error:', err);
@@ -202,103 +182,56 @@ export class EconomyService {
         total: 0,
         limit,
         offset,
+        type,
       };
     }
   }
 
   /**
-   * Получить правила (для админки)
+   * Получить конфигурацию экономики
    */
-  async getRules(limit: number = 50, offset: number = 0): Promise<any> {
+  async getConfig(): Promise<IConfigResult> {
     try {
-      const result = await apiClient.get(
-        `/economy/rules?limit=${limit}&offset=${offset}`
-      );
+      const result = await apiClient.get('/economy/config');
 
       if (result.success) {
-        return result;
+        return {
+          success: true,
+          config: {
+            exchange_enabled: result.config?.exchange_enabled !== false,
+            exchange_rate: result.config?.exchange_rate || 1,
+            max_exchange_percent: result.config?.max_exchange_percent || 80,
+            bonus_tokens_per_day: result.config?.bonus_tokens_per_day || 5,
+            whitelist_enabled: result.config?.whitelist_enabled || false,
+          },
+        };
       }
 
+      // Дефолтные настройки
       return {
-        success: false,
-        rules: [],
-        total: 0,
+        success: true,
+        config: {
+          exchange_enabled: true,
+          exchange_rate: 1,
+          max_exchange_percent: 80,
+          bonus_tokens_per_day: 5,
+          whitelist_enabled: false,
+        },
       };
     } catch (err) {
-      console.error('[EconomyService.getRules] Error:', err);
+      console.error('[EconomyService.getConfig] Error:', err);
       return {
-        success: false,
-        rules: [],
-        total: 0,
+        success: true,
+        config: {
+          exchange_enabled: true,
+          exchange_rate: 1,
+          max_exchange_percent: 80,
+          bonus_tokens_per_day: 5,
+          whitelist_enabled: false,
+        },
       };
-    }
-  }
-
-  /**
-   * Получить аудит (для админки)
-   */
-  async getAudit(
-    userId: number | null = null,
-    eventType: string | null = null,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<any> {
-    try {
-      let url = `/economy/audit?limit=${limit}&offset=${offset}`;
-      if (userId) url += `&userId=${userId}`;
-      if (eventType) url += `&type=${eventType}`;
-
-      const result = await apiClient.get(url);
-
-      if (result.success) {
-        return result;
-      }
-
-      return {
-        success: false,
-        logs: [],
-        total: 0,
-      };
-    } catch (err) {
-      console.error('[EconomyService.getAudit] Error:', err);
-      return {
-        success: false,
-        logs: [],
-        total: 0,
-      };
-    }
-  }
-
-  /**
-   * Блокировка/разблокировка пользователя (для админки)
-   */
-  async toggleUserLock(userId: number, locked: boolean): Promise<boolean> {
-    try {
-      const result = await apiClient.post('/economy/lock', {
-        userId,
-        locked,
-      });
-
-      return result.success === true;
-    } catch (err) {
-      console.error('[EconomyService.toggleUserLock] Error:', err);
-      return false;
-    }
-  }
-
-  /**
-   * Проверить, заблокирован ли пользователь
-   */
-  async isUserLocked(userId: number): Promise<boolean> {
-    try {
-      const result = await this.getBalance(userId);
-      return result.is_locked || false;
-    } catch (err) {
-      console.error('[EconomyService.isUserLocked] Error:', err);
-      return false;
     }
   }
 }
 
-// Создаём единственный экземпляр
 export const economyService = new EconomyService();
