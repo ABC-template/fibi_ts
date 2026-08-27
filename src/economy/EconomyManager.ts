@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyManager.ts
 // Упрощённый менеджер — только связь с API и обновление Store
-// Версия: 3.0.0 - полностью переписан, совместим с новыми методами
+// Версия: 3.0.1 - исправлен total
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
@@ -24,18 +24,15 @@ export class EconomyManager {
 
   private init(): void {
     if (this.initialized) return;
-
     this.subscribeToEvents();
-
     this.initialized = true;
-    console.log('✅ EconomyManager v3.0.0 инициализирован');
+    console.log('✅ EconomyManager v3.0.1 инициализирован');
   }
 
   private subscribeToEvents(): void {
     eventBus.on('economy:earn', this.handleEarn.bind(this));
     eventBus.on('economy:spend', this.handleSpend.bind(this));
     eventBus.on('user:changed', this.onUserChanged.bind(this));
-
     console.log('📡 EconomyManager подписан на экономические события');
   }
 
@@ -57,7 +54,8 @@ export class EconomyManager {
       if (result.success) {
         economyStore.updateCoinBalance(result.coins.balance);
         economyStore.updateTokenBalances(result.tokens.bonus, result.tokens.permanent);
-        console.log(`💰 Балансы загружены: ${result.coins.balance} 🪙, ${result.tokens.total} ⚡`);
+        const tokenTotal = (result.tokens?.bonus || 0) + (result.tokens?.permanent || 0);
+        console.log(`💰 Балансы загружены: ${result.coins.balance} 🪙, ${tokenTotal} ⚡`);
       }
     } catch (err) {
       console.error('❌ Ошибка загрузки балансов:', err);
