@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyStore.ts
-// Хранилище для UI (кеш баланса)
-// Версия: 2.0.0 - обновлён
+// Хранилище для UI (кеш балансов)
+// Версия: 3.0.0 - добавлены токены
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -9,11 +9,27 @@ import { eventBus } from '@/core/event-bus';
 import type { IEconomyBalanceUpdatedEvent } from './event-types';
 
 interface IEconomyStoreData {
-  balance: number;
-  total_earned: number;
-  total_spent: number;
+  coins: {
+    balance: number;
+    total_earned: number;
+    total_spent: number;
+  };
+  tokens: {
+    bonus: number;
+    permanent: number;
+  };
   lastUpdated: string | null;
-  transactions: any[];
+  transactions: {
+    coins: any[];
+    tokens: any[];
+  };
+  config: {
+    exchange_enabled: boolean;
+    exchange_rate: number;
+    max_exchange_percent: number;
+    bonus_tokens_per_day: number;
+    whitelist_enabled: boolean;
+  } | null;
 }
 
 export class EconomyStore extends BaseStore<IEconomyStoreData> {
@@ -25,17 +41,24 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
 
     if (Object.keys(this._data).length === 0) {
       this._data = {
-        balance: 0,
-        total_earned: 0,
-        total_spent: 0,
+        coins: {
+          balance: 0,
+          total_earned: 0,
+          total_spent: 0,
+        },
+        tokens: {
+          bonus: 0,
+          permanent: 0,
+        },
         lastUpdated: null,
-        transactions: [],
+        transactions: {
+          coins: [],
+          tokens: [],
+        },
+        config: null,
       };
       this.save();
     }
-
-    if (this._data.total_earned === undefined) this._data.total_earned = 0;
-    if (this._data.total_spent === undefined) this._data.total_spent = 0;
 
     this.subscribeToEvents();
   }
@@ -43,94 +66,148 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
   private subscribeToEvents(): void {
     eventBus.on('economy:balance:updated', this.onBalanceUpdated.bind(this));
     eventBus.on('user:changed', this.onUserChanged.bind(this));
+    eventBus.on('tokens:updated', this.onTokensUpdated.bind(this));
     console.log('📡 EconomyStore подписан на события');
   }
 
   private onBalanceUpdated(event: IEconomyBalanceUpdatedEvent): void {
-    // Обновляем только если это наш пользователь
     if (this.userId && event.userId === this.userId) {
-      this._data.balance = event.newBalance;
+      this._data.coins.balance = event.newBalance;
       this._data.lastUpdated = new Date().toISOString();
       this.save();
-      this._emitChange('economy:balance:changed', {
+      this._emitChange('economy:coins:updated', {
         balance: event.newBalance,
         delta: event.delta,
         source: event.source,
       });
-      console.log(`💰 Balance updated: ${event.delta} (${event.source}), new: ${event.newBalance}`);
     }
+  }
+
+  private onTokensUpdated(data: { bonus: number; permanent: number }): void {
+    this._data.tokens.bonus = data.bonus;
+    this._data.tokens.permanent = data.permanent;
+    this._data.lastUpdated = new Date().toISOString();
+    this.save();
+    this._emitChange('economy:tokens:updated', data);
   }
 
   private onUserChanged(data: { userId: number }): void {
     this.userId = data.userId;
-    // Перезагружаем баланс при смене пользователя
-    this.loadBalance();
+    this.loadBalances();
   }
 
-  async loadBalance(): Promise<void> {
+  async loadBalances(): Promise<void> {
     if (!this.userId) {
       const tg = (window as any).Telegram?.WebApp;
       const user = tg?.initDataUnsafe?.user;
-      if (user?.id) {
-        this.userId = user.id;
-      } else {
-        return;
-      }
+      if (user?.id) this.userId = user.id;
+      else return;
     }
 
     try {
       const { economyService } = await import('./EconomyService');
-      const result = await economyService.getBalance(this.userId);
+      const result = await economyService.getFullBalance(this.userId);
       if (result.success) {
-        this._data.balance = result.balance;
-        this._data.total_earned = result.total_earned;
-        this._data.total_spent = result.total_spent;
+        this._data.coins.balance = result.coins.balance;
+        this._data.coins.total_earned = result.coins.total_earned;
+        this._data.coins.total_spent = result.coins.total_spent;
+        this._data.tokens.bonus = result.tokens.bonus;
+        this._data.tokens.permanent = result.tokens.permanent;
         this._data.lastUpdated = new Date().toISOString();
         this.save();
-        this._emitChange('economy:balance:loaded', {
-          balance: result.balance,
-          total_earned: result.total_earned,
-          total_spent: result.total_spent,
-        });
-        console.log(`💰 Баланс загружен: ${result.balance}`);
+        
+        this._emitChange('economy:coins:loaded', result.coins);
+        this._emitChange('economy:tokens:loaded', result.tokens);
       }
     } catch (err) {
-      console.error('❌ Ошибка загрузки баланса:', err);
+      console.error('❌ Ошибка загрузки балансов:', err);
     }
   }
 
-  getBalance(): number {
-    return this._data.balance || 0;
+  async loadConfig(): Promise<void> {
+    try {
+      const { economyService } = await import('./EconomyService');
+      const result = await economyService.getConfig();
+      if (result.success) {
+        this._data.config = result.config;
+        this.save();
+        this._emitChange('economy:config:loaded', result.config);
+      }
+    } catch (err) {
+      console.error('❌ Ошибка загрузки конфига:', err);
+    }
   }
 
-  getStats(): { total_earned: number; total_spent: number } {
+  // ==========================================
+  // ГЕТТЕРЫ
+  // ==========================================
+
+  getCoinBalance(): number {
+    return this._data.coins.balance || 0;
+  }
+
+  getCoinStats(): { total_earned: number; total_spent: number } {
     return {
-      total_earned: this._data.total_earned || 0,
-      total_spent: this._data.total_spent || 0,
+      total_earned: this._data.coins.total_earned || 0,
+      total_spent: this._data.coins.total_spent || 0,
     };
   }
 
-  setStats(total_earned: number, total_spent: number): void {
-    this._data.total_earned = total_earned;
-    this._data.total_spent = total_spent;
+  getTokenBalances(): { bonus: number; permanent: number; total: number } {
+    return {
+      bonus: this._data.tokens.bonus || 0,
+      permanent: this._data.tokens.permanent || 0,
+      total: (this._data.tokens.bonus || 0) + (this._data.tokens.permanent || 0),
+    };
+  }
+
+  getConfig(): any {
+    return this._data.config || null;
+  }
+
+  getTransactions(type: 'coins' | 'tokens'): any[] {
+    return this._data.transactions[type] || [];
+  }
+
+  // ==========================================
+  // СЕТТЕРЫ
+  // ==========================================
+
+  updateCoinBalance(balance: number): void {
+    this._data.coins.balance = balance;
+    this._data.lastUpdated = new Date().toISOString();
     this.save();
   }
 
-  updateBalance(userId: number, newBalance: number): void {
-    if (this.userId && userId === this.userId) {
-      this._data.balance = newBalance;
-      this._data.lastUpdated = new Date().toISOString();
-      this.save();
-    }
+  updateTokenBalances(bonus: number, permanent: number): void {
+    this._data.tokens.bonus = bonus;
+    this._data.tokens.permanent = permanent;
+    this._data.lastUpdated = new Date().toISOString();
+    this.save();
+  }
+
+  setTransactions(type: 'coins' | 'tokens', transactions: any[]): void {
+    this._data.transactions[type] = transactions.slice(0, 50);
+    this.save();
   }
 
   clear(): void {
     this._data = {
-      balance: 0,
-      total_earned: 0,
-      total_spent: 0,
+      coins: {
+        balance: 0,
+        total_earned: 0,
+        total_spent: 0,
+      },
+      tokens: {
+        bonus: 0,
+        permanent: 0,
+      },
       lastUpdated: null,
-      transactions: [],
+      transactions: {
+        coins: [],
+        tokens: [],
+      },
+      config: null,
     };
     this.save();
   }
@@ -138,5 +215,4 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
 
 export const economyStore = new EconomyStore();
 
-// Для глобального доступа
 (window as any).economyStore = economyStore;
