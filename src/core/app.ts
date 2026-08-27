@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 11.2.0 - добавлен AdModule
+// Версия: 12.0.0 - добавлен EconomyModule, удален CoinsModule
 // ============================================
 
 import './config';
@@ -54,10 +54,13 @@ import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
 
+// ✅ НОВЫЙ МОДУЛЬ ЭКОНОМИКИ (вместо CoinsModule)
+import { EconomyModule } from '@/modules/economy/EconomyModule';
+
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
 
-console.log('🚀 App v11.2.0 начал загрузку');
+console.log('🚀 App v12.0.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -72,6 +75,7 @@ function registerModules(): void {
     moduleLoader.register('games', GamesModule);
     moduleLoader.register('quests', QuestsModule);
     moduleLoader.register('profile', ProfileModule);
+    moduleLoader.register('economy', EconomyModule); // ✅ НОВЫЙ МОДУЛЬ
     console.log('✅ Все модули зарегистрированы');
 }
 
@@ -169,7 +173,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 11.2.0
+                    Версия 12.0.0
                 </div>
             </div>
         `;
@@ -180,11 +184,11 @@ function showTelegramRequiredScreen(): void {
 }
 
 // ==========================================
-// 4. ПОКАЗ МОДАЛКИ СТРИКА
+// 4. ПОКАЗ МОДАЛКИ СТРИКА (ОБНОВЛЕНА)
 // ==========================================
 
-function showStreakModal(streak: number, bonus: number, reward: number): void {
-    console.log('🔴🔴🔴 showStreakModal ВЫЗВАН!', { streak, bonus, reward });
+function showStreakModal(streak: number, bonus: number, reward: number, bonusTokens: number = 0): void {
+    console.log('🔴🔴🔴 showStreakModal ВЫЗВАН!', { streak, bonus, reward, bonusTokens });
 
     const getStreakWord = (s: number): string => {
         if (s === 1) return 'день';
@@ -193,6 +197,18 @@ function showStreakModal(streak: number, bonus: number, reward: number): void {
     };
 
     const totalReward = reward || 5 + bonus;
+
+    // ✅ Формируем сообщение о токенах
+    let tokenMessage = '';
+    if (bonusTokens > 0) {
+        tokenMessage = `<div style="font-size: 16px; color: #f1c40f; margin-top: 4px;">
+            🎁 +${bonusTokens} бонусных токенов!
+        </div>`;
+    } else {
+        tokenMessage = `<div style="font-size: 13px; color: var(--app-text-tertiary); margin-top: 4px;">
+            ⚡ Бонусных токенов нет
+        </div>`;
+    }
 
     const content = `
         <div style="text-align: center; padding: 12px 0;">
@@ -204,6 +220,7 @@ function showStreakModal(streak: number, bonus: number, reward: number): void {
                 +${totalReward} 🪙
                 ${bonus > 0 ? `<span style="font-size: 14px; color: #f1c40f; display: block;">🎁 Бонус за стрик: +${bonus} 🪙</span>` : ''}
             </div>
+            ${tokenMessage}
             <div style="font-size: 13px; color: var(--app-text-tertiary); margin-top: 8px;">
                 ${streak % 7 === 0 && streak > 0 ? '🌟 Ты на пике формы! Так держать!' : 'Продолжай в том же духе! 💪'}
             </div>
@@ -250,7 +267,6 @@ function showStreakModal(streak: number, bonus: number, reward: number): void {
     console.log('🔴🔴🔴 Модалка должна открыться через 150ms');
 }
 
-// ✅ ПРИВЯЗЫВАЕМ К WINDOW
 (window as any).showStreakModal = showStreakModal;
 
 // ==========================================
@@ -512,9 +528,24 @@ async function initApp(): Promise<void> {
                     console.log('📊 [initApp] Результат daily_login:', loginResult);
 
                     if (loginResult.success && loginResult.claimed) {
+                        // ✅ Получаем количество бонусных токенов из конфига
+                        let bonusTokens = 0;
+                        try {
+                            const { getEconomyConfig } = await import('@/api/_lib/tokens');
+                            const config = await getEconomyConfig();
+                            bonusTokens = config?.bonus_tokens_per_day || 0;
+                        } catch (err) {
+                            console.warn('⚠️ Не удалось получить настройку бонусных токенов:', err);
+                        }
+
                         setTimeout(() => {
                             console.log('🎯 Показываем модалку стрика...');
-                            showStreakModal(loginResult.streak, loginResult.bonus, loginResult.reward);
+                            showStreakModal(
+                                loginResult.streak,
+                                loginResult.bonus,
+                                loginResult.reward,
+                                bonusTokens
+                            );
                         }, 800);
                     } else if (loginResult.success && !loginResult.claimed) {
                         console.log(`ℹ️ [initApp] Бонус уже получен сегодня`);
@@ -603,8 +634,8 @@ async function initApp(): Promise<void> {
                 window.economyStore = economyStore;
 
                 if (economyStore) {
-                    await economyStore.loadBalance();
-                    console.log('💰 Баланс загружен в EconomyStore');
+                    await economyStore.loadBalances();
+                    console.log('💰 Балансы загружены в EconomyStore');
                 }
                 console.log('✅ Экономическое ядро инициализировано');
             } catch (err) {
@@ -671,7 +702,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v11.2.0 успешно загружено (с AdModule)');
+        console.log('✅ Приложение v12.0.0 успешно загружено (с EconomyModule)');
     }, 500);
 }
 
@@ -709,6 +740,15 @@ function setupEventSubscriptions(): void {
     eventBus.on('economy:balance:loaded', (data) => {
         console.log(`📡 [EventBus] Баланс загружен: ${data.balance}`);
         updateAllBalanceDisplays();
+    });
+
+    // ✅ ПОДПИСКА НА ОБНОВЛЕНИЕ ТОКЕНОВ
+    eventBus.on('economy:tokens:updated', (data) => {
+        console.log(`📡 [EventBus] Токены обновлены: ${data.bonus} бонусных, ${data.permanent} постоянных`);
+        // Обновляем индикатор в чате, если он открыт
+        if (window.chatModule) {
+            window.chatModule._updateTokenIndicator?.();
+        }
     });
 
     // ✅ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ ЗАДАНИЙ
@@ -800,4 +840,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v11.2.0 полностью загружен (с AdModule)');
+console.log('✅ app.ts v12.0.0 полностью загружен (с EconomyModule)');
