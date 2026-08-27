@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 12.0.0 - добавлен EconomyModule, удален CoinsModule
+// Версия: 12.0.1 - FIXED: удален импорт из api
 // ============================================
 
 import './config';
@@ -60,7 +60,7 @@ import { EconomyModule } from '@/modules/economy/EconomyModule';
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
 
-console.log('🚀 App v12.0.0 начал загрузку');
+console.log('🚀 App v12.0.1 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -75,7 +75,7 @@ function registerModules(): void {
     moduleLoader.register('games', GamesModule);
     moduleLoader.register('quests', QuestsModule);
     moduleLoader.register('profile', ProfileModule);
-    moduleLoader.register('economy', EconomyModule); // ✅ НОВЫЙ МОДУЛЬ
+    moduleLoader.register('economy', EconomyModule);
     console.log('✅ Все модули зарегистрированы');
 }
 
@@ -173,7 +173,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 12.0.0
+                    Версия 12.0.1
                 </div>
             </div>
         `;
@@ -198,7 +198,6 @@ function showStreakModal(streak: number, bonus: number, reward: number, bonusTok
 
     const totalReward = reward || 5 + bonus;
 
-    // ✅ Формируем сообщение о токенах
     let tokenMessage = '';
     if (bonusTokens > 0) {
         tokenMessage = `<div style="font-size: 16px; color: #f1c40f; margin-top: 4px;">
@@ -528,11 +527,12 @@ async function initApp(): Promise<void> {
                     console.log('📊 [initApp] Результат daily_login:', loginResult);
 
                     if (loginResult.success && loginResult.claimed) {
-                        // ✅ Получаем количество бонусных токенов из конфига
+                        // ✅ Получаем количество бонусных токенов из конфига через economyStore
                         let bonusTokens = 0;
                         try {
-                            const { getEconomyConfig } = await import('@/api/_lib/tokens');
-                            const config = await getEconomyConfig();
+                            const { economyStore } = await import('@/economy');
+                            await economyStore.loadConfig();
+                            const config = economyStore.getConfig();
                             bonusTokens = config?.bonus_tokens_per_day || 0;
                         } catch (err) {
                             console.warn('⚠️ Не удалось получить настройку бонусных токенов:', err);
@@ -635,7 +635,8 @@ async function initApp(): Promise<void> {
 
                 if (economyStore) {
                     await economyStore.loadBalances();
-                    console.log('💰 Балансы загружены в EconomyStore');
+                    await economyStore.loadConfig();
+                    console.log('💰 Балансы и конфиг загружены в EconomyStore');
                 }
                 console.log('✅ Экономическое ядро инициализировано');
             } catch (err) {
@@ -702,7 +703,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v12.0.0 успешно загружено (с EconomyModule)');
+        console.log('✅ Приложение v12.0.1 успешно загружено (с EconomyModule)');
     }, 500);
 }
 
@@ -745,7 +746,6 @@ function setupEventSubscriptions(): void {
     // ✅ ПОДПИСКА НА ОБНОВЛЕНИЕ ТОКЕНОВ
     eventBus.on('economy:tokens:updated', (data) => {
         console.log(`📡 [EventBus] Токены обновлены: ${data.bonus} бонусных, ${data.permanent} постоянных`);
-        // Обновляем индикатор в чате, если он открыт
         if (window.chatModule) {
             window.chatModule._updateTokenIndicator?.();
         }
@@ -840,4 +840,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v12.0.0 полностью загружен (с EconomyModule)');
+console.log('✅ app.ts v12.0.1 полностью загружен');
