@@ -1,7 +1,7 @@
 // ============================================
 // src/store/QuestsStore.ts
 // Хранилище заданий (с ежедневным входом и стриком)
-// Версия: 2.2.0 - добавлено событие обновления баланса при получении награды
+// Версия: 2.3.0 - исправлены методы работы с EconomyStore
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -25,8 +25,8 @@ export interface IQuest {
 
 export interface IUserQuest {
   id: string;
-  quest_id: string;          // external_id из БД
-  user_quest_id: string;     // UUID из user_quests
+  quest_id: string;
+  user_quest_id: string;
   type: 'daily' | 'sponsor' | 'event' | 'achievement';
   category: string;
   title: Record<string, string>;
@@ -93,7 +93,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   // ==========================================
 
   getBalance(): number {
-    return economyStore.getBalance();
+    return economyStore.getCoinBalance();
   }
 
   // ==========================================
@@ -165,7 +165,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   }
 
   // ==========================================
-  // ✅ ЕЖЕДНЕВНЫЙ ВХОД + СТРИК
+  // ЕЖЕДНЕВНЫЙ ВХОД + СТРИК
   // ==========================================
 
   async claimDailyLogin(): Promise<{ 
@@ -257,7 +257,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   }
 
   // ==========================================
-  // ЗАБРАТЬ НАГРАДУ С БОНУСОМ (ИСПРАВЛЕНО)
+  // ЗАБРАТЬ НАГРАДУ С БОНУСОМ
   // ==========================================
 
   async claimWithBonus(userQuestId: string, bonusAmount: number = 0): Promise<{
@@ -277,7 +277,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
       });
 
       if (result.success) {
-        // Обновляем кэш
         const quest = this._data.quests.find(q => q.user_quest_id === userQuestId);
         if (quest) {
           quest.claimed = true;
@@ -285,7 +284,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
           this.save();
         }
 
-        // ✅ ОТПРАВЛЯЕМ СОБЫТИЕ ДЛЯ ОБНОВЛЕНИЯ БАЛАНСА
         const balanceEvent = {
           userId: this.userId,
           newBalance: result.newBalance || 0,
@@ -297,9 +295,9 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
         console.log(`💰 [claimWithBonus] Отправляем событие обновления баланса:`, balanceEvent);
         eventBus.emit('economy:balance:updated', balanceEvent);
 
-        // ✅ Также обновляем EconomyStore напрямую
+        // ✅ ИСПРАВЛЕНО: используем updateCoinBalance
         if (economyStore) {
-          economyStore.updateBalance(this.userId, result.newBalance || 0);
+          economyStore.updateCoinBalance(result.newBalance || 0);
         }
 
         this._emitChange('quests:quest_claimed', {
@@ -541,4 +539,4 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 }
 
 export const questsStore = new QuestsStore();
-console.log('✅ QuestsStore v2.2.0 загружен (добавлено событие обновления баланса)');
+console.log('✅ QuestsStore v2.3.0 загружен (исправлены методы EconomyStore)');
