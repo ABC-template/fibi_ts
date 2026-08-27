@@ -29,11 +29,11 @@ export class UserStore extends BaseStore<IUserStoreData> {
       this.save();
     }
 
-    // ✅ Инициализация новых полей
-    if (this._data.premium_until === undefined) {
+    // ✅ Инициализация новых полей (с проверкой)
+    if (!('premium_until' in this._data)) {
       this._data.premium_until = null;
     }
-    if (this._data.trialUsed === undefined) {
+    if (!('trialUsed' in this._data)) {
       this._data.trialUsed = false;
     }
 
