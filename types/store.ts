@@ -1,6 +1,7 @@
 // ============================================
 // types/store.ts
 // Типы для хранилищ (Store)
+// Версия: 3.0.0 - добавлены поля UserStore
 // ============================================
 
 import { IChat } from './chat';
@@ -36,6 +37,9 @@ export interface IUserStoreData {
   lastName?: string;
   languageCode?: string;
   photoUrl?: string | null;
+  // ✅ НОВЫЕ ПОЛЯ
+  premium_until?: string | null;
+  trialUsed?: boolean;
 }
 
 /** Данные OrganizerStore */
