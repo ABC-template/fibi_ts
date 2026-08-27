@@ -1,7 +1,6 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
-// Модуль экономики (коины + токены)
-// Версия: 1.0.2 - исправлен синтаксис Promise
+// Версия: 1.0.3 - защита от undefined
 // ============================================
 
 import './economy.css';
@@ -38,8 +37,13 @@ export class EconomyModule {
     this.headerManager.setTitle('💰 Экономика');
     this.headerManager.setActions([]);
 
-    await this.economyStore.loadBalances();
-    await this.economyStore.loadConfig();
+    // ✅ Загружаем данные, но не ждем их блокирующе
+    try {
+      await this.economyStore.loadBalances();
+      await this.economyStore.loadConfig();
+    } catch (err) {
+      console.warn('⚠️ Ошибка загрузки данных экономики:', err);
+    }
 
     this._render();
     this._subscribeToEvents();
@@ -51,7 +55,7 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v1.0.2 инициализирован');
+    console.log('✅ EconomyModule v1.0.3 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -659,4 +663,4 @@ export class EconomyModule {
 (window as any).EconomyModule = EconomyModule;
 (window as any).economyModule = new EconomyModule(document.createElement('div'));
 
-console.log('✅ EconomyModule v1.0.2 загружен');
+console.log('✅ EconomyModule v1.0.3 загружен');
