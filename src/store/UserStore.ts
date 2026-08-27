@@ -1,7 +1,7 @@
 // ============================================
 // src/store/UserStore.ts
 // Пользователь, настройки, лимиты, устройство
-// Версия: 4.1.0 - добавлен usedToday в setRole
+// Версия: 5.0.0 - добавлены premium_until и trialUsed
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -22,9 +22,19 @@ export class UserStore extends BaseStore<IUserStoreData> {
         deviceFingerprint: null,
         signedFingerprint: null,
         deviceType: 'web',
-        devicePlatform: 'web'
+        devicePlatform: 'web',
+        premium_until: null,
+        trialUsed: false,
       };
       this.save();
+    }
+
+    // ✅ Инициализация новых полей
+    if (this._data.premium_until === undefined) {
+      this._data.premium_until = null;
+    }
+    if (this._data.trialUsed === undefined) {
+      this._data.trialUsed = false;
     }
 
     this.initFromTelegram();
@@ -141,6 +151,15 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return this.userId === 1541531808;
   }
 
+  // ✅ НОВЫЕ ГЕТТЕРЫ
+  get premiumUntil(): string | null {
+    return this._data.premium_until || null;
+  }
+
+  get trialUsed(): boolean {
+    return this._data.trialUsed || false;
+  }
+
   // ==========================================
   // СЕТТЕРЫ
   // ==========================================
@@ -197,6 +216,13 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return this._data.signedFingerprint || this._data.deviceFingerprint || null;
   }
 
+  // ✅ НОВЫЙ МЕТОД
+  markTrialUsed(): void {
+    this._data.trialUsed = true;
+    this.save();
+    this._emitChange('user:trial_used', {});
+  }
+
   // ==========================================
   // ПРОВЕРКИ
   // ==========================================
@@ -243,27 +269,21 @@ export class UserStore extends BaseStore<IUserStoreData> {
   // СИНХРОНИЗАЦИЯ ЛИМИТА С СЕРВЕРОМ
   // ==========================================
 
-  // ==========================================
-// СИНХРОНИЗАЦИЯ ЛИМИТА С СЕРВЕРОМ
-// ==========================================
-
-async syncUsageLimit(): Promise<void> {
-  try {
-    // ✅ ИСПРАВЛЕНО: импортируем из @/services/auth
-    const { authService } = await import('@/services/auth');
-    const result = await authService.checkSubscription();
-    if (result.usedToday !== undefined) {
-      this._data.usedToday = result.usedToday;
-      this._data.dailyLimit = result.dailyLimit;
-      this.save();
-      console.log(`🔄 [UserStore] Лимит синхронизирован: ${this._data.usedToday}/${this._data.dailyLimit}`);
+  async syncUsageLimit(): Promise<void> {
+    try {
+      const { authService } = await import('@/services/auth');
+      const result = await authService.checkSubscription();
+      if (result.usedToday !== undefined) {
+        this._data.usedToday = result.usedToday;
+        this._data.dailyLimit = result.dailyLimit;
+        this.save();
+        console.log(`🔄 [UserStore] Лимит синхронизирован: ${this._data.usedToday}/${this._data.dailyLimit}`);
+      }
+    } catch (err) {
+      console.error('❌ [UserStore] Ошибка синхронизации лимита:', err);
     }
-  } catch (err) {
-    console.error('❌ [UserStore] Ошибка синхронизации лимита:', err);
   }
 }
-}
 
-// Создаем экземпляр
 export const userStore = new UserStore();
-console.log('✅ UserStore v4.1.0 загружен (добавлен usedToday в setRole)');
+console.log('✅ UserStore v5.0.0 загружен (добавлены premium_until и trialUsed)');
