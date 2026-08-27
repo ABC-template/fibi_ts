@@ -1,7 +1,6 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
-// Модуль экономики (коины + токены)
-// Версия: 1.0.1 - исправлены типы UserStore
+// Версия: 1.0.2 - исправлен синтаксис Promise
 // ============================================
 
 import './economy.css';
@@ -51,7 +50,7 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v1.0.1 инициализирован');
+    console.log('✅ EconomyModule v1.0.2 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -72,14 +71,12 @@ export class EconomyModule {
   }
 
   private _render(): void {
-    // ✅ ИСПРАВЛЕНО: используем геттеры userStore
     const isPremium = this.userStore.isPro();
     const premiumUntil = this.userStore.premiumUntil;
     const trialUsed = this.userStore.trialUsed;
 
     this.container.innerHTML = `
       <div class="economy-container">
-        <!-- Панель подписки -->
         <div class="subscription-panel">
           <div class="tier-info">
             <span class="tier-name ${isPremium ? 'premium' : ''}">
@@ -94,7 +91,6 @@ export class EconomyModule {
           </button>
         </div>
 
-        <!-- Вкладки -->
         <div class="economy-tabs">
           <button class="economy-tab ${this._activeTab === 'coins' ? 'active' : ''}" 
                   data-tab="coins" 
@@ -108,7 +104,6 @@ export class EconomyModule {
           </button>
         </div>
 
-        <!-- Контент -->
         <div class="economy-tab-content" id="economy-tab-content">
           ${this._renderTabContent()}
         </div>
@@ -144,14 +139,12 @@ export class EconomyModule {
     const maxPercent = config?.max_exchange_percent || 80;
 
     return `
-      <!-- Баланс -->
       <div class="economy-balance-card">
         <div class="label">Ваш баланс</div>
         <div class="balance">${balance} 🪙</div>
         <div class="sub">Всего заработано: ${stats.total_earned} • Потрачено: ${stats.total_spent}</div>
       </div>
 
-      <!-- Обмен -->
       ${isExchangeEnabled ? `
         <div class="exchange-widget">
           <div class="rate">
@@ -188,7 +181,6 @@ export class EconomyModule {
         </div>
       `}
 
-      <!-- История -->
       <div class="economy-history">
         <div class="title">
           📜 История транзакций
@@ -206,13 +198,11 @@ export class EconomyModule {
     const transactions = this.economyStore.getTransactions('tokens');
 
     return `
-      <!-- Баланс -->
       <div class="economy-balance-card">
         <div class="label">Ваши токены</div>
         <div class="balance">${tokens.total} ⚡</div>
       </div>
 
-      <!-- Детализация -->
       <div class="token-breakdown">
         <div class="token-item">
           <div class="value bonus">${tokens.bonus}</div>
@@ -226,7 +216,6 @@ export class EconomyModule {
         </div>
       </div>
 
-      <!-- История -->
       <div class="economy-history">
         <div class="title">
           📜 История транзакций
@@ -369,7 +358,7 @@ export class EconomyModule {
     const maxCoins = Math.floor(balance * maxPercent / 100);
 
     if (coins > maxCoins) {
-      const confirm = await new Promise<boolean>((resolve) => {
+      const confirmResult = await new Promise<boolean>((resolve) => {
         if ((window as any).tg?.showConfirm) {
           (window as any).tg.showConfirm(
             `⚠️ Вы обмениваете более ${maxPercent}% всех монет (${coins} 🪙). Продолжить?`,
@@ -380,7 +369,7 @@ export class EconomyModule {
         }
       });
 
-      if (!confirm) return;
+      if (!confirmResult) return;
     }
 
     try {
@@ -433,7 +422,6 @@ export class EconomyModule {
         ` : ''}
         
         <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
-          <!-- Пробный тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 2px solid ${trialUsed ? 'var(--app-border-color)' : 'var(--app-accent-primary)'}; opacity: ${trialUsed ? '0.6' : '1'};">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -455,7 +443,6 @@ export class EconomyModule {
             </div>
           </div>
 
-          <!-- Базовый тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -470,7 +457,6 @@ export class EconomyModule {
             </div>
           </div>
 
-          <!-- PRO тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-accent-primary);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -488,7 +474,6 @@ export class EconomyModule {
             </div>
           </div>
 
-          <!-- ULTIMATE тариф -->
           <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
@@ -526,10 +511,8 @@ export class EconomyModule {
     try {
       this.userStore.markTrialUsed();
       this.userStore.setRole('premium', 100, true);
-      // Устанавливаем дату окончания через 3 дня
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 3);
-      // Используем any для доступа к приватному полю
       (this.userStore as any)._data.premium_until = expiry.toISOString();
       this.userStore.save();
 
@@ -568,7 +551,7 @@ export class EconomyModule {
       return;
     }
 
-    const confirm = await new Promise<boolean>((resolve) => {
+    const confirmResult = await new Promise<boolean>((resolve) => {
       if ((window as any).tg?.showConfirm) {
         (window as any).tg.showConfirm(
           `Купить ${tier} за ${price} 🪙?`,
@@ -579,7 +562,7 @@ export class EconomyModule {
       }
     });
 
-    if (!confirm) return;
+    if (!confirmResult) return;
 
     try {
       this.economyStore.updateCoinBalance(balance - price);
@@ -675,4 +658,4 @@ export class EconomyModule {
 (window as any).EconomyModule = EconomyModule;
 (window as any).economyModule = new EconomyModule(document.createElement('div'));
 
-console.log('✅ EconomyModule v1.0.1 загружен');
+console.log('✅ EconomyModule v1.0.2 загружен');
