@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyStore.ts
 // Хранилище для UI (кеш балансов)
-// Версия: 3.0.0 - добавлены токены
+// Версия: 3.0.0 - добавлены методы для совместимости
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -170,12 +170,26 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
   }
 
   // ==========================================
-  // СЕТТЕРЫ
+  // СЕТТЕРЫ (совместимость с существующим кодом)
   // ==========================================
 
   updateCoinBalance(balance: number): void {
     this._data.coins.balance = balance;
     this._data.lastUpdated = new Date().toISOString();
+    this.save();
+  }
+
+  // Совместимость со старым именем
+  updateBalance(userId: number, newBalance: number): void {
+    if (userId === this.userId) {
+      this.updateCoinBalance(newBalance);
+    }
+  }
+
+  // Совместимость со старым именем
+  setStats(total_earned: number, total_spent: number): void {
+    this._data.coins.total_earned = total_earned;
+    this._data.coins.total_spent = total_spent;
     this.save();
   }
 
