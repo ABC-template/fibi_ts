@@ -1,0 +1,425 @@
+/* ============================================
+   src/modules/economy/economy.css
+   Стили для модуля экономики
+   Версия: 1.0.0
+   ============================================ */
+
+.economy-container {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 16px;
+}
+
+/* ===== ПАНЕЛЬ ПОДПИСКИ ===== */
+.subscription-panel {
+  background: var(--app-bg-secondary);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid var(--app-border-color-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.subscription-panel .tier-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subscription-panel .tier-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--app-text-primary);
+}
+
+.subscription-panel .tier-name.premium {
+  color: var(--app-accent-primary);
+}
+
+.subscription-panel .tier-expiry {
+  font-size: 12px;
+  color: var(--app-text-tertiary);
+}
+
+.subscription-panel .tier-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--app-gradient-primary);
+  color: var(--app-text-inverse);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.subscription-panel .tier-btn:active {
+  transform: scale(0.95);
+}
+
+/* ===== ВКЛАДКИ ===== */
+.economy-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--app-bg-tertiary);
+  border-radius: 12px;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.economy-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--app-font-family);
+}
+
+.economy-tab.active {
+  background: var(--app-accent-primary);
+  color: var(--app-text-inverse);
+}
+
+/* ===== КОНТЕНТ ВКЛАДОК ===== */
+.economy-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  animation: fadeIn 0.2s ease;
+}
+
+/* ===== БАЛАНС ===== */
+.economy-balance-card {
+  background: var(--app-bg-secondary);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid var(--app-border-color-light);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.economy-balance-card .label {
+  font-size: 13px;
+  color: var(--app-text-tertiary);
+}
+
+.economy-balance-card .balance {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--app-accent-primary);
+  margin: 4px 0;
+}
+
+.economy-balance-card .sub {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+/* ===== ТОКЕНЫ (подробно) ===== */
+.token-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.token-item {
+  background: var(--app-bg-secondary);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+  border: 1px solid var(--app-border-color-light);
+}
+
+.token-item .value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.token-item .value.bonus {
+  color: #f1c40f;
+}
+
+.token-item .value.permanent {
+  color: #3498db;
+}
+
+.token-item .label {
+  font-size: 11px;
+  color: var(--app-text-tertiary);
+}
+
+.token-item .hint {
+  font-size: 10px;
+  color: var(--app-text-tertiary);
+  margin-top: 2px;
+}
+
+/* ===== ОБМЕН ===== */
+.exchange-widget {
+  background: var(--app-bg-secondary);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid var(--app-border-color-light);
+  margin-bottom: 16px;
+}
+
+.exchange-widget .rate {
+  font-size: 13px;
+  color: var(--app-text-secondary);
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.exchange-widget .rate strong {
+  color: var(--app-accent-primary);
+}
+
+.exchange-widget .input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.exchange-widget .input-group input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border-color);
+  background: var(--app-bg-tertiary);
+  color: var(--app-text-primary);
+  font-size: 16px;
+  outline: none;
+  font-family: var(--app-font-family);
+}
+
+.exchange-widget .input-group input:focus {
+  border-color: var(--app-accent-primary);
+}
+
+.exchange-widget .input-group .max-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border-color-light);
+  background: var(--app-bg-tertiary);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.exchange-widget .input-group .max-btn:active {
+  transform: scale(0.95);
+}
+
+.exchange-widget .preview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--app-bg-tertiary);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.exchange-widget .preview .tokens {
+  font-weight: 700;
+  color: var(--app-accent-primary);
+  font-size: 18px;
+}
+
+.exchange-widget .preview .hint {
+  font-size: 12px;
+  color: var(--app-text-tertiary);
+}
+
+.exchange-widget .warning {
+  background: rgba(231, 76, 60, 0.08);
+  border: 1px solid rgba(231, 76, 60, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--app-accent-danger);
+  font-size: 12px;
+  margin-bottom: 12px;
+  display: none;
+}
+
+.exchange-widget .warning.visible {
+  display: block;
+}
+
+.exchange-widget .exchange-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  background: var(--app-gradient-primary);
+  color: var(--app-text-inverse);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.exchange-widget .exchange-btn:active {
+  transform: scale(0.98);
+}
+
+.exchange-widget .exchange-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.exchange-widget .exchange-disabled {
+  text-align: center;
+  padding: 20px;
+  color: var(--app-text-tertiary);
+  font-size: 14px;
+}
+
+.exchange-widget .exchange-disabled .icon {
+  font-size: 32px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* ===== ИСТОРИЯ ===== */
+.economy-history {
+  background: var(--app-bg-secondary);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid var(--app-border-color-light);
+  flex: 1;
+  min-height: 200px;
+}
+
+.economy-history .title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.economy-history .title .count {
+  font-size: 12px;
+  color: var(--app-text-tertiary);
+  font-weight: 400;
+}
+
+.economy-history .list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.economy-history .empty {
+  text-align: center;
+  padding: 30px 0;
+  color: var(--app-text-tertiary);
+  font-size: 13px;
+}
+
+.economy-history .transaction {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--app-bg-tertiary);
+  border-radius: 10px;
+  border-left: 3px solid var(--app-accent-primary);
+}
+
+.economy-history .transaction .info {
+  flex: 1;
+  min-width: 0;
+}
+
+.economy-history .transaction .info .desc {
+  font-size: 13px;
+  color: var(--app-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.economy-history .transaction .info .meta {
+  font-size: 10px;
+  color: var(--app-text-tertiary);
+}
+
+.economy-history .transaction .amount {
+  font-weight: 700;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.economy-history .transaction .amount.positive {
+  color: #27ae60;
+}
+
+.economy-history .transaction .amount.negative {
+  color: #e74c3c;
+}
+
+.economy-history .transaction .amount.bonus {
+  color: #f1c40f;
+}
+
+.economy-history .transaction .amount.permanent {
+  color: #3498db;
+}
+
+/* ===== АДАПТИВНОСТЬ ===== */
+@media (max-width: 480px) {
+  .economy-balance-card .balance {
+    font-size: 28px;
+  }
+  
+  .token-breakdown {
+    grid-template-columns: 1fr;
+  }
+  
+  .exchange-widget .input-group {
+    flex-wrap: wrap;
+  }
+  
+  .exchange-widget .input-group input {
+    min-width: 100px;
+  }
+  
+  .economy-history .transaction {
+    padding: 8px 10px;
+  }
+  
+  .economy-history .transaction .info .desc {
+    font-size: 12px;
+  }
+  
+  .subscription-panel {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+  
+  .subscription-panel .tier-btn {
+    width: 100%;
+  }
+}
