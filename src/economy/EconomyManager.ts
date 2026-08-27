@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyManager.ts
 // Упрощённый менеджер — только связь с API и обновление Store
-// Версия: 2.0.0 - полностью переписан
+// Версия: 3.0.0 - полностью переписан, совместим с новыми методами
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
@@ -25,21 +25,15 @@ export class EconomyManager {
   private init(): void {
     if (this.initialized) return;
 
-    // Подписываемся на события
     this.subscribeToEvents();
 
     this.initialized = true;
-    console.log('✅ EconomyManager v2.0.0 инициализирован (упрощённый)');
+    console.log('✅ EconomyManager v3.0.0 инициализирован');
   }
 
   private subscribeToEvents(): void {
-    // Запрос на начисление
     eventBus.on('economy:earn', this.handleEarn.bind(this));
-
-    // Запрос на списание
     eventBus.on('economy:spend', this.handleSpend.bind(this));
-
-    // Обновление пользователя
     eventBus.on('user:changed', this.onUserChanged.bind(this));
 
     console.log('📡 EconomyManager подписан на экономические события');
@@ -47,40 +41,29 @@ export class EconomyManager {
 
   private onUserChanged(data: { userId: number }): void {
     this.userId = data.userId;
-    // Загружаем баланс при смене пользователя
     this.loadBalance();
   }
 
-  /**
-   * Загрузить баланс текущего пользователя
-   */
   async loadBalance(): Promise<void> {
     if (!this.userId) {
-      // Пробуем получить из Telegram
       const tg = (window as any).Telegram?.WebApp;
       const user = tg?.initDataUnsafe?.user;
-      if (user?.id) {
-        this.userId = user.id;
-      } else {
-        return;
-      }
+      if (user?.id) this.userId = user.id;
+      else return;
     }
 
     try {
-      const result = await economyService.getBalance(this.userId);
+      const result = await economyService.getFullBalance(this.userId);
       if (result.success) {
-        economyStore.updateBalance(this.userId, result.balance);
-        economyStore.setStats(result.total_earned, result.total_spent);
-        console.log(`💰 Баланс загружен: ${result.balance}`);
+        economyStore.updateCoinBalance(result.coins.balance);
+        economyStore.updateTokenBalances(result.tokens.bonus, result.tokens.permanent);
+        console.log(`💰 Балансы загружены: ${result.coins.balance} 🪙, ${result.tokens.total} ⚡`);
       }
     } catch (err) {
-      console.error('❌ Ошибка загрузки баланса:', err);
+      console.error('❌ Ошибка загрузки балансов:', err);
     }
   }
 
-  /**
-   * Обработка начисления
-   */
   private async handleEarn(
     event: IEconomyEarnEvent,
     sender: any,
@@ -91,14 +74,12 @@ export class EconomyManager {
     console.log(`💰 [EconomyManager] Начисление: userId=${userId}, source=${source}`);
 
     try {
-      // Определяем сумму
       const amount = eventAmount || 0;
       if (amount <= 0) {
         this.emitError(userId, source, 'Amount must be greater than 0');
         return;
       }
 
-      // Вызываем API
       const result = await economyService.addCoins(
         userId,
         amount,
@@ -112,10 +93,8 @@ export class EconomyManager {
         return;
       }
 
-      // Обновляем Store
-      economyStore.updateBalance(userId, result.newBalance);
+      economyStore.updateCoinBalance(result.newBalance);
 
-      // Генерируем событие об обновлении баланса
       const balanceEvent: IEconomyBalanceUpdatedEvent = {
         userId,
         newBalance: result.newBalance,
@@ -132,9 +111,6 @@ export class EconomyManager {
     }
   }
 
-  /**
-   * Обработка списания
-   */
   private async handleSpend(
     event: IEconomySpendEvent,
     sender: any,
@@ -150,7 +126,6 @@ export class EconomyManager {
         return;
       }
 
-      // Вызываем API
       const result = await economyService.spendCoins(
         userId,
         amount,
@@ -164,10 +139,8 @@ export class EconomyManager {
         return;
       }
 
-      // Обновляем Store
-      economyStore.updateBalance(userId, result.newBalance);
+      economyStore.updateCoinBalance(result.newBalance);
 
-      // Генерируем событие об обновлении баланса
       const balanceEvent: IEconomyBalanceUpdatedEvent = {
         userId,
         newBalance: result.newBalance,
@@ -184,9 +157,6 @@ export class EconomyManager {
     }
   }
 
-  /**
-   * Отправить ошибку
-   */
   private emitError(userId: number, source: string, error: string): void {
     const errorEvent: IEconomyErrorEvent = {
       userId,
@@ -197,17 +167,11 @@ export class EconomyManager {
     console.warn(`⚠️ [EconomyManager] Ошибка: ${error} (${source})`);
   }
 
-  /**
-   * Получить текущий баланс пользователя
-   */
   async getBalance(userId: number): Promise<number> {
-    const result = await economyService.getBalance(userId);
-    return result.success ? result.balance : 0;
+    const result = await economyService.getFullBalance(userId);
+    return result.success ? result.coins.balance : 0;
   }
 }
 
-// Создаём экземпляр
 export const economyManager = new EconomyManager();
-
-// Для глобального доступа
 (window as any).economyManager = economyManager;
