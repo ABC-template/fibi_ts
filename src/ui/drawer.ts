@@ -1,7 +1,7 @@
 // ============================================
 // src/ui/drawer.ts
-// ВСЁ о сайдбаре
-// Версия: 2.4.0 - добавлена проверка лимита закрепления
+// ВСЁ о сайдбаре (обновлен для экономики)
+// Версия: 2.5.0 - добавлена экономика, удален кошелек
 // ============================================
 
 import './drawer.css';
@@ -401,16 +401,14 @@ export function handleChatAction(action: string, chatId: string, chatTitle: stri
 }
 
 // ==========================================
-// ✅ ИСПРАВЛЕНО: ЗАКРЕПЛЕНИЕ С ПРОВЕРКОЙ ЛИМИТА
+// ЗАКРЕПЛЕНИЕ С ПРОВЕРКОЙ ЛИМИТА
 // ==========================================
 
 export async function togglePinChat(chatId: string, pinned: boolean): Promise<void> {
     const found = chatStore.findChatById(chatId);
     if (!found) return;
 
-    // ✅ Если пытаемся закрепить — проверяем лимит
     if (pinned) {
-        // Считаем уже закреплённые чаты (включая текущий, если он был закреплён)
         const allChats = collectChats();
         const pinnedCount = allChats.filter(c => c.pinned === true && c.id !== chatId).length;
         
@@ -431,7 +429,6 @@ export async function togglePinChat(chatId: string, pinned: boolean): Promise<vo
         }
     }
 
-    // Оптимистичное обновление
     found.chat.pinned = pinned;
     chatStore.save();
     renderChatsInDrawer();
@@ -440,14 +437,12 @@ export async function togglePinChat(chatId: string, pinned: boolean): Promise<vo
         uiRenderer.showToast(pinned ? '📌 Чат закреплён' : '📌 Чат откреплён', 'success', 1500);
     }
 
-    // Синхронизация с сервером (только для PRO)
     if (userStore.canSync() && window.chatService) {
         try {
             await window.chatService.pinChat(chatId, pinned);
             console.log(`✅ Закрепление чата ${chatId} синхронизировано: ${pinned}`);
         } catch (err) {
             console.error('❌ Ошибка синхронизации закрепления:', err);
-            // Откатываем при ошибке
             found.chat.pinned = !pinned;
             chatStore.save();
             renderChatsInDrawer();
@@ -473,7 +468,6 @@ export function renameChatFromDrawer(chatId: string, currentTitle: string): void
     }
     const trimmed = newTitle.trim();
 
-    // 1. Оптимистичное обновление локально
     chatStore.renameChat(chatId, trimmed);
     renderChatsInDrawer();
     if (profileUI && typeof profileUI.updateChatTitle === 'function') {
@@ -484,11 +478,9 @@ export function renameChatFromDrawer(chatId: string, currentTitle: string): void
         uiRenderer.showToast('✏️ Чат переименован', 'success', 1500);
     }
 
-    // 2. Синхронизация с сервером
     if (userStore.canSync() && window.chatService) {
         window.chatService.renameChat(chatId, trimmed).catch(err => {
             console.error('❌ Ошибка синхронизации переименования:', err);
-            // Откатываем название при ошибке
             chatStore.renameChat(chatId, currentTitle);
             renderChatsInDrawer();
             if (profileUI && typeof profileUI.updateChatTitle === 'function') {
@@ -528,7 +520,7 @@ export function deleteChatFromDrawer(chatId: string): void {
 }
 
 // ==========================================
-// НИЖНЯЯ ЧАСТЬ САЙДБАРА (НАВИГАЦИЯ)
+// НИЖНЯЯ ЧАСТЬ САЙДБАРА (НАВИГАЦИЯ) - ОБНОВЛЕНА
 // ==========================================
 
 export function appendDrawerNav(container: HTMLElement): void {
@@ -562,13 +554,14 @@ export function appendDrawerNav(container: HTMLElement): void {
             action: () => window.showTrashModal(),
             show: true,
         },
+        // ✅ НОВЫЙ ПУНКТ: ЭКОНОМИКА (заменяет кошелек)
         {
-            id: 'drawer-coins',
+            id: 'drawer-economy',
             icon: '💰',
-            label: 'Кошелёк',
+            label: 'Экономика',
             action: () => {
                 closeDrawer();
-                window.moduleLoader.load('coins');
+                window.moduleLoader.load('economy');
             },
             show: true,
         },
@@ -747,7 +740,7 @@ export function appendDrawerNav(container: HTMLElement): void {
 
     const version = document.createElement('div');
     version.className = 'drawer-version';
-    version.textContent = 'Версия 11.0.0';
+    version.textContent = 'Версия 12.0.0';
     nav.appendChild(version);
 
     container.appendChild(nav);
@@ -897,4 +890,4 @@ export function setupDrawerEventListeners(): void {
 (window as any).renameChatFromDrawer = renameChatFromDrawer;
 (window as any).deleteChatFromDrawer = deleteChatFromDrawer;
 
-console.log('✅ drawer.ts v2.4.0 загружен (проверка лимита закрепления)');
+console.log('✅ drawer.ts v2.5.0 загружен (экономика добавлена, кошелек удален)');
