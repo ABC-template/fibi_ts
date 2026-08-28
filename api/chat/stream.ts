@@ -18,7 +18,6 @@ import { buildSystemPrompt, buildMessages } from '../chat/prompts';
 import {
   checkTokenAvailability,
   spendTokenForRequest,
-  getEconomyConfig,
 } from '../_lib/tokens';
 import {
   checkOpenRouterLimit,
@@ -73,7 +72,6 @@ export default async function handler(request: Request): Promise<Response> {
     const tokenCheck = await checkTokenAvailability(userId, 1, config);
     
     if (!tokenCheck.available) {
-      // Формируем понятное сообщение для пользователя
       let userMessage = '';
       
       if (tokenCheck.bonus === 0 && tokenCheck.permanent === 0) {
@@ -89,7 +87,6 @@ export default async function handler(request: Request): Promise<Response> {
         userMessage = `⚠️ Недостаточно токенов для запроса. Доступно: ${tokenCheck.total} ⚡ (${tokenCheck.bonus} бонусных, ${tokenCheck.permanent} постоянных)`;
       }
 
-      // Добавляем подсказку в ответ
       return errorResponse(userMessage, 429, {
         'X-Token-Bonus': String(tokenCheck.bonus || 0),
         'X-Token-Permanent': String(tokenCheck.permanent || 0),
@@ -144,7 +141,6 @@ export default async function handler(request: Request): Promise<Response> {
     const estimatedTokens = estimateTokens(messages, systemPrompt);
     console.log(`📊 [stream] Оценка токенов OpenRouter: ~${estimatedTokens}`);
 
-    // Проверяем лимит OpenRouter
     const openRouterCheck = await checkOpenRouterLimit(userId, estimatedTokens, config);
     if (!openRouterCheck.allowed) {
       return errorResponse(
@@ -231,21 +227,20 @@ export default async function handler(request: Request): Promise<Response> {
                         controller.enqueue(new TextEncoder().encode(content));
                       }
                       
-                      // Сохраняем usage если есть
                       if (data.usage) {
                         totalPromptTokens = data.usage.prompt_tokens || 0;
                         totalCompletionTokens = data.usage.completion_tokens || 0;
                         totalTokens = data.usage.total_tokens || 0;
                       }
                     } catch (e) {
-                      // Игнорируем ошибки парсинга отдельных чанков
+                      // Игнорируем ошибки парсинга
                     }
                   }
                 }
               }
 
               // ==========================================
-              // 8. ФИНАЛИЗАЦИЯ
+              // 8. ФИНАЛИЗАЦИЯ (списание токена!)
               // ==========================================
               if (streamCompleted && accumulatedText.trim().length > 0) {
                 console.log(`📊 [stream] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
@@ -287,14 +282,10 @@ export default async function handler(request: Request): Promise<Response> {
           }
         });
 
-        // ==========================================
-        // 9. ОТВЕТ С ЗАГОЛОВКАМИ
-        // ==========================================
         const responseHeaders = {
           'X-Accel-Buffering': 'no',
           'Cache-Control': 'no-cache, no-transform',
           'Content-Type': 'text/plain; charset=utf-8',
-          // ✅ Отправляем остаток токенов
           'X-Token-Remaining': String(tokenCheck.total - 1),
           'X-Token-Bonus': String(tokenCheck.bonus - (tokenCheck.bonus > 0 ? 1 : 0)),
           'X-Token-Permanent': String(tokenCheck.permanent - (tokenCheck.bonus === 0 ? 1 : 0)),
