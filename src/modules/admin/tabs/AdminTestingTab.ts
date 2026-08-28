@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminTestingTab.ts
 // Тестирование и отладка
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлен confirm
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -122,7 +122,6 @@ export class AdminTestingTab implements IAdminTab {
       return;
     }
 
-    // Устанавливаем тестового пользователя
     if ((window as any).userStore) {
       (window as any).userStore.userId = userId;
       (window as any).userStore.save();
@@ -148,7 +147,6 @@ export class AdminTestingTab implements IAdminTab {
     }
 
     try {
-      // Используем существующий API
       const response = await apiClient.post('/admin/coins', {
         user_id: userId,
         amount: amount,
@@ -188,7 +186,6 @@ export class AdminTestingTab implements IAdminTab {
     }
 
     try {
-      // Используем RPC напрямую через API
       const response = await apiClient.post('/admin/tokens', {
         user_id: userId,
         amount: amount,
@@ -223,18 +220,18 @@ export class AdminTestingTab implements IAdminTab {
       return;
     }
 
-    const confirm = await new Promise<boolean>((resolve) => {
+    const userConfirmed = await new Promise<boolean>((resolve) => {
       if ((window as any).tg?.showConfirm) {
         (window as any).tg.showConfirm(
           `Сбросить все токены пользователю ${userId}?`,
           (ok: boolean) => resolve(ok)
         );
       } else {
-        resolve(confirm(`Сбросить все токены пользователю ${userId}?`));
+        resolve(window.confirm(`Сбросить все токены пользователю ${userId}?`));
       }
     });
 
-    if (!confirm) return;
+    if (!userConfirmed) return;
 
     try {
       const response = await apiClient.post('/admin/tokens/reset', { user_id: userId });
@@ -252,18 +249,18 @@ export class AdminTestingTab implements IAdminTab {
   }
 
   static async resetAll(): Promise<void> {
-    const confirm = await new Promise<boolean>((resolve) => {
+    const userConfirmed = await new Promise<boolean>((resolve) => {
       if ((window as any).tg?.showConfirm) {
         (window as any).tg.showConfirm(
           '⚠️ Полный сброс системы? Это действие необратимо!',
           (ok: boolean) => resolve(ok)
         );
       } else {
-        resolve(confirm('⚠️ Полный сброс системы? Это действие необратимо!'));
+        resolve(window.confirm('⚠️ Полный сброс системы? Это действие необратимо!'));
       }
     });
 
-    if (!confirm) return;
+    if (!userConfirmed) return;
 
     if ((window as any).uiRenderer) {
       (window as any).uiRenderer.showToast('⚠️ Функция временно отключена', 'warning', 2000);
@@ -271,7 +268,6 @@ export class AdminTestingTab implements IAdminTab {
   }
 
   onShow(): void {
-    // Обновляем значения по умолчанию
     const input = document.getElementById('test-user-id') as HTMLInputElement;
     if (input && (window as any).userStore?.userId) {
       input.value = (window as any).userStore.userId;
