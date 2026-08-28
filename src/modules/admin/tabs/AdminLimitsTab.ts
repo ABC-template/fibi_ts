@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminLimitsTab.ts
 // Управление лимитами по ролям
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлены типы
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -138,17 +138,16 @@ export class AdminLimitsTab implements IAdminTab {
 
     const saveBtn = document.getElementById('save-limits-btn');
     if (saveBtn) {
-      saveBtn.disabled = true;
+      (saveBtn as HTMLButtonElement).disabled = true;
       saveBtn.textContent = '⏳ Сохранение...';
     }
 
     try {
-      // Собираем данные из формы
       const rows = document.querySelectorAll('.limits-table tbody tr');
       const limits: ILimit[] = [];
 
       rows.forEach(row => {
-        const id = row.dataset.id!;
+        const id = (row as HTMLTableRowElement).dataset?.id || '';
         const bonusInput = row.querySelector('.bonus-input') as HTMLInputElement;
         const permanentInput = row.querySelector('.permanent-input') as HTMLInputElement;
         const openrouterInput = row.querySelector('.openrouter-input') as HTMLInputElement;
@@ -158,10 +157,10 @@ export class AdminLimitsTab implements IAdminTab {
           id,
           role_key: '',
           role_name: '',
-          bonus_tokens_per_day: parseInt(bonusInput.value) || 0,
-          permanent_tokens_on_subscribe: parseInt(permanentInput.value) || 0,
-          openrouter_limit: parseInt(openrouterInput.value) || 0,
-          is_active: activeCheckbox.checked,
+          bonus_tokens_per_day: parseInt(bonusInput?.value || '0'),
+          permanent_tokens_on_subscribe: parseInt(permanentInput?.value || '0'),
+          openrouter_limit: parseInt(openrouterInput?.value || '0'),
+          is_active: activeCheckbox?.checked || false,
           sort_order: 0,
         });
       });
@@ -169,7 +168,6 @@ export class AdminLimitsTab implements IAdminTab {
       const response = await apiClient.post('/admin/economy/limits', { limits });
 
       if (response.success) {
-        // Показываем уведомление
         if ((window as any).uiRenderer) {
           (window as any).uiRenderer.showToast('✅ Лимиты сохранены', 'success', 2000);
         }
@@ -188,7 +186,7 @@ export class AdminLimitsTab implements IAdminTab {
     } finally {
       this.saving = false;
       if (saveBtn) {
-        saveBtn.disabled = false;
+        (saveBtn as HTMLButtonElement).disabled = false;
         saveBtn.textContent = '💾 Сохранить лимиты';
       }
     }
