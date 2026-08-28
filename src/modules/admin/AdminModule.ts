@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (загружает вкладки из реестра)
-// Версия: 5.0.3 — исправлена ошибка Unicode в регулярном выражении
+// Версия: 5.0.4 — исправлен бесконечный цикл переключения вкладок
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -20,6 +20,7 @@ export class AdminModule {
   private _tabs: IAdminTab[] = [];
   private _activeTabId: string | null = null;
   private _isVisible: boolean = false;
+  private _isSwitching: boolean = false; // ✅ Флаг для предотвращения циклов
   private headerManager = headerManager;
   private eventBus = eventBus;
   private userStore = userStore;
@@ -65,12 +66,13 @@ export class AdminModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v5.0.3 инициализирован');
+    console.log('✅ AdminModule v5.0.4 инициализирован');
   }
 
   private _subscribeToEvents(): void {
+    // ✅ СЛУШАЕМ СОБЫТИЕ, НО НЕ ВЫЗЫВАЕМ _switchTab, ЕСЛИ УЖЕ ПЕРЕКЛЮЧАЕМСЯ
     const unsub = this.eventBus.on('admin:tab_changed', (data) => {
-      if (data?.tabId) {
+      if (data?.tabId && !this._isSwitching) {
         this._switchTab(data.tabId);
       }
     }, this);
@@ -134,9 +136,7 @@ export class AdminModule {
           flex-wrap: wrap;
         ">
           ${this._tabs.map(tab => {
-            // ✅ Убираем дублирование иконок
             const labelText = tab.label || tab.id;
-            // Простая проверка на наличие иконки (эмодзи)
             const hasIcon = /[📊📋⚙️📦📜👤🔐🤖⭐🔒🎁💰🔄]/.test(labelText);
             const displayLabel = hasIcon ? labelText : `${tab.icon || ''} ${labelText}`.trim();
             
@@ -189,6 +189,12 @@ export class AdminModule {
   }
 
   private async _switchTab(tabId: string): Promise<void> {
+    // ✅ Защита от рекурсии
+    if (this._isSwitching) {
+      console.log(`⏳ [AdminModule] Уже переключаем, игнорируем: ${tabId}`);
+      return;
+    }
+
     console.log(`🔄 [AdminModule] Переключение на вкладку: ${tabId}`);
     
     if (this._activeTabId === tabId) {
@@ -209,49 +215,55 @@ export class AdminModule {
       return;
     }
 
-    // Скрываем старую вкладку
-    const oldTab = this._tabs.find(t => t.id === this._activeTabId);
-    if (oldTab && oldTab.onHide) {
-      oldTab.onHide();
-    }
+    this._isSwitching = true;
 
-    // Переключаем
-    this._activeTabId = tabId;
-    const newTab = this._tabs.find(t => t.id === tabId);
-    
-    if (newTab) {
-      // Обновляем контент
-      const contentEl = document.getElementById('admin-tab-content');
-      if (contentEl) {
-        contentEl.innerHTML = newTab.render();
-        contentEl.style.animation = 'fadeIn 0.2s ease';
+    try {
+      // Скрываем старую вкладку
+      const oldTab = this._tabs.find(t => t.id === this._activeTabId);
+      if (oldTab && oldTab.onHide) {
+        oldTab.onHide();
       }
 
-      // Показываем новую вкладку
-      if (newTab.onShow) {
-        newTab.onShow();
-      }
-
-      // Обновляем кнопки табов
-      document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-        const element = btn as HTMLElement;
-        const isActive = element.dataset.tab === tabId;
-        element.style.background = isActive ? 'var(--app-accent-primary)' : 'transparent';
-        element.style.color = isActive ? 'var(--app-text-inverse)' : 'var(--app-text-secondary)';
-      });
-
-      // Обновляем Lucide иконки
-      setTimeout(() => {
-        if (typeof (window as any).lucide !== 'undefined') {
-          (window as any).lucide.createIcons();
+      // Переключаем
+      this._activeTabId = tabId;
+      const newTab = this._tabs.find(t => t.id === tabId);
+      
+      if (newTab) {
+        // Обновляем контент
+        const contentEl = document.getElementById('admin-tab-content');
+        if (contentEl) {
+          contentEl.innerHTML = newTab.render();
+          contentEl.style.animation = 'fadeIn 0.2s ease';
         }
-      }, 100);
 
-      // Событие переключения
-      this.eventBus.emit('admin:tab_changed', { tabId });
-      console.log(`📑 Переключено на вкладку: ${tabId}`);
-    } else {
-      console.error(`❌ [AdminModule] Вкладка ${tabId} не найдена`);
+        // Показываем новую вкладку
+        if (newTab.onShow) {
+          newTab.onShow();
+        }
+
+        // Обновляем кнопки табов
+        document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+          const element = btn as HTMLElement;
+          const isActive = element.dataset.tab === tabId;
+          element.style.background = isActive ? 'var(--app-accent-primary)' : 'transparent';
+          element.style.color = isActive ? 'var(--app-text-inverse)' : 'var(--app-text-secondary)';
+        });
+
+        // Обновляем Lucide иконки
+        setTimeout(() => {
+          if (typeof (window as any).lucide !== 'undefined') {
+            (window as any).lucide.createIcons();
+          }
+        }, 100);
+
+        console.log(`📑 Переключено на вкладку: ${tabId}`);
+      } else {
+        console.error(`❌ [AdminModule] Вкладка ${tabId} не найдена`);
+      }
+    } catch (err) {
+      console.error(`❌ [AdminModule] Ошибка переключения:`, err);
+    } finally {
+      this._isSwitching = false;
     }
   }
 
@@ -362,4 +374,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   adminModuleInstance.switchTab(tabId);
 };
 
-console.log('✅ AdminModule v5.0.3 загружен');
+console.log('✅ AdminModule v5.0.4 загружен');
