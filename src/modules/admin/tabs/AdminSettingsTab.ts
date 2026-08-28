@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminSettingsTab.ts
 // Глобальные настройки экономики
-// Версия: 1.0.1 — исправлены типы
+// Версия: 1.0.2 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 interface ISettings {
   id?: string;
@@ -165,10 +166,10 @@ export class AdminSettingsTab implements IAdminTab {
             </div>
 
             <div class="admin-actions">
-              <button class="btn btn-primary" onclick="AdminSettingsTab.save()" id="save-settings-btn">
+              <button class="btn btn-primary" onclick="window.AdminSettingsTab.save()" id="save-settings-btn">
                 💾 Сохранить настройки
               </button>
-              <button class="btn btn-secondary" onclick="AdminSettingsTab.refresh()">
+              <button class="btn btn-secondary" onclick="window.AdminSettingsTab.refresh()">
                 🔄 Обновить
               </button>
             </div>
@@ -289,17 +290,17 @@ export class AdminSettingsTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminSettingsTab as any).save = () => {
-  const tab = adminRegistry.getInstance('settings') as AdminSettingsTab;
-  if (tab) tab.save();
-};
-
-(AdminSettingsTab as any).refresh = () => {
-  const tab = adminRegistry.getInstance('settings') as AdminSettingsTab;
-  if (tab) tab.refresh();
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminSettingsTab = {
+  save: () => {
+    const tab = adminRegistry.getInstance('settings') as AdminSettingsTab;
+    if (tab) tab.save();
+  },
+  refresh: () => {
+    const tab = adminRegistry.getInstance('settings') as AdminSettingsTab;
+    if (tab) tab.refresh();
+  }
 };
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('settings', AdminSettingsTab);
