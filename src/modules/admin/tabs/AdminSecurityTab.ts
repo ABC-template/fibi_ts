@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminSecurityTab.ts
 // Настройки безопасности и блокировки
-// Версия: 1.0.1 — исправлен confirm
+// Версия: 1.0.2 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 interface IBlock {
   id: string;
@@ -63,7 +64,7 @@ export class AdminSecurityTab implements IAdminTab {
                   placeholder="Дата окончания (опционально)"
                 />
               </div>
-              <button class="btn btn-danger" onclick="AdminSecurityTab.blockUser()">
+              <button class="btn btn-danger" onclick="window.AdminSecurityTab.blockUser()">
                 🔒 Заблокировать
               </button>
             </div>
@@ -84,7 +85,7 @@ export class AdminSecurityTab implements IAdminTab {
                       <span class="date">С ${new Date(block.blocked_at).toLocaleDateString()}</span>
                       ${block.expires_at ? `<span class="expires">до ${new Date(block.expires_at).toLocaleDateString()}</span>` : ''}
                     </div>
-                    <button class="btn btn-sm btn-success" onclick="AdminSecurityTab.unblockUser('${block.user_id}')">
+                    <button class="btn btn-sm btn-success" onclick="window.AdminSecurityTab.unblockUser('${block.user_id}')">
                       🔓 Разблокировать
                     </button>
                   </div>
@@ -94,7 +95,7 @@ export class AdminSecurityTab implements IAdminTab {
           </div>
 
           <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="AdminSecurityTab.refresh()">
+            <button class="btn btn-secondary" onclick="window.AdminSecurityTab.refresh()">
               🔄 Обновить
             </button>
           </div>
@@ -228,14 +229,15 @@ export class AdminSecurityTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminSecurityTab as any).blockUser = AdminSecurityTab.blockUser;
-(AdminSecurityTab as any).unblockUser = AdminSecurityTab.unblockUser;
-(AdminSecurityTab as any).refresh = () => {
-  const tab = adminRegistry.getInstance('security') as AdminSecurityTab;
-  if (tab) tab.refresh();
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminSecurityTab = {
+  blockUser: AdminSecurityTab.blockUser,
+  unblockUser: AdminSecurityTab.unblockUser,
+  refresh: () => {
+    const tab = adminRegistry.getInstance('security') as AdminSecurityTab;
+    if (tab) tab.refresh();
+  }
 };
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('security', AdminSecurityTab);
