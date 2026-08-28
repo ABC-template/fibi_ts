@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (модульная архитектура)
-// Версия: 6.0.1 — исправлена инициализация вкладок
+// Версия: 6.0.2 — автоматическая инициализация
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -27,6 +27,7 @@ export class AdminModule {
   private _activeTabId: string | null = null;
   private _isVisible: boolean = false;
   private _isReady: boolean = false;
+  private _initPromise: Promise<void> | null = null;
   private headerManager = headerManager;
   private eventBus = eventBus;
   private userStore = userStore;
@@ -34,7 +35,7 @@ export class AdminModule {
   constructor(container: HTMLElement) {
     this.container = container;
     
-    // ✅ СРАЗУ СОЗДАЕМ ВКЛАДКИ (не ждем init)
+    // ✅ СРАЗУ СОЗДАЕМ ВКЛАДКИ
     this._tabs = [
       new AdminDashboardTab(),
       new AdminLimitsTab(),
@@ -45,6 +46,9 @@ export class AdminModule {
       new AdminSecurityTab(),
       new AdminTestingTab(),
     ];
+
+    // ✅ АВТОМАТИЧЕСКИ ЗАПУСКАЕМ ИНИЦИАЛИЗАЦИЮ
+    this._initPromise = this.init();
   }
 
   async init(): Promise<void> {
@@ -59,6 +63,8 @@ export class AdminModule {
           <div style="font-size: 13px; margin-top: 4px;">Только для создателя приложения</div>
         </div>
       `;
+      this._isReady = true;
+      this.isInitialized = true;
       return;
     }
 
@@ -80,11 +86,15 @@ export class AdminModule {
     }
 
     this._isReady = true;
-    this._render();
-    this._subscribeToEvents();
-
     this.isInitialized = true;
-    console.log('✅ AdminModule v6.0.1 инициализирован');
+    
+    // Если контейнер уже показан — рендерим
+    if (this._isVisible) {
+      this._render();
+    }
+
+    this._subscribeToEvents();
+    console.log('✅ AdminModule v6.0.2 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -97,7 +107,9 @@ export class AdminModule {
   }
 
   private async _refreshCurrentTab(): Promise<void> {
-    if (!this._isReady) return;
+    if (!this._isReady) {
+      await this._ensureReady();
+    }
     const tab = this._tabs.find(t => t.id === this._activeTabId);
     if (tab && tab.refresh) {
       await tab.refresh();
@@ -195,16 +207,31 @@ export class AdminModule {
   }
 
   // ==========================================
+  // ГАРАНТИЯ ГОТОВНОСТИ
+  // ==========================================
+
+  private async _ensureReady(): Promise<void> {
+    if (this._isReady) return;
+    if (this._initPromise) {
+      await this._initPromise;
+    } else {
+      await this.init();
+    }
+  }
+
+  // ==========================================
   // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК
   // ==========================================
 
-  switchTab(tabId: string): void {
+  async switchTab(tabId: string): Promise<void> {
     console.log(`🔄 [AdminModule] Переключение на: ${tabId}`);
     console.log(`📋 Доступные вкладки:`, this._tabs.map(t => t.id).join(', '));
 
+    // ✅ ЖДЕМ ИНИЦИАЛИЗАЦИЮ, ЕСЛИ НУЖНО
     if (!this._isReady) {
-      console.warn(`⚠️ [AdminModule] Модуль еще не готов, табы не загружены`);
-      return;
+      console.log(`⏳ [AdminModule] Модуль инициализируется, ждем...`);
+      await this._ensureReady();
+      console.log(`✅ [AdminModule] Модуль готов, продолжаем`);
     }
 
     if (this._tabs.length === 0) {
@@ -288,7 +315,7 @@ export class AdminModule {
   // ПОКАЗ / СКРЫТИЕ
   // ==========================================
 
-  show(): void {
+  async show(): Promise<void> {
     if (this.userStore.role !== 'creator') {
       this.container.innerHTML = `
         <div style="padding: 40px; text-align: center; color: var(--app-text-tertiary);">
@@ -314,11 +341,10 @@ export class AdminModule {
       (window as any).navigation.hide();
     }
 
-    // ✅ Убеждаемся, что вкладки загружены
+    // ✅ Убеждаемся, что модуль готов
     if (!this._isReady) {
-      console.warn('⚠️ [AdminModule] show() вызван до init(), инициализируем...');
-      this.init();
-      return;
+      console.log('⏳ [AdminModule] show() вызван до init(), инициализируем...');
+      await this._ensureReady();
     }
 
     // Обновляем содержимое при показе
@@ -372,6 +398,7 @@ export class AdminModule {
     this._tabs = [];
     this._activeTabId = null;
     this._isReady = false;
+    this._initPromise = null;
     console.log('🗑️ AdminModule уничтожен');
   }
 }
@@ -397,4 +424,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   destroy: () => adminModuleInstance.destroy(),
 };
 
-console.log('✅ AdminModule v6.0.1 загружен');
+console.log('✅ AdminModule v6.0.2 загружен');
