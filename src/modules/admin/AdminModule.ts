@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (загружает вкладки из реестра)
-// Версия: 5.0.0 - модульная архитектура
+// Версия: 5.0.1 — исправлено переключение вкладок
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -65,11 +65,10 @@ export class AdminModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v5.0.0 инициализирован');
+    console.log('✅ AdminModule v5.0.1 инициализирован');
   }
 
   private _subscribeToEvents(): void {
-    // Подписка на событие переключения вкладки (опционально)
     const unsub = this.eventBus.on('admin:tab_changed', (data) => {
       if (data?.tabId) {
         this._switchTab(data.tabId);
@@ -182,7 +181,23 @@ export class AdminModule {
   }
 
   private async _switchTab(tabId: string): Promise<void> {
-    if (this._activeTabId === tabId) return;
+    if (this._activeTabId === tabId) {
+      // Уже на этой вкладке — просто обновляем
+      const tab = this._tabs.find(t => t.id === tabId);
+      if (tab) {
+        const contentEl = document.getElementById('admin-tab-content');
+        if (contentEl) {
+          contentEl.innerHTML = tab.render();
+          if (tab.onShow) tab.onShow();
+          setTimeout(() => {
+            if (typeof (window as any).lucide !== 'undefined') {
+              (window as any).lucide.createIcons();
+            }
+          }, 100);
+        }
+      }
+      return;
+    }
 
     // Скрываем старую вкладку
     const oldTab = this._tabs.find(t => t.id === this._activeTabId);
@@ -326,10 +341,10 @@ export class AdminModule {
 
 // Привязываем к window
 (window as any).AdminModule = AdminModule;
-const adminModule = new AdminModule(document.createElement('div'));
-(window as any).adminModule = adminModule;
+const adminModuleInstance = new AdminModule(document.createElement('div'));
+(window as any).adminModule = adminModuleInstance;
 
 // Привязываем метод switchTab для вызова из HTML
-(window as any).adminModule.switchTab = adminModule.switchTab.bind(adminModule);
+(window as any).adminModule.switchTab = adminModuleInstance.switchTab.bind(adminModuleInstance);
 
-console.log('✅ AdminModule v5.0.0 загружен');
+console.log('✅ AdminModule v5.0.1 загружен');
