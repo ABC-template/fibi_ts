@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminSubscriptionsTab.ts
 // Управление тарифами подписки
-// Версия: 1.0.1 — исправлен confirm
+// Версия: 1.0.2 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 interface ITier {
   id: string;
@@ -44,7 +45,7 @@ export class AdminSubscriptionsTab implements IAdminTab {
         <div class="admin-section">
           <div class="section-header">
             <h3>📦 Тарифы подписки</h3>
-            <button class="btn btn-primary" onclick="AdminSubscriptionsTab.showCreateForm()">
+            <button class="btn btn-primary" onclick="window.AdminSubscriptionsTab.showCreateForm()">
               ➕ Добавить тариф
             </button>
           </div>
@@ -82,10 +83,10 @@ export class AdminSubscriptionsTab implements IAdminTab {
                     <td>${tier.is_one_time ? '✅' : '—'}</td>
                     <td>${tier.is_active ? '✅' : '❌'}</td>
                     <td>
-                      <button class="btn btn-sm btn-secondary" onclick="AdminSubscriptionsTab.edit('${tier.id}')">
+                      <button class="btn btn-sm btn-secondary" onclick="window.AdminSubscriptionsTab.edit('${tier.id}')">
                         ✏️
                       </button>
-                      <button class="btn btn-sm btn-danger" onclick="AdminSubscriptionsTab.deleteTier('${tier.id}')">
+                      <button class="btn btn-sm btn-danger" onclick="window.AdminSubscriptionsTab.deleteTier('${tier.id}')">
                         🗑️
                       </button>
                     </td>
@@ -96,7 +97,7 @@ export class AdminSubscriptionsTab implements IAdminTab {
           </div>
 
           <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="AdminSubscriptionsTab.refresh()">
+            <button class="btn btn-secondary" onclick="window.AdminSubscriptionsTab.refresh()">
               🔄 Обновить
             </button>
           </div>
@@ -190,10 +191,10 @@ export class AdminSubscriptionsTab implements IAdminTab {
         </div>
         
         <div class="form-actions">
-          <button class="btn btn-primary" onclick="AdminSubscriptionsTab.saveTier()">
+          <button class="btn btn-primary" onclick="window.AdminSubscriptionsTab.saveTier()">
             💾 ${isEdit ? 'Обновить' : 'Создать'}
           </button>
-          <button class="btn btn-secondary" onclick="AdminSubscriptionsTab.cancelForm()">
+          <button class="btn btn-secondary" onclick="window.AdminSubscriptionsTab.cancelForm()">
             ✕ Отмена
           </button>
         </div>
@@ -376,17 +377,18 @@ export class AdminSubscriptionsTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminSubscriptionsTab as any).showCreateForm = AdminSubscriptionsTab.showCreateForm;
-(AdminSubscriptionsTab as any).edit = AdminSubscriptionsTab.edit;
-(AdminSubscriptionsTab as any).cancelForm = AdminSubscriptionsTab.cancelForm;
-(AdminSubscriptionsTab as any).saveTier = AdminSubscriptionsTab.saveTier;
-(AdminSubscriptionsTab as any).deleteTier = AdminSubscriptionsTab.deleteTier;
-(AdminSubscriptionsTab as any).refresh = () => {
-  const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-  if (tab) tab.refresh();
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminSubscriptionsTab = {
+  showCreateForm: AdminSubscriptionsTab.showCreateForm,
+  edit: AdminSubscriptionsTab.edit,
+  cancelForm: AdminSubscriptionsTab.cancelForm,
+  saveTier: AdminSubscriptionsTab.saveTier,
+  deleteTier: AdminSubscriptionsTab.deleteTier,
+  refresh: () => {
+    const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
+    if (tab) tab.refresh();
+  }
 };
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('subscriptions', AdminSubscriptionsTab);
