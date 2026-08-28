@@ -1,12 +1,11 @@
 // ============================================
 // src/modules/admin/tabs/AdminUsersTab.ts
 // Управление пользователями
-// Версия: 1.0.1 — добавлена привязка к window
+// Версия: 1.0.1 — исправлена привязка методов
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import { adminRegistry } from '../core/admin-registry';
 
 interface IUser {
   telegram_id: number;
@@ -24,7 +23,7 @@ interface IUser {
 
 export class AdminUsersTab implements IAdminTab {
   id = 'users';
-  label = '👤 Пользователи';
+  label = 'Пользователи';
   icon = '👤';
   priority = 80;
 
@@ -37,67 +36,56 @@ export class AdminUsersTab implements IAdminTab {
   }
 
   render(): string {
+    if (this.users.length === 0) {
+      return `
+        <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+          <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">👤 Пользователи</h3>
+          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">⏳ Загрузка данных...</div>
+        </div>
+      `;
+    }
+
     return `
-      <div class="admin-users-tab">
-        <div class="admin-section">
-          <h3>👤 Управление пользователями</h3>
-          <p class="hint">Поиск и управление пользователями системы.</p>
+      <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">👤 Пользователи (${this.users.length})</h3>
 
-          <div class="user-search">
-            <input 
-              type="text" 
-              id="user-search-input" 
-              placeholder="🔍 Поиск по ID или username..."
-              value="${this.searchQuery}"
-              oninput="window.AdminUsersTab.search(this.value)"
-            />
-          </div>
-
-          <div class="users-table-wrapper">
-            <table class="users-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Username</th>
-                  <th>Роль</th>
-                  <th>Подписка</th>
-                  <th>🪙</th>
-                  <th>⚡ (бонус)</th>
-                  <th>⚡ (пост)</th>
-                  <th>Действия</th>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--app-border-color);">
+                <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">ID</th>
+                <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">Username</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Роль</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Подписка</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">🪙</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">⚡</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this.users.slice(0, 50).map((user: any) => `
+                <tr style="border-bottom: 1px solid var(--app-border-color-light);">
+                  <td style="padding: 6px 8px; font-size: 12px;">${user.telegram_id}</td>
+                  <td style="padding: 6px 8px;">${user.username ? '@' + user.username : '—'}</td>
+                  <td style="text-align: center; padding: 6px 8px;">
+                    <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; ${user.role === 'premium' ? 'background: rgba(212,175,55,0.15); color: #d4af37;' : user.role === 'admin' ? 'background: rgba(231,76,60,0.15); color: #e74c3c;' : 'background: rgba(149,165,166,0.15); color: #95a5a6;'}">
+                      ${user.role}
+                    </span>
+                  </td>
+                  <td style="text-align: center; padding: 6px 8px; font-size: 12px; color: var(--app-text-tertiary);">${user.subscription_tier || '—'}</td>
+                  <td style="text-align: center; padding: 6px 8px;">${user.coin_balance}</td>
+                  <td style="text-align: center; padding: 6px 8px;">${user.token_balance_bonus + user.token_balance_permanent}</td>
                 </tr>
-              </thead>
-              <tbody>
-                ${this.users.map(user => `
-                  <tr>
-                    <td>${user.telegram_id}</td>
-                    <td>${user.username ? '@' + user.username : '—'}</td>
-                    <td><span class="role-badge ${user.role}">${user.role}</span></td>
-                    <td>${user.subscription_tier || '—'}</td>
-                    <td>${user.coin_balance}</td>
-                    <td>${user.token_balance_bonus}</td>
-                    <td>${user.token_balance_permanent}</td>
-                    <td>
-                      <button class="btn btn-sm btn-secondary" onclick="window.AdminUsersTab.editUser('${user.telegram_id}')">
-                        ✏️
-                      </button>
-                      <button class="btn btn-sm btn-secondary" onclick="window.AdminUsersTab.viewUser('${user.telegram_id}')">
-                        👁️
-                      </button>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
 
-          ${this.users.length === 0 ? `<div class="empty-state">👤 Пользователи не найдены</div>` : ''}
+        ${this.users.length > 50 ? `<div style="text-align: center; padding: 10px; color: var(--app-text-tertiary); font-size: 12px;">Показано 50 из ${this.users.length} пользователей</div>` : ''}
 
-          <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="window.AdminUsersTab.refresh()">
-              🔄 Обновить
-            </button>
-          </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('users')" style="padding: 10px 20px;">
+            🔄 Обновить
+          </button>
         </div>
       </div>
     `;
@@ -122,62 +110,15 @@ export class AdminUsersTab implements IAdminTab {
     }
   }
 
-  static async search(query: string): Promise<void> {
-    const tab = adminRegistry.getInstance('users') as AdminUsersTab;
-    if (!tab) return;
-    tab.searchQuery = query;
-    await tab.loadData(query);
-    const container = document.querySelector('.admin-users-tab');
-    if (container) {
-      container.outerHTML = tab.render();
-    }
-  }
-
-  static async editUser(userId: string): Promise<void> {
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('✏️ Редактирование пользователя', 'info', 1500);
-    }
-  }
-
-  static async viewUser(userId: string): Promise<void> {
-    const auditTab = adminRegistry.getInstance('audit');
-    if (auditTab) {
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast(`👤 Пользователь ${userId}`, 'info', 1500);
-      }
-    }
-  }
-
   async refresh(): Promise<void> {
     await this.loadData(this.searchQuery);
-    const container = document.querySelector('.admin-users-tab');
-    if (container) {
-      container.outerHTML = this.render();
-    }
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('🔄 Данные обновлены', 'info', 1500);
-    }
   }
 
   onShow(): void {
-    this.refresh();
+    this.loadData();
   }
 
   destroy(): void {
     // Очистка
   }
 }
-
-// ✅ ПРИВЯЗЫВАЕМ К WINDOW
-(window as any).AdminUsersTab = {
-  search: AdminUsersTab.search,
-  editUser: AdminUsersTab.editUser,
-  viewUser: AdminUsersTab.viewUser,
-  refresh: () => {
-    const tab = adminRegistry.getInstance('users') as AdminUsersTab;
-    if (tab) tab.refresh();
-  }
-};
-
-// Регистрируем вкладку
-adminRegistry.register('users', AdminUsersTab);
