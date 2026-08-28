@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 1.0.4 - защита от undefined + комментарии
+// Версия: 2.0.0 - покупка подписки за ⭐ Stars
 // ============================================
 
 import './economy.css';
@@ -10,6 +10,8 @@ import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 import { economyStore } from '@/economy/EconomyStore';
 import { economyService } from '@/economy/EconomyService';
+import { subscriptionService } from '@/services/subscription';
+import { subscriptionStore } from '@/store/SubscriptionStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { modalManager } from '@/core/modal-manager';
 
@@ -25,6 +27,8 @@ export class EconomyModule {
   private userStore = userStore;
   private economyStore = economyStore;
   private economyService = economyService;
+  private subscriptionService = subscriptionService;
+  private subscriptionStore = subscriptionStore;
   private uiRenderer = uiRenderer;
   private modalManager = modalManager;
 
@@ -35,23 +39,17 @@ export class EconomyModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
-    // Настройка заголовка
     this.headerManager.setTitle('💰 Экономика');
     this.headerManager.setActions([]);
 
-    // Загружаем данные, но не ждем их блокирующе
-    try {
-      await this.economyStore.loadBalances();
-      await this.economyStore.loadConfig();
-    } catch (err) {
-      console.warn('⚠️ Ошибка загрузки данных экономики:', err);
-    }
+    // Загружаем данные
+    await this.economyStore.loadBalances();
+    await this.economyStore.loadConfig();
+    await this.subscriptionStore.loadTiers();
 
-    // Рендерим модуль
     this._render();
     this._subscribeToEvents();
 
-    // Инициализируем иконки Lucide
     setTimeout(() => {
       if (typeof (window as any).lucide !== 'undefined') {
         (window as any).lucide.createIcons();
@@ -59,27 +57,29 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v1.0.4 инициализирован');
+    console.log('✅ EconomyModule v2.0.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
-    // Подписка на обновление коинов
     const unsubCoins = this.eventBus.on('economy:coins:updated', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsubCoins);
 
-    // Подписка на обновление токенов
     const unsubTokens = this.eventBus.on('economy:tokens:updated', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsubTokens);
 
-    // Подписка на загрузку конфига
     const unsubConfig = this.eventBus.on('economy:config:loaded', () => {
       this._updateUI();
     }, this);
     this._subscriptions.push(unsubConfig);
+
+    const unsubSubscription = this.eventBus.on('subscription:updated', () => {
+      this._updateUI();
+    }, this);
+    this._subscriptions.push(unsubSubscription);
 
     console.log('📡 EconomyModule подписан на события');
   }
@@ -146,7 +146,6 @@ export class EconomyModule {
   }
 
   private _renderCoinsTab(): string {
-    // Получаем данные с защитой
     const balance = this.economyStore.getCoinBalance();
     const stats = this.economyStore.getCoinStats();
     const config = this.economyStore.getConfig();
@@ -215,7 +214,6 @@ export class EconomyModule {
   }
 
   private _renderTokensTab(): string {
-    // Получаем данные с защитой
     const tokens = this.economyStore.getTokenBalances();
     const transactions = this.economyStore.getTransactions('tokens');
 
@@ -431,15 +429,25 @@ export class EconomyModule {
     }
   }
 
+  // ==========================================
+  // ПОДПИСКА (ПОКУПКА ЗА ⭐ STARS)
+  // ==========================================
+
   async openSubscriptionModal(): Promise<void> {
     const isPremium = this.userStore.isPro();
     const trialUsed = this.userStore.trialUsed;
+    const tiers = this.subscriptionStore.getActiveTiers();
+
+    if (tiers.length === 0) {
+      this.uiRenderer?.showToast('⚠️ Тарифы временно недоступны', 'error', 2000);
+      return;
+    }
 
     const content = `
       <div style="padding: 4px 0;">
         ${isPremium ? `
           <div style="background: rgba(39, 174, 96, 0.08); border-radius: 12px; padding: 12px; margin-bottom: 16px; border: 1px solid rgba(39, 174, 96, 0.2);">
-            <div style="font-weight: 600; color: #27ae60;">⭐ У вас активна PRO-подписка</div>
+            <div style="font-weight: 600; color: #27ae60;">⭐ У вас активна подписка</div>
             <div style="font-size: 13px; color: var(--app-text-secondary); margin-top: 4px;">
               Действует до: ${this.userStore.premiumUntil ? new Date(this.userStore.premiumUntil).toLocaleDateString() : 'навсегда'}
             </div>
@@ -447,78 +455,63 @@ export class EconomyModule {
         ` : ''}
         
         <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
-          <!-- Пробный тариф -->
-          <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 2px solid ${trialUsed ? 'var(--app-border-color)' : 'var(--app-accent-primary)'}; opacity: ${trialUsed ? '0.6' : '1'};">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-weight: 600; font-size: 16px; color: var(--app-text-primary);">🔓 Пробный</div>
-                <div style="font-size: 13px; color: var(--app-text-secondary);">3 дня • Бесплатно</div>
+          ${tiers.map((tier: any) => {
+            const isTrial = tier.is_trial;
+            const isDisabled = isTrial && trialUsed;
+            const isCurrent = isPremium && this.userStore._data.subscription_tier === tier.tier_key;
+            
+            return `
+              <div style="
+                background: var(--app-bg-tertiary); 
+                border-radius: 12px; 
+                padding: 16px; 
+                border: 2px solid ${isCurrent ? 'var(--app-accent-primary)' : isTrial && !trialUsed ? 'var(--app-accent-primary)' : 'var(--app-border-color)'};
+                opacity: ${isDisabled ? '0.5' : '1'};
+              ">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div>
+                    <div style="font-weight: 600; font-size: 16px; color: var(--app-text-primary);">
+                      ${tier.name}
+                    </div>
+                    <div style="font-size: 13px; color: var(--app-text-secondary);">
+                      ${tier.days} дней • ${tier.price_stars === 0 ? 'Бесплатно' : tier.price_stars + ' ⭐'}
+                    </div>
+                    ${tier.description ? `
+                      <div style="font-size: 12px; color: var(--app-text-tertiary); margin-top: 4px;">
+                        ${tier.description}
+                      </div>
+                    ` : ''}
+                    ${tier.permanent_tokens > 0 ? `
+                      <div style="font-size: 12px; color: #f1c40f; margin-top: 4px;">
+                        🎁 +${tier.permanent_tokens} постоянных токенов
+                      </div>
+                    ` : ''}
+                    ${isTrial && trialUsed ? `
+                      <div style="font-size: 11px; color: #e74c3c; margin-top: 4px;">
+                        ✓ Пробный период уже использован
+                      </div>
+                    ` : ''}
+                  </div>
+                  <div>
+                    ${isCurrent ? `
+                      <span style="font-size: 13px; color: var(--app-accent-primary); font-weight: 600;">
+                        ✓ Активен
+                      </span>
+                    ` : `
+                      <button 
+                        class="btn" 
+                        style="padding: 8px 16px; font-size: 13px; ${isTrial ? 'background: var(--app-gradient-primary);' : ''}"
+                        onclick="window.economyModule.purchaseSubscription('${tier.tier_key}')"
+                        ${isDisabled ? 'disabled' : ''}
+                      >
+                        ${isTrial ? '🎁 Активировать' : '💎 Купить'}
+                      </button>
+                    `}
+                  </div>
+                </div>
               </div>
-              <div style="text-align: right;">
-                ${trialUsed ? `
-                  <div style="font-size: 12px; color: #e74c3c;">✓ Использован</div>
-                ` : `
-                  <button class="btn" style="padding: 8px 16px; font-size: 13px;" onclick="window.economyModule.activateTrial()">
-                    Активировать
-                  </button>
-                `}
-              </div>
-            </div>
-            <div style="font-size: 11px; color: var(--app-text-tertiary); margin-top: 8px;">
-              🎁 Получите 3 дня бесплатного доступа к PRO-функциям
-            </div>
-          </div>
-
-          <!-- Базовый тариф -->
-          <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-weight: 600; font-size: 16px; color: var(--app-text-primary);">📦 Базовый</div>
-                <div style="font-size: 13px; color: var(--app-text-secondary);">30 дней • 5 🪙</div>
-              </div>
-              <div>
-                <button class="btn" style="padding: 8px 16px; font-size: 13px;" onclick="window.economyModule.buySubscription('basic')">
-                  Купить
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- PRO тариф -->
-          <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-accent-primary);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-weight: 600; font-size: 16px; color: var(--app-accent-primary);">⭐ PRO</div>
-                <div style="font-size: 13px; color: var(--app-text-secondary);">90 дней • 12 🪙</div>
-              </div>
-              <div>
-                <button class="btn" style="padding: 8px 16px; font-size: 13px; background: var(--app-gradient-primary);" onclick="window.economyModule.buySubscription('pro')">
-                  Купить
-                </button>
-              </div>
-            </div>
-            <div style="font-size: 11px; color: var(--app-text-tertiary); margin-top: 8px;">
-              🌟 Лучшая цена • 50 000 токенов в день • Синхронизация чатов
-            </div>
-          </div>
-
-          <!-- ULTIMATE тариф -->
-          <div style="background: var(--app-bg-tertiary); border-radius: 12px; padding: 16px; border: 1px solid var(--app-border-color-light);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-weight: 600; font-size: 16px; color: var(--app-text-primary);">💎 ULTIMATE</div>
-                <div style="font-size: 13px; color: var(--app-text-secondary);">365 дней • 40 🪙</div>
-              </div>
-              <div>
-                <button class="btn" style="padding: 8px 16px; font-size: 13px;" onclick="window.economyModule.buySubscription('ultimate')">
-                  Купить
-                </button>
-              </div>
-            </div>
-            <div style="font-size: 11px; color: var(--app-text-tertiary); margin-top: 8px;">
-              👑 Всё включено • Экономия 70%
-            </div>
-          </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;
@@ -531,111 +524,80 @@ export class EconomyModule {
     });
   }
 
-  async activateTrial(): Promise<void> {
-    if (this.userStore.trialUsed) {
-      this.uiRenderer?.showToast('⚠️ Пробный период уже был использован', 'error', 1500);
+  async purchaseSubscription(tierKey: string): Promise<void> {
+    if (this.userStore.isPro()) {
+      this.uiRenderer?.showToast('⚠️ У вас уже активна подписка', 'info', 2000);
       return;
     }
 
-    try {
-      this.userStore.markTrialUsed();
-      this.userStore.setRole('premium', 100, true);
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 3);
-      (this.userStore as any)._data.premium_until = expiry.toISOString();
-      this.userStore.save();
-
-      this.uiRenderer?.showToast('🎉 Пробный период активирован! 3 дня PRO', 'success', 3000);
-      this.modalManager.close();
-      this._render();
-
-      this.eventBus.emit('user:role_changed', {
-        oldRole: 'trial',
-        newRole: 'premium',
-        dailyLimit: 100,
-        syncEnabled: true,
-      });
-    } catch (err) {
-      console.error('[activateTrial] Error:', err);
-      this.uiRenderer?.showToast('⚠️ Ошибка активации', 'error', 1500);
-    }
-  }
-
-  async buySubscription(tier: string): Promise<void> {
-    const prices: Record<string, number> = {
-      basic: 5,
-      pro: 12,
-      ultimate: 40,
-    };
-
-    const price = prices[tier] || 0;
-    const balance = this.economyStore.getCoinBalance();
-
-    if (balance < price) {
-      this.uiRenderer?.showToast(
-        `⚠️ Недостаточно коинов. Нужно: ${price} 🪙, у вас: ${balance} 🪙`,
-        'error',
-        3000
-      );
+    const tier = this.subscriptionStore.getTierByKey(tierKey);
+    if (!tier) {
+      this.uiRenderer?.showToast('⚠️ Тариф не найден', 'error', 2000);
       return;
     }
 
-    const confirmResult = await new Promise<boolean>((resolve) => {
-      if ((window as any).tg?.showConfirm) {
-        (window as any).tg.showConfirm(
-          `Купить ${tier} за ${price} 🪙?`,
-          (ok: boolean) => resolve(ok)
-        );
-      } else {
-        resolve(confirm(`Купить ${tier} за ${price} 🪙?`));
+    // Проверяем, не одноразовый ли тариф
+    if (tier.is_one_time) {
+      const used = await this.subscriptionService.getUserSubscription();
+      if (used && used.tier_key === tierKey && used.is_active) {
+        this.uiRenderer?.showToast('⚠️ Этот тариф можно купить только 1 раз', 'error', 2000);
+        return;
       }
-    });
-
-    if (!confirmResult) return;
+    }
 
     try {
-      this.economyStore.updateCoinBalance(balance - price);
+      let result;
       
-      const tokenBonus: Record<string, number> = {
-        basic: 100,
-        pro: 500,
-        ultimate: 2000,
-      };
-      
-      const tokens = tokenBonus[tier] || 0;
-      const currentTokens = this.economyStore.getTokenBalances();
-      this.economyStore.updateTokenBalances(
-        currentTokens.bonus,
-        currentTokens.permanent + tokens
-      );
+      if (tier.is_trial) {
+        // Активация пробного периода
+        result = await this.subscriptionService.activateTrial();
+      } else {
+        // Покупка подписки
+        result = await this.subscriptionService.purchaseSubscription(tierKey);
+      }
 
-      const days: Record<string, number> = {
-        basic: 30,
-        pro: 90,
-        ultimate: 365,
-      };
+      if (result.success) {
+        // Обновляем локальные данные
+        if (tier.is_trial) {
+          this.userStore.markTrialUsed();
+        }
+        
+        this.userStore.setRole('premium', 100, true);
+        
+        // Обновляем токены
+        if (result.tokens && result.tokens > 0) {
+          const currentTokens = this.economyStore.getTokenBalances();
+          this.economyStore.updateTokenBalances(
+            currentTokens.bonus,
+            currentTokens.permanent + result.tokens
+          );
+        }
 
-      this.userStore.setRole('premium', 100, true);
-      (this.userStore as any)._data.premium_until = new Date(Date.now() + days[tier] * 24 * 60 * 60 * 1000).toISOString();
-      this.userStore.save();
+        this.uiRenderer?.showToast(
+          tier.is_trial 
+            ? `🎉 Пробный период активирован на ${result.days} дней! +${result.tokens} ⚡`
+            : `✅ Куплен ${tier.name} на ${result.days} дней! +${result.tokens} ⚡`,
+          'success',
+          3000
+        );
 
-      this.uiRenderer?.showToast(
-        `✅ Куплен ${tier} на ${days[tier]} дней! +${tokens} ⚡ постоянных токенов`,
-        'success',
-        3000
-      );
-      this.modalManager.close();
-      this._render();
+        this.modalManager.close();
+        this._render();
 
-      this.eventBus.emit('user:role_changed', {
-        oldRole: 'trial',
-        newRole: 'premium',
-        dailyLimit: 100,
-        syncEnabled: true,
-      });
+        // Обновляем UI
+        this.eventBus.emit('user:role_changed', {
+          oldRole: 'trial',
+          newRole: 'premium',
+          dailyLimit: 100,
+          syncEnabled: true,
+        });
+        this.eventBus.emit('subscription:updated', { tier: tierKey });
+      } else {
+        this.uiRenderer?.showToast(`⚠️ ${result.error || 'Ошибка покупки'}`, 'error', 2000);
+      }
     } catch (err) {
-      console.error('[buySubscription] Error:', err);
-      this.uiRenderer?.showToast('⚠️ Ошибка покупки', 'error', 1500);
+      console.error('[purchaseSubscription] Error:', err);
+      this.uiRenderer?.showToast('⚠️ Ошибка сервера', 'error', 2000);
     }
   }
 
@@ -655,6 +617,7 @@ export class EconomyModule {
 
     this.economyStore.loadBalances();
     this.economyStore.loadConfig();
+    this.subscriptionStore.loadTiers();
 
     if ((window as any).navigation) {
       (window as any).navigation.hide();
@@ -684,7 +647,13 @@ export class EconomyModule {
   }
 }
 
+// Привязываем к window
 (window as any).EconomyModule = EconomyModule;
 (window as any).economyModule = new EconomyModule(document.createElement('div'));
 
-console.log('✅ EconomyModule v1.0.4 загружен');
+// Метод для вызова из HTML
+(window as any).economyModule.purchaseSubscription = (window as any).economyModule.purchaseSubscription.bind(
+  (window as any).economyModule
+);
+
+console.log('✅ EconomyModule v2.0.0 загружен');
