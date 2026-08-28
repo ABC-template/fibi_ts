@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (модульная архитектура)
-// Версия: 6.0.0 — исправленная модульная архитектура
+// Версия: 6.0.1 — исправлена инициализация вкладок
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -26,12 +26,25 @@ export class AdminModule {
   private _tabs: IAdminTab[] = [];
   private _activeTabId: string | null = null;
   private _isVisible: boolean = false;
+  private _isReady: boolean = false;
   private headerManager = headerManager;
   private eventBus = eventBus;
   private userStore = userStore;
 
   constructor(container: HTMLElement) {
     this.container = container;
+    
+    // ✅ СРАЗУ СОЗДАЕМ ВКЛАДКИ (не ждем init)
+    this._tabs = [
+      new AdminDashboardTab(),
+      new AdminLimitsTab(),
+      new AdminSettingsTab(),
+      new AdminSubscriptionsTab(),
+      new AdminAuditTab(),
+      new AdminUsersTab(),
+      new AdminSecurityTab(),
+      new AdminTestingTab(),
+    ];
   }
 
   async init(): Promise<void> {
@@ -49,19 +62,8 @@ export class AdminModule {
       return;
     }
 
-    // ✅ ЯВНОЕ СОЗДАНИЕ ВКЛАДОК (без registry)
-    this._tabs = [
-      new AdminDashboardTab(),
-      new AdminLimitsTab(),
-      new AdminSettingsTab(),
-      new AdminSubscriptionsTab(),
-      new AdminAuditTab(),
-      new AdminUsersTab(),
-      new AdminSecurityTab(),
-      new AdminTestingTab(),
-    ];
-
     console.log(`📋 Загружено ${this._tabs.length} вкладок админ-панели`);
+    console.log('📋 ID вкладок:', this._tabs.map(t => t.id).join(', '));
 
     // Инициализируем каждую вкладку
     for (const tab of this._tabs) {
@@ -77,16 +79,15 @@ export class AdminModule {
       this._activeTabId = this._tabs[0].id;
     }
 
+    this._isReady = true;
     this._render();
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v6.0.0 инициализирован');
+    console.log('✅ AdminModule v6.0.1 инициализирован');
   }
 
   private _subscribeToEvents(): void {
-    // ❌ НЕТ EventBus ДЛЯ ПЕРЕКЛЮЧЕНИЯ ВКЛАДОК!
-    // Только слушаем события снаружи, если нужны
     const unsub = this.eventBus.on('admin:refresh', () => {
       this._refreshCurrentTab();
     }, this);
@@ -96,6 +97,7 @@ export class AdminModule {
   }
 
   private async _refreshCurrentTab(): Promise<void> {
+    if (!this._isReady) return;
     const tab = this._tabs.find(t => t.id === this._activeTabId);
     if (tab && tab.refresh) {
       await tab.refresh();
@@ -193,26 +195,40 @@ export class AdminModule {
   }
 
   // ==========================================
-  // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК (БЕЗ EVENTBUS!)
+  // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК
   // ==========================================
 
   switchTab(tabId: string): void {
     console.log(`🔄 [AdminModule] Переключение на: ${tabId}`);
+    console.log(`📋 Доступные вкладки:`, this._tabs.map(t => t.id).join(', '));
+
+    if (!this._isReady) {
+      console.warn(`⚠️ [AdminModule] Модуль еще не готов, табы не загружены`);
+      return;
+    }
+
+    if (this._tabs.length === 0) {
+      console.error(`❌ [AdminModule] Нет загруженных вкладок`);
+      return;
+    }
+
+    const tab = this._tabs.find(t => t.id === tabId);
+    if (!tab) {
+      console.error(`❌ [AdminModule] Вкладка ${tabId} не найдена`);
+      return;
+    }
 
     if (this._activeTabId === tabId) {
       // Уже на этой вкладке — просто обновляем
-      const tab = this._tabs.find(t => t.id === tabId);
-      if (tab) {
-        const contentEl = document.getElementById('admin-tab-content');
-        if (contentEl) {
-          contentEl.innerHTML = tab.render();
-          if (tab.onShow) tab.onShow();
-          setTimeout(() => {
-            if (typeof (window as any).lucide !== 'undefined') {
-              (window as any).lucide.createIcons();
-            }
-          }, 100);
-        }
+      const contentEl = document.getElementById('admin-tab-content');
+      if (contentEl) {
+        contentEl.innerHTML = tab.render();
+        if (tab.onShow) tab.onShow();
+        setTimeout(() => {
+          if (typeof (window as any).lucide !== 'undefined') {
+            (window as any).lucide.createIcons();
+          }
+        }, 100);
       }
       return;
     }
@@ -225,41 +241,35 @@ export class AdminModule {
 
     // Переключаем
     this._activeTabId = tabId;
-    const newTab = this._tabs.find(t => t.id === tabId);
 
-    if (newTab) {
-      // Обновляем контент
-      const contentEl = document.getElementById('admin-tab-content');
-      if (contentEl) {
-        contentEl.innerHTML = newTab.render();
-        contentEl.style.animation = 'fadeIn 0.2s ease';
-      }
-
-      // Показываем новую вкладку
-      if (newTab.onShow) {
-        newTab.onShow();
-      }
-
-      // Обновляем кнопки табов
-      document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-        const element = btn as HTMLElement;
-        const isActive = element.dataset.tab === tabId;
-        element.style.background = isActive ? 'var(--app-accent-primary)' : 'transparent';
-        element.style.color = isActive ? 'var(--app-text-inverse)' : 'var(--app-text-secondary)';
-      });
-
-      // Обновляем Lucide иконки
-      setTimeout(() => {
-        if (typeof (window as any).lucide !== 'undefined') {
-          (window as any).lucide.createIcons();
-        }
-      }, 100);
-
-      // ✅ НЕТ eventBus.emit('admin:tab_changed') — НЕ НАДО!
-      console.log(`✅ [AdminModule] Переключено на: ${tabId}`);
-    } else {
-      console.error(`❌ [AdminModule] Вкладка ${tabId} не найдена`);
+    // Обновляем контент
+    const contentEl = document.getElementById('admin-tab-content');
+    if (contentEl) {
+      contentEl.innerHTML = tab.render();
+      contentEl.style.animation = 'fadeIn 0.2s ease';
     }
+
+    // Показываем новую вкладку
+    if (tab.onShow) {
+      tab.onShow();
+    }
+
+    // Обновляем кнопки табов
+    document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+      const element = btn as HTMLElement;
+      const isActive = element.dataset.tab === tabId;
+      element.style.background = isActive ? 'var(--app-accent-primary)' : 'transparent';
+      element.style.color = isActive ? 'var(--app-text-inverse)' : 'var(--app-text-secondary)';
+    });
+
+    // Обновляем Lucide иконки
+    setTimeout(() => {
+      if (typeof (window as any).lucide !== 'undefined') {
+        (window as any).lucide.createIcons();
+      }
+    }, 100);
+
+    console.log(`✅ [AdminModule] Переключено на: ${tabId}`);
   }
 
   getActiveTab(): string | null {
@@ -268,6 +278,10 @@ export class AdminModule {
 
   getTabs(): IAdminTab[] {
     return [...this._tabs];
+  }
+
+  isReady(): boolean {
+    return this._isReady;
   }
 
   // ==========================================
@@ -298,6 +312,13 @@ export class AdminModule {
 
     if ((window as any).navigation) {
       (window as any).navigation.hide();
+    }
+
+    // ✅ Убеждаемся, что вкладки загружены
+    if (!this._isReady) {
+      console.warn('⚠️ [AdminModule] show() вызван до init(), инициализируем...');
+      this.init();
+      return;
     }
 
     // Обновляем содержимое при показе
@@ -350,57 +371,30 @@ export class AdminModule {
     this.container.innerHTML = '';
     this._tabs = [];
     this._activeTabId = null;
+    this._isReady = false;
     console.log('🗑️ AdminModule уничтожен');
   }
 }
 
 // ==========================================
-// ПРИВЯЗКА К WINDOW (ПРАВИЛЬНАЯ)
+// ПРИВЯЗКА К WINDOW
 // ==========================================
 
 const adminModuleInstance = new AdminModule(document.createElement('div'));
 
 (window as any).AdminModule = AdminModule;
 
-// ✅ ПРАВИЛЬНАЯ ПРИВЯЗКА — через объект с методами
 (window as any).adminModule = {
-  switchTab: (tabId: string) => adminModuleInstance.switchTab(tabId),
+  switchTab: (tabId: string) => {
+    console.log(`🔘 [window.adminModule] switchTab вызван с: ${tabId}`);
+    adminModuleInstance.switchTab(tabId);
+  },
   getActiveTab: () => adminModuleInstance.getActiveTab(),
   getTabs: () => adminModuleInstance.getTabs(),
+  isReady: () => adminModuleInstance.isReady(),
   show: () => adminModuleInstance.show(),
   hide: () => adminModuleInstance.hide(),
   destroy: () => adminModuleInstance.destroy(),
-  // Для совместимости с существующим кодом
-  loadAllData: async () => {
-    // Если нужно — добавим позже
-  },
-  saveLimits: () => {
-    // Если нужно — добавим позже
-  },
-  saveSettings: () => {
-    // Если нужно — добавим позже
-  },
-  showTierForm: () => {
-    // Если нужно — добавим позже
-  },
-  editTier: (id: string) => {
-    // Если нужно — добавим позже
-  },
-  saveTier: (id: string) => {
-    // Если нужно — добавим позже
-  },
-  deleteTier: (id: string) => {
-    // Если нужно — добавим позже
-  },
-  closeModal: () => {
-    // Если нужно — добавим позже
-  },
-  nextAuditPage: () => {
-    // Если нужно — добавим позже
-  },
-  prevAuditPage: () => {
-    // Если нужно — добавим позже
-  },
 };
 
-console.log('✅ AdminModule v6.0.0 загружен');
+console.log('✅ AdminModule v6.0.1 загружен');
