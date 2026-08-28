@@ -1,12 +1,11 @@
 // ============================================
 // src/modules/admin/tabs/AdminSettingsTab.ts
 // Глобальные настройки экономики
-// Версия: 1.0.2 — добавлена привязка к window
+// Версия: 1.0.1 — исправлена привязка методов
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import { adminRegistry } from '../core/admin-registry';
 
 interface ISettings {
   id?: string;
@@ -28,161 +27,19 @@ interface ISettings {
 
 export class AdminSettingsTab implements IAdminTab {
   id = 'settings';
-  label = '⚙️ Настройки';
+  label = 'Настройки';
   icon = '⚙️';
   priority = 30;
 
   private settings: ISettings | null = null;
   private loading: boolean = false;
-  private saving: boolean = false;
 
   async init(): Promise<void> {
     await this.loadData();
   }
 
   render(): string {
-    const s = this.settings || this.getDefaultSettings();
-
-    return `
-      <div class="admin-settings-tab">
-        <div class="admin-section">
-          <h3>⚙️ Глобальные настройки экономики</h3>
-          <p class="hint">Эти настройки применяются ко всем пользователям системы.</p>
-
-          <div class="settings-form">
-            <!-- Обмен -->
-            <div class="settings-group">
-              <h4>💱 Обмен коинов → токены</h4>
-              
-              <div class="setting-row">
-                <label>
-                  <input type="checkbox" id="exchange_enabled" ${s.exchange_enabled ? 'checked' : ''} />
-                  Включить обмен
-                </label>
-              </div>
-              
-              <div class="setting-row">
-                <label>Курс обмена: 1 🪙 = </label>
-                <input type="number" id="exchange_rate" value="${s.exchange_rate}" min="1" />
-                <span>⚡</span>
-              </div>
-              
-              <div class="setting-row">
-                <label>Максимальный % для обмена: </label>
-                <input type="number" id="max_exchange_percent" value="${s.max_exchange_percent}" min="1" max="100" />
-                <span>%</span>
-              </div>
-              
-              <div class="setting-row">
-                <label>Минимальная сумма для обмена: </label>
-                <input type="number" id="min_exchange_amount" value="${s.min_exchange_amount}" min="1" />
-                <span>🪙</span>
-              </div>
-            </div>
-
-            <!-- Бонусы -->
-            <div class="settings-group">
-              <h4>🎁 Ежедневные бонусы</h4>
-              
-              <div class="setting-row">
-                <label>Бонусных коинов в день: </label>
-                <input type="number" id="bonus_coins_per_day" value="${s.bonus_coins_per_day}" min="0" />
-                <span>🪙</span>
-              </div>
-              
-              <div class="setting-row">
-                <label>Бонусных токенов в день: </label>
-                <input type="number" id="bonus_tokens_per_day" value="${s.bonus_tokens_per_day}" min="0" />
-                <span>⚡ (0 = отключить)</span>
-              </div>
-            </div>
-
-            <!-- Белый список -->
-            <div class="settings-group">
-              <h4>🔒 Белый список для обмена</h4>
-              
-              <div class="setting-row">
-                <label>
-                  <input type="checkbox" id="whitelist_enabled" ${s.whitelist_enabled ? 'checked' : ''} />
-                  Включить белый список (только избранные могут обменивать)
-                </label>
-              </div>
-            </div>
-
-            <!-- Системные настройки -->
-            <div class="settings-group">
-              <h4>⚙️ Системные настройки</h4>
-              
-              <div class="setting-row">
-                <label>Время сброса бонусов: </label>
-                <input type="time" id="daily_reset_time" value="${s.daily_reset_time}" />
-              </div>
-              
-              <div class="setting-row">
-                <label>Срок жизни бонусных токенов: </label>
-                <input type="number" id="token_expiry_days" value="${s.token_expiry_days}" min="1" />
-                <span>дней</span>
-              </div>
-              
-              <div class="setting-row">
-                <label>Минимум токенов для запроса: </label>
-                <input type="number" id="min_tokens_for_request" value="${s.min_tokens_for_request}" min="1" />
-                <span>⚡</span>
-              </div>
-            </div>
-
-            <!-- Уведомления -->
-            <div class="settings-group">
-              <h4>🔔 Уведомления</h4>
-              
-              <div class="setting-row">
-                <label>Порог для уведомления о низком балансе: </label>
-                <input type="number" id="low_balance_threshold" value="${s.low_balance_threshold}" min="0" />
-                <span>🪙</span>
-              </div>
-              
-              <div class="setting-row">
-                <label>Порог для уведомления о низком балансе токенов: </label>
-                <input type="number" id="low_tokens_threshold" value="${s.low_tokens_threshold}" min="0" />
-                <span>⚡</span>
-              </div>
-            </div>
-
-            <!-- Хранение логов -->
-            <div class="settings-group">
-              <h4>📋 Хранение логов</h4>
-              
-              <div class="setting-row">
-                <label>Срок хранения системных логов: </label>
-                <input type="number" id="log_retention_days" value="${s.log_retention_days}" min="1" />
-                <span>дней</span>
-              </div>
-              
-              <div class="setting-row">
-                <label>Срок хранения аудит-логов: </label>
-                <input type="number" id="audit_log_retention_days" value="${s.audit_log_retention_days}" min="1" />
-                <span>дней</span>
-              </div>
-            </div>
-
-            <div class="admin-actions">
-              <button class="btn btn-primary" onclick="window.AdminSettingsTab.save()" id="save-settings-btn">
-                💾 Сохранить настройки
-              </button>
-              <button class="btn btn-secondary" onclick="window.AdminSettingsTab.refresh()">
-                🔄 Обновить
-              </button>
-            </div>
-
-            ${this.saving ? `<div class="saving-indicator">⏳ Сохранение...</div>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  private getDefaultSettings(): ISettings {
-    return {
+    const s = this.settings || {
       exchange_enabled: true,
       exchange_rate: 1,
       max_exchange_percent: 80,
@@ -190,7 +47,7 @@ export class AdminSettingsTab implements IAdminTab {
       bonus_coins_per_day: 5,
       bonus_tokens_per_day: 5,
       whitelist_enabled: false,
-      daily_reset_time: '00:00:00',
+      daily_reset_time: '00:00',
       token_expiry_days: 1,
       min_tokens_for_request: 1,
       low_balance_threshold: 10,
@@ -198,6 +55,114 @@ export class AdminSettingsTab implements IAdminTab {
       log_retention_days: 90,
       audit_log_retention_days: 180,
     };
+
+    return `
+      <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">⚙️ Глобальные настройки</h3>
+        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
+          Настройки применяются ко всем пользователям системы.
+        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <!-- Обмен -->
+          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
+            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">💱 Обмен</div>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-text-secondary); margin-bottom: 6px;">
+              <input type="checkbox" id="exchange_enabled" ${s.exchange_enabled ? 'checked' : ''} />
+              Включить обмен
+            </label>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                1 🪙 =
+                <input type="number" id="exchange_rate" value="${s.exchange_rate}" min="1" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                ⚡
+              </label>
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Макс %:
+                <input type="number" id="max_exchange_percent" value="${s.max_exchange_percent}" min="1" max="100" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                %
+              </label>
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Мин:
+                <input type="number" id="min_exchange_amount" value="${s.min_exchange_amount}" min="1" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                🪙
+              </label>
+            </div>
+          </div>
+
+          <!-- Бонусы -->
+          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
+            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🎁 Ежедневные бонусы</div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                🪙 Коинов:
+                <input type="number" id="bonus_coins_per_day" value="${s.bonus_coins_per_day}" min="0" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+              </label>
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                ⚡ Токенов:
+                <input type="number" id="bonus_tokens_per_day" value="${s.bonus_tokens_per_day}" min="0" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+              </label>
+            </div>
+          </div>
+
+          <!-- Белый список -->
+          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
+            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🔒 Белый список</div>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-text-secondary);">
+              <input type="checkbox" id="whitelist_enabled" ${s.whitelist_enabled ? 'checked' : ''} />
+              Включить белый список (только избранные могут обменивать)
+            </label>
+          </div>
+
+          <!-- Системные -->
+          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
+            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">⚙️ Системные</div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Время сброса:
+                <input type="time" id="daily_reset_time" value="${s.daily_reset_time}" style="width: 90px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+              </label>
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Срок токенов:
+                <input type="number" id="token_expiry_days" value="${s.token_expiry_days}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                дней
+              </label>
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Мин токенов:
+                <input type="number" id="min_tokens_for_request" value="${s.min_tokens_for_request}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                ⚡
+              </label>
+            </div>
+          </div>
+
+          <!-- Логи -->
+          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
+            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">📋 Хранение логов</div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Системные:
+                <input type="number" id="log_retention_days" value="${s.log_retention_days}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                дней
+              </label>
+              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
+                Аудит:
+                <input type="number" id="audit_log_retention_days" value="${s.audit_log_retention_days}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+                дней
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="window.adminModule.saveSettings()" style="padding: 10px 20px;">
+            💾 Сохранить настройки
+          </button>
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('settings')" style="padding: 10px 20px;">
+            🔄 Обновить
+          </button>
+        </div>
+      </div>
+    `;
   }
 
   async loadData(): Promise<void> {
@@ -216,91 +181,15 @@ export class AdminSettingsTab implements IAdminTab {
     }
   }
 
-  async save(): Promise<void> {
-    if (this.saving) return;
-    this.saving = true;
-
-    const saveBtn = document.getElementById('save-settings-btn');
-    if (saveBtn) {
-      (saveBtn as HTMLButtonElement).disabled = true;
-      saveBtn.textContent = '⏳ Сохранение...';
-    }
-
-    try {
-      const data: ISettings = {
-        exchange_enabled: (document.getElementById('exchange_enabled') as HTMLInputElement)?.checked ?? true,
-        exchange_rate: parseInt((document.getElementById('exchange_rate') as HTMLInputElement)?.value || '1'),
-        max_exchange_percent: parseInt((document.getElementById('max_exchange_percent') as HTMLInputElement)?.value || '80'),
-        min_exchange_amount: parseInt((document.getElementById('min_exchange_amount') as HTMLInputElement)?.value || '1'),
-        bonus_coins_per_day: parseInt((document.getElementById('bonus_coins_per_day') as HTMLInputElement)?.value || '5'),
-        bonus_tokens_per_day: parseInt((document.getElementById('bonus_tokens_per_day') as HTMLInputElement)?.value || '5'),
-        whitelist_enabled: (document.getElementById('whitelist_enabled') as HTMLInputElement)?.checked ?? false,
-        daily_reset_time: (document.getElementById('daily_reset_time') as HTMLInputElement)?.value || '00:00:00',
-        token_expiry_days: parseInt((document.getElementById('token_expiry_days') as HTMLInputElement)?.value || '1'),
-        min_tokens_for_request: parseInt((document.getElementById('min_tokens_for_request') as HTMLInputElement)?.value || '1'),
-        low_balance_threshold: parseInt((document.getElementById('low_balance_threshold') as HTMLInputElement)?.value || '10'),
-        low_tokens_threshold: parseInt((document.getElementById('low_tokens_threshold') as HTMLInputElement)?.value || '5'),
-        log_retention_days: parseInt((document.getElementById('log_retention_days') as HTMLInputElement)?.value || '90'),
-        audit_log_retention_days: parseInt((document.getElementById('audit_log_retention_days') as HTMLInputElement)?.value || '180'),
-      };
-
-      const response = await apiClient.post('/admin/economy/settings', data);
-
-      if (response.success) {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast('✅ Настройки сохранены', 'success', 2000);
-        }
-        this.settings = response.settings;
-      } else {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast('⚠️ Ошибка сохранения', 'error', 2000);
-        }
-      }
-    } catch (err) {
-      console.error('[AdminSettingsTab] Error saving settings:', err);
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Ошибка сервера', 'error', 2000);
-      }
-    } finally {
-      this.saving = false;
-      if (saveBtn) {
-        (saveBtn as HTMLButtonElement).disabled = false;
-        saveBtn.textContent = '💾 Сохранить настройки';
-      }
-    }
-  }
-
   async refresh(): Promise<void> {
     await this.loadData();
-    const container = document.querySelector('.admin-settings-tab');
-    if (container) {
-      container.outerHTML = this.render();
-    }
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('🔄 Данные обновлены', 'info', 1500);
-    }
   }
 
   onShow(): void {
-    this.refresh();
+    this.loadData();
   }
 
   destroy(): void {
     // Очистка
   }
 }
-
-// ✅ ПРИВЯЗЫВАЕМ К WINDOW
-(window as any).AdminSettingsTab = {
-  save: () => {
-    const tab = adminRegistry.getInstance('settings') as AdminSettingsTab;
-    if (tab) tab.save();
-  },
-  refresh: () => {
-    const tab = adminRegistry.getInstance('settings') as AdminSettingsTab;
-    if (tab) tab.refresh();
-  }
-};
-
-// Регистрируем вкладку
-adminRegistry.register('settings', AdminSettingsTab);
