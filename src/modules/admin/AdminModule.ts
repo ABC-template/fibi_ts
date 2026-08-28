@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (загружает вкладки из реестра)
-// Версия: 5.0.1 — исправлено переключение вкладок
+// Версия: 5.0.2 — исправлено переключение вкладок и дублирование иконок
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -65,7 +65,7 @@ export class AdminModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v5.0.1 инициализирован');
+    console.log('✅ AdminModule v5.0.2 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -133,28 +133,35 @@ export class AdminModule {
           overflow-x: auto;
           flex-wrap: wrap;
         ">
-          ${this._tabs.map(tab => `
-            <button 
-              class="admin-tab-btn"
-              data-tab="${tab.id}"
-              style="
-                padding: 8px 16px;
-                border: none;
-                border-radius: 8px;
-                background: ${this._activeTabId === tab.id ? 'var(--app-accent-primary)' : 'transparent'};
-                color: ${this._activeTabId === tab.id ? 'var(--app-text-inverse)' : 'var(--app-text-secondary)'};
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                white-space: nowrap;
-                font-family: var(--app-font-family);
-              "
-              onclick="window.adminModule.switchTab('${tab.id}')"
-            >
-              ${tab.icon || ''} ${tab.label}
-            </button>
-          `).join('')}
+          ${this._tabs.map(tab => {
+            // ✅ Убираем дублирование иконок: если в label уже есть иконка — не добавляем отдельно
+            const labelText = tab.label || tab.id;
+            const hasIcon = /[\u{1F000}-\u{1FFFF}]|[\u2600-\u27BF]|[📊📋⚙️📦📜👤🔐🤖]/.test(labelText);
+            const displayLabel = hasIcon ? labelText : `${tab.icon || ''} ${labelText}`.trim();
+            
+            return `
+              <button 
+                class="admin-tab-btn"
+                data-tab="${tab.id}"
+                style="
+                  padding: 8px 16px;
+                  border: none;
+                  border-radius: 8px;
+                  background: ${this._activeTabId === tab.id ? 'var(--app-accent-primary)' : 'transparent'};
+                  color: ${this._activeTabId === tab.id ? 'var(--app-text-inverse)' : 'var(--app-text-secondary)'};
+                  font-size: 13px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  transition: all 0.2s ease;
+                  white-space: nowrap;
+                  font-family: var(--app-font-family);
+                "
+                onclick="window.adminModule.switchTab('${tab.id}')"
+              >
+                ${displayLabel}
+              </button>
+            `;
+          }).join('')}
         </div>
 
         <!-- Контент активной вкладки -->
@@ -181,7 +188,10 @@ export class AdminModule {
   }
 
   private async _switchTab(tabId: string): Promise<void> {
+    console.log(`🔄 [AdminModule] Переключение на вкладку: ${tabId}`);
+    
     if (this._activeTabId === tabId) {
+      console.log(`ℹ️ [AdminModule] Уже на вкладке ${tabId}, обновляем`);
       // Уже на этой вкладке — просто обновляем
       const tab = this._tabs.find(t => t.id === tabId);
       if (tab) {
@@ -240,6 +250,8 @@ export class AdminModule {
       // Событие переключения
       this.eventBus.emit('admin:tab_changed', { tabId });
       console.log(`📑 Переключено на вкладку: ${tabId}`);
+    } else {
+      console.error(`❌ [AdminModule] Вкладка ${tabId} не найдена`);
     }
   }
 
@@ -248,6 +260,7 @@ export class AdminModule {
   // ==========================================
 
   switchTab(tabId: string): void {
+    console.log(`📌 [AdminModule] switchTab вызван с: ${tabId}`);
     this._switchTab(tabId);
   }
 
@@ -339,12 +352,17 @@ export class AdminModule {
   }
 }
 
-// Привязываем к window
-(window as any).AdminModule = AdminModule;
+// ✅ СОЗДАЕМ ЕДИНСТВЕННЫЙ ЭКЗЕМПЛЯР
 const adminModuleInstance = new AdminModule(document.createElement('div'));
+
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminModule = AdminModule;
 (window as any).adminModule = adminModuleInstance;
 
-// Привязываем метод switchTab для вызова из HTML
-(window as any).adminModule.switchTab = adminModuleInstance.switchTab.bind(adminModuleInstance);
+// ✅ ПРИВЯЗЫВАЕМ МЕТОД switchTab С СОХРАНЕНИЕМ КОНТЕКСТА
+(window as any).adminModule.switchTab = function(tabId: string) {
+  console.log(`🔘 [window.adminModule] switchTab вызван с: ${tabId}`);
+  adminModuleInstance.switchTab(tabId);
+};
 
-console.log('✅ AdminModule v5.0.1 загружен');
+console.log('✅ AdminModule v5.0.2 загружен');
