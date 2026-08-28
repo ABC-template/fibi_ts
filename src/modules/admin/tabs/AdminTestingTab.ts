@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminTestingTab.ts
 // Тестирование и отладка
-// Версия: 1.0.1 — исправлен confirm
+// Версия: 1.0.2 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 export class AdminTestingTab implements IAdminTab {
   id = 'testing';
@@ -37,7 +38,7 @@ export class AdminTestingTab implements IAdminTab {
                   placeholder="Telegram ID"
                   value="${window.userStore?.userId || ''}"
                 />
-                <button class="btn btn-secondary" onclick="AdminTestingTab.setTestUser()">
+                <button class="btn btn-secondary" onclick="window.AdminTestingTab.setTestUser()">
                   Установить
                 </button>
               </div>
@@ -53,10 +54,10 @@ export class AdminTestingTab implements IAdminTab {
                   placeholder="Сумма"
                   value="100"
                 />
-                <button class="btn btn-success" onclick="AdminTestingTab.addCoins()">
+                <button class="btn btn-success" onclick="window.AdminTestingTab.addCoins()">
                   ➕ Начислить 🪙
                 </button>
-                <button class="btn btn-success" onclick="AdminTestingTab.addTokens()">
+                <button class="btn btn-success" onclick="window.AdminTestingTab.addTokens()">
                   ➕ Начислить ⚡
                 </button>
               </div>
@@ -66,10 +67,10 @@ export class AdminTestingTab implements IAdminTab {
             <div class="testing-card">
               <h4>🔄 Сброс</h4>
               <div class="form-row">
-                <button class="btn btn-warning" onclick="AdminTestingTab.resetTokens()">
+                <button class="btn btn-warning" onclick="window.AdminTestingTab.resetTokens()">
                   🔄 Сбросить токены
                 </button>
-                <button class="btn btn-danger" onclick="AdminTestingTab.resetAll()">
+                <button class="btn btn-danger" onclick="window.AdminTestingTab.resetAll()">
                   🗑️ Полный сброс
                 </button>
               </div>
@@ -279,13 +280,14 @@ export class AdminTestingTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminTestingTab as any).setTestUser = AdminTestingTab.setTestUser;
-(AdminTestingTab as any).addCoins = AdminTestingTab.addCoins;
-(AdminTestingTab as any).addTokens = AdminTestingTab.addTokens;
-(AdminTestingTab as any).resetTokens = AdminTestingTab.resetTokens;
-(AdminTestingTab as any).resetAll = AdminTestingTab.resetAll;
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminTestingTab = {
+  setTestUser: AdminTestingTab.setTestUser,
+  addCoins: AdminTestingTab.addCoins,
+  addTokens: AdminTestingTab.addTokens,
+  resetTokens: AdminTestingTab.resetTokens,
+  resetAll: AdminTestingTab.resetAll,
+};
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('testing', AdminTestingTab);
