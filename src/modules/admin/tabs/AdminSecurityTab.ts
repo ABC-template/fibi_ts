@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminSecurityTab.ts
 // Настройки безопасности и блокировки
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлен confirm
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -172,18 +172,18 @@ export class AdminSecurityTab implements IAdminTab {
   }
 
   static async unblockUser(userId: string): Promise<void> {
-    const confirm = await new Promise<boolean>((resolve) => {
+    const userConfirmed = await new Promise<boolean>((resolve) => {
       if ((window as any).tg?.showConfirm) {
         (window as any).tg.showConfirm(
           `Разблокировать пользователя ${userId}?`,
           (ok: boolean) => resolve(ok)
         );
       } else {
-        resolve(confirm(`Разблокировать пользователя ${userId}?`));
+        resolve(window.confirm(`Разблокировать пользователя ${userId}?`));
       }
     });
 
-    if (!confirm) return;
+    if (!userConfirmed) return;
 
     try {
       const response = await apiClient.delete(`/admin/economy/blocks?user_id=${userId}`);
