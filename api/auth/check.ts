@@ -1,7 +1,7 @@
 // ============================================
 // api/auth/check.ts
 // Описание: Проверка подписки и авторизации (с JWT)
-// Версия: 4.3.0 - добавлен usedToday
+// Версия: 5.0.0 — выдача токенов по лимитам из БД
 // ============================================
 
 import {
@@ -15,7 +15,7 @@ import {
   getOrCreateAuthUser,
   getSyncToken,
   updateSyncToken,
-  checkUsageLimit
+  supabaseRPC,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
@@ -38,6 +38,9 @@ export default async function handler(request: Request): Promise<Response> {
     const user = auth.user;
     const config = getSupabaseConfig('service');
 
+    // ==========================================
+    // 1. СОЗДАНИЕ/ПОИСК ПОЛЬЗОВАТЕЛЯ
+    // ==========================================
     let authResult;
     try {
       authResult = await getOrCreateAuthUser(telegramId, user, config);
@@ -51,13 +54,12 @@ export default async function handler(request: Request): Promise<Response> {
     const jwtToken = authResult.jwtToken;
     const isNewUser = authResult.isNew;
 
-    // 1. ПОЛУЧАЕМ sync_token ИЗ БД
+    // ==========================================
+    // 2. ПОЛУЧАЕМ sync_token
+    // ==========================================
     const dbSyncToken = await getSyncToken(telegramId, config);
-
-    // 2. ПОЛУЧАЕМ sync_token ОТ КЛИЕНТА (из заголовка)
     const clientSyncToken = request.headers.get('x-sync-token') || null;
 
-    // 3. СРАВНИВАЕМ!
     let finalSyncToken: string | null;
     let tokenChanged = false;
 
@@ -66,59 +68,39 @@ export default async function handler(request: Request): Promise<Response> {
       await updateSyncToken(telegramId, config);
       finalSyncToken = newToken;
       tokenChanged = true;
-      console.log(`🔄 [auth/check] sync_token НЕ совпадает! Генерируем новый: ${finalSyncToken.substring(0, 8)}...`);
-      console.log(`   Клиент: ${clientSyncToken?.substring(0, 8) || 'null'}... → Сервер: ${dbSyncToken?.substring(0, 8) || 'null'}...`);
+      console.log(`🔄 [auth/check] sync_token обновлен: ${finalSyncToken?.substring(0, 8)}...`);
     } else {
       finalSyncToken = dbSyncToken;
       tokenChanged = false;
-      console.log(`✅ [auth/check] sync_token совпадает: ${finalSyncToken?.substring(0, 8) || 'null'}...`);
+      console.log(`✅ [auth/check] sync_token совпадает: ${finalSyncToken?.substring(0, 8)}...`);
     }
 
-    console.log(`👤 Пользователь ${telegramId} (${userId}) ${isNewUser ? 'создан' : 'найден'}`);
-    console.log(`🔑 JWT сгенерирован: ${jwtToken.substring(0, 20)}...`);
-    console.log(`🔄 sync_token: ${finalSyncToken?.substring(0, 8) || 'null'}... (${tokenChanged ? 'НОВЫЙ' : 'СУЩЕСТВУЮЩИЙ'})`);
-
+    // ==========================================
+    // 3. ПОЛУЧАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
+    // ==========================================
     let dbUser: any = null;
-    let usedToday = 0;
-    let dailyLimit = 0;
+    let role = 'trial';
+    let subscriptionTier: string | null = null;
+    let premiumUntil: string | null = null;
+    let trialUsed = false;
 
     try {
       const userRes = await supabaseFetch(
-        `users?id=eq.${userId}&select=telegram_id,role,premium_until,username,data_deadline,sync_token,used_today,last_used_date,daily_limit`,
+        `users?telegram_id=eq.${telegramId}&select=telegram_id,role,premium_until,username,data_deadline,sync_token,subscription_tier,trial_used,token_balance_bonus,token_balance_permanent,last_bonus_tokens_date`,
         { method: 'GET' },
         config
       );
 
       if (userRes && Array.isArray(userRes) && userRes.length > 0) {
         dbUser = userRes[0];
-        console.log(`✅ Пользователь ${telegramId} найден в БД`);
-        
-        // ✅ Получаем текущий used_today
-        usedToday = dbUser.used_today || 0;
-        
-        // ✅ Проверяем, нужно ли сбросить лимит (если сегодня другая дата)
-        const today = new Date().toISOString().slice(0, 10);
-        if (dbUser.last_used_date !== today) {
-          usedToday = 0;
-          console.log(`🔄 [auth/check] Сброс used_today: ${dbUser.last_used_date} → ${today}`);
-          
-          // Обновляем в БД
-          await supabaseFetch(
-            `users?id=eq.${userId}`,
-            {
-              method: 'PATCH',
-              body: JSON.stringify({
-                used_today: 0,
-                last_used_date: today,
-                updated_at: new Date().toISOString()
-              })
-            },
-            config
-          );
-        }
+        role = dbUser.role || 'trial';
+        subscriptionTier = dbUser.subscription_tier || null;
+        premiumUntil = dbUser.premium_until || null;
+        trialUsed = dbUser.trial_used || false;
+        console.log(`✅ Пользователь ${telegramId} найден в БД, роль: ${role}`);
       } else {
+        // Создаем пользователя в public.users
         console.log(`🆕 Создаём пользователя ${telegramId} в public.users`);
-
         await supabaseFetch(
           'users',
           {
@@ -130,47 +112,155 @@ export default async function handler(request: Request): Promise<Response> {
               role: 'trial',
               user_lang: user?.language_code || 'ru',
               sync_token: crypto.randomUUID(),
-              used_today: 0,
-              last_used_date: new Date().toISOString().slice(0, 10),
-              daily_limit: 5
+              trial_used: false,
             })
           },
           config
         );
-
-        dbUser = { role: 'trial' };
-        usedToday = 0;
+        dbUser = { role: 'trial', trial_used: false };
+        role = 'trial';
         console.log(`✅ Пользователь ${telegramId} создан`);
       }
     } catch (err) {
       console.error('Error checking/creating user:', (err as Error).message);
-      dbUser = { role: 'trial' };
-      usedToday = 0;
+      dbUser = { role: 'trial', trial_used: false };
+      role = 'trial';
     }
 
-    let role = 'guest';
-    let syncEnabled = false;
+    // ==========================================
+    // 4. ПОЛУЧАЕМ ЛИМИТЫ ДЛЯ РОЛИ/ПОДПИСКИ
+    // ==========================================
+    let limits: any = {
+      role_key: 'trial',
+      role_name: 'Trial',
+      bonus_tokens_per_day: 5,
+      permanent_tokens_on_subscribe: 0,
+      openrouter_limit: 5000,
+    };
 
-    if (dbUser) {
-      if (['admin', 'creator'].includes(dbUser.role)) {
-        role = dbUser.role;
-        dailyLimit = 9999;
-        syncEnabled = true;
-      } else if (dbUser.role === 'premium' && dbUser.premium_until && new Date(dbUser.premium_until) > new Date()) {
-        role = 'premium';
-        dailyLimit = 100;
-        syncEnabled = true;
-      } else {
-        role = dbUser.role || 'trial';
-        dailyLimit = dbUser.daily_limit || 5;
-        syncEnabled = false;
+    try {
+      const limitsResult = await supabaseRPC(
+        'get_user_limits',
+        { p_user_id: telegramId },
+        config
+      );
+
+      if (limitsResult && typeof limitsResult === 'object') {
+        limits = limitsResult;
+        console.log(`📊 [auth/check] Лимиты для ${role}:`, limits);
       }
+    } catch (err) {
+      console.warn('⚠️ [auth/check] Не удалось получить лимиты, используем дефолтные:', err);
     }
 
     // ==========================================
-    // ПРОВЕРКА ПОДПИСКИ НА КАНАЛ
-    // ⚠️ ЗАКОММЕНТИРОВАНО АВТО-НАЗНАЧЕНИЕ ADMIN
+    // 5. ✅ НАЧИСЛЯЕМ ТОКЕНЫ (если не начислялись сегодня)
     // ==========================================
+    const today = new Date().toISOString().slice(0, 10);
+    const lastBonusDate = dbUser?.last_bonus_tokens_date || null;
+
+    let bonusAdded = 0;
+    let permanentAdded = 0;
+
+    if (lastBonusDate !== today) {
+      console.log(`🎁 [auth/check] Начисляем токены пользователю ${telegramId}`);
+
+      // 5.1 Бонусные токены
+      if (limits.bonus_tokens_per_day > 0) {
+        try {
+          const bonusResult = await supabaseRPC(
+            'add_bonus_tokens',
+            {
+              p_user_id: telegramId,
+              p_amount: limits.bonus_tokens_per_day,
+            },
+            config
+          );
+
+          if (bonusResult?.success) {
+            bonusAdded = limits.bonus_tokens_per_day;
+            console.log(`✅ [auth/check] Начислено ${bonusAdded} бонусных токенов`);
+          } else {
+            console.warn(`⚠️ [auth/check] Не удалось начислить бонусные токены:`, bonusResult);
+          }
+        } catch (err) {
+          console.error('❌ [auth/check] Ошибка начисления бонусных токенов:', err);
+        }
+      }
+
+      // 5.2 Постоянные токены (если есть подписка с токенами)
+      if (limits.permanent_tokens_on_subscribe > 0) {
+        try {
+          const permanentResult = await supabaseRPC(
+            'add_permanent_tokens',
+            {
+              p_user_id: telegramId,
+              p_amount: limits.permanent_tokens_on_subscribe,
+              p_source: 'subscription_daily',
+            },
+            config
+          );
+
+          if (permanentResult?.success) {
+            permanentAdded = limits.permanent_tokens_on_subscribe;
+            console.log(`✅ [auth/check] Начислено ${permanentAdded} постоянных токенов`);
+          } else {
+            console.warn(`⚠️ [auth/check] Не удалось начислить постоянные токены:`, permanentResult);
+          }
+        } catch (err) {
+          console.error('❌ [auth/check] Ошибка начисления постоянных токенов:', err);
+        }
+      }
+
+      // 5.3 Обновляем дату последнего начисления
+      if (bonusAdded > 0 || permanentAdded > 0) {
+        try {
+          await supabaseFetch(
+            `users?telegram_id=eq.${telegramId}`,
+            {
+              method: 'PATCH',
+              body: JSON.stringify({
+                last_bonus_tokens_date: today,
+                updated_at: new Date().toISOString(),
+              }),
+            },
+            config
+          );
+          console.log(`✅ [auth/check] Дата последнего начисления обновлена: ${today}`);
+        } catch (err) {
+          console.error('❌ [auth/check] Ошибка обновления даты:', err);
+        }
+      }
+    } else {
+      console.log(`ℹ️ [auth/check] Токены уже начислены сегодня (${today})`);
+    }
+
+    // ==========================================
+    // 6. ПОЛУЧАЕМ ТЕКУЩИЕ БАЛАНСЫ
+    // ==========================================
+    let tokenBalance = { bonus: 0, permanent: 0 };
+    try {
+      const balanceResult = await supabaseRPC(
+        'get_user_balances',
+        { p_user_id: telegramId },
+        config
+      );
+
+      if (balanceResult?.success) {
+        tokenBalance = {
+          bonus: balanceResult.tokens?.bonus || 0,
+          permanent: balanceResult.tokens?.permanent || 0,
+        };
+        console.log(`💰 [auth/check] Текущий баланс токенов: ${tokenBalance.bonus} бонусных, ${tokenBalance.permanent} постоянных`);
+      }
+    } catch (err) {
+      console.warn('⚠️ [auth/check] Не удалось получить баланс токенов:', err);
+    }
+
+    // ==========================================
+    // 7. ПРОВЕРКА ПОДПИСКИ НА КАНАЛ
+    // ==========================================
+    let isMember = true;
     if (!['admin', 'creator', 'premium'].includes(role)) {
       const channelId = process.env.CHANNEL_ID?.trim();
       const botToken = process.env.BOT_TOKEN?.trim();
@@ -183,32 +273,8 @@ export default async function handler(request: Request): Promise<Response> {
 
           if (data.ok) {
             const status = data.result.status;
-            const isMember = ['member', 'administrator', 'creator', 'owner'].includes(status);
-
-            // ⚠️ ЗАКОММЕНТИРОВАНО: авто-назначение admin для администраторов канала
-            // if (['administrator', 'creator'].includes(status)) {
-            //     role = 'admin';
-            //     dailyLimit = 9999;
-            //     syncEnabled = true;
-            //     if (dbUser && dbUser.role !== 'admin') {
-            //         await supabaseFetch(
-            //             `users?telegram_id=eq.${telegramId}`,
-            //             {
-            //                 method: 'PATCH',
-            //                 body: JSON.stringify({ role: 'admin' })
-            //             },
-            //             config
-            //         );
-            //     }
-            // } else 
-            
-            if (isMember) {
-              // Используем роль из БД, не перезаписываем
-              console.log(`✅ Пользователь ${telegramId} подписан на канал, роль из БД: ${role}`);
-            } else {
-              console.log(`ℹ️ Пользователь ${telegramId} НЕ подписан на канал`);
-              // Если не подписан, оставляем как есть (роль уже установлена выше)
-            }
+            isMember = ['member', 'administrator', 'creator', 'owner'].includes(status);
+            console.log(`📢 [auth/check] Канал: ${isMember ? 'подписан' : 'не подписан'}`);
           }
         } catch (err) {
           console.error('Error checking channel membership:', (err as Error).message);
@@ -216,12 +282,15 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
+    // ==========================================
+    // 8. ФОРМИРОВАНИЕ ОТВЕТА
+    // ==========================================
     const responseData = {
-      isMember: role !== 'guest',
+      isMember: isMember || role !== 'guest',
       role,
-      dailyLimit,
-      usedToday,
-      syncEnabled,
+      dailyLimit: limits.bonus_tokens_per_day || 5,
+      usedToday: 0, // Больше не используется, оставляем для совместимости
+      syncEnabled: ['admin', 'creator', 'premium'].includes(role),
       syncToken: finalSyncToken,
       userId: telegramId,
       authUserId: userId,
@@ -229,17 +298,33 @@ export default async function handler(request: Request): Promise<Response> {
       jwtToken: jwtToken,
       expiresIn: 3600,
       isNewUser: isNewUser,
+      dataDeadline: dbUser?.data_deadline || null,
       serverModels: {
         gemini: true,
         deepseek: true,
         gpt: true,
         claude: true,
-        grok: true
-      }
+        grok: true,
+      },
+      // ✅ НОВЫЕ ПОЛЯ ДЛЯ ТОКЕНОВ
+      tokens: {
+        bonus: tokenBalance.bonus,
+        permanent: tokenBalance.permanent,
+        total: tokenBalance.bonus + tokenBalance.permanent,
+      },
+      limits: {
+        role_key: limits.role_key,
+        role_name: limits.role_name,
+        bonus_tokens_per_day: limits.bonus_tokens_per_day,
+        permanent_tokens_on_subscribe: limits.permanent_tokens_on_subscribe,
+        openrouter_limit: limits.openrouter_limit,
+      },
+      today_bonus_added: bonusAdded,
+      today_permanent_added: permanentAdded,
     };
 
     return jsonResponse(responseData, 200, {
-      'Authorization': `Bearer ${jwtToken}`
+      'Authorization': `Bearer ${jwtToken}`,
     });
   } catch (err) {
     console.error('Check auth error:', (err as Error).message);
