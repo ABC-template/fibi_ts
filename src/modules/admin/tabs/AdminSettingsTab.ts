@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminSettingsTab.ts
 // Глобальные настройки экономики
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлены типы
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -221,7 +221,7 @@ export class AdminSettingsTab implements IAdminTab {
 
     const saveBtn = document.getElementById('save-settings-btn');
     if (saveBtn) {
-      saveBtn.disabled = true;
+      (saveBtn as HTMLButtonElement).disabled = true;
       saveBtn.textContent = '⏳ Сохранение...';
     }
 
@@ -263,7 +263,7 @@ export class AdminSettingsTab implements IAdminTab {
     } finally {
       this.saving = false;
       if (saveBtn) {
-        saveBtn.disabled = false;
+        (saveBtn as HTMLButtonElement).disabled = false;
         saveBtn.textContent = '💾 Сохранить настройки';
       }
     }
