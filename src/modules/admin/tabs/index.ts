@@ -4,17 +4,6 @@
 // Версия: 1.0.0
 // ============================================
 
-// Импортируем все вкладки для автоматической регистрации
-import './AdminDashboardTab';
-import './AdminLimitsTab';
-import './AdminSettingsTab';
-import './AdminSubscriptionsTab';
-import './AdminAuditTab';
-import './AdminUsersTab';
-import './AdminSecurityTab';
-import './AdminTestingTab';
-
-// Экспортируем все вкладки (на случай использования)
 export { AdminDashboardTab } from './AdminDashboardTab';
 export { AdminLimitsTab } from './AdminLimitsTab';
 export { AdminSettingsTab } from './AdminSettingsTab';
