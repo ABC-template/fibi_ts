@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminUsersTab.ts
 // Управление пользователями
-// Версия: 1.0.0
+// Версия: 1.0.1 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 interface IUser {
   telegram_id: number;
@@ -48,7 +49,7 @@ export class AdminUsersTab implements IAdminTab {
               id="user-search-input" 
               placeholder="🔍 Поиск по ID или username..."
               value="${this.searchQuery}"
-              oninput="AdminUsersTab.search(this.value)"
+              oninput="window.AdminUsersTab.search(this.value)"
             />
           </div>
 
@@ -77,10 +78,10 @@ export class AdminUsersTab implements IAdminTab {
                     <td>${user.token_balance_bonus}</td>
                     <td>${user.token_balance_permanent}</td>
                     <td>
-                      <button class="btn btn-sm btn-secondary" onclick="AdminUsersTab.editUser('${user.telegram_id}')">
+                      <button class="btn btn-sm btn-secondary" onclick="window.AdminUsersTab.editUser('${user.telegram_id}')">
                         ✏️
                       </button>
-                      <button class="btn btn-sm btn-secondary" onclick="AdminUsersTab.viewUser('${user.telegram_id}')">
+                      <button class="btn btn-sm btn-secondary" onclick="window.AdminUsersTab.viewUser('${user.telegram_id}')">
                         👁️
                       </button>
                     </td>
@@ -93,7 +94,7 @@ export class AdminUsersTab implements IAdminTab {
           ${this.users.length === 0 ? `<div class="empty-state">👤 Пользователи не найдены</div>` : ''}
 
           <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="AdminUsersTab.refresh()">
+            <button class="btn btn-secondary" onclick="window.AdminUsersTab.refresh()">
               🔄 Обновить
             </button>
           </div>
@@ -133,17 +134,14 @@ export class AdminUsersTab implements IAdminTab {
   }
 
   static async editUser(userId: string): Promise<void> {
-    // TODO: Открыть модалку редактирования пользователя
     if ((window as any).uiRenderer) {
       (window as any).uiRenderer.showToast('✏️ Редактирование пользователя', 'info', 1500);
     }
   }
 
   static async viewUser(userId: string): Promise<void> {
-    // Переключаемся на аудит с фильтром по пользователю
     const auditTab = adminRegistry.getInstance('audit');
     if (auditTab) {
-      // TODO: Применить фильтр и переключиться на вкладку аудита
       if ((window as any).uiRenderer) {
         (window as any).uiRenderer.showToast(`👤 Пользователь ${userId}`, 'info', 1500);
       }
@@ -170,15 +168,16 @@ export class AdminUsersTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminUsersTab as any).search = AdminUsersTab.search;
-(AdminUsersTab as any).editUser = AdminUsersTab.editUser;
-(AdminUsersTab as any).viewUser = AdminUsersTab.viewUser;
-(AdminUsersTab as any).refresh = () => {
-  const tab = adminRegistry.getInstance('users') as AdminUsersTab;
-  if (tab) tab.refresh();
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminUsersTab = {
+  search: AdminUsersTab.search,
+  editUser: AdminUsersTab.editUser,
+  viewUser: AdminUsersTab.viewUser,
+  refresh: () => {
+    const tab = adminRegistry.getInstance('users') as AdminUsersTab;
+    if (tab) tab.refresh();
+  }
 };
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('users', AdminUsersTab);
