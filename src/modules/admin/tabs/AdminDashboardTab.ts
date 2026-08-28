@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminDashboardTab.ts
 // Дашборд админ-панели (статистика)
-// Версия: 1.0.0
+// Версия: 1.0.1 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 export class AdminDashboardTab implements IAdminTab {
   id = 'dashboard';
@@ -29,6 +30,7 @@ export class AdminDashboardTab implements IAdminTab {
       total_tokens: 0,
       requests_today: 0,
       unique_users_today: 0,
+      top_users: [],
     };
 
     return `
@@ -70,7 +72,7 @@ export class AdminDashboardTab implements IAdminTab {
         </div>
 
         <div class="dashboard-actions">
-          <button class="btn btn-secondary" onclick="AdminDashboardTab.refresh()">
+          <button class="btn btn-secondary" onclick="window.AdminDashboardTab.refresh()">
             🔄 Обновить
           </button>
         </div>
@@ -103,7 +105,6 @@ export class AdminDashboardTab implements IAdminTab {
     this.loading = true;
 
     try {
-      // Получаем статистику
       const response = await apiClient.get('/admin/stats');
       if (response.success) {
         this.data = response.stats;
@@ -115,15 +116,14 @@ export class AdminDashboardTab implements IAdminTab {
     }
   }
 
-  static async refresh(): Promise<void> {
-    const tab = adminRegistry.getInstance('dashboard');
-    if (tab) {
-      await (tab as AdminDashboardTab).loadData();
-      // Обновляем UI
-      const container = document.querySelector('.admin-dashboard-tab');
-      if (container) {
-        container.outerHTML = tab.render();
-      }
+  async refresh(): Promise<void> {
+    await this.loadData();
+    const container = document.querySelector('.admin-dashboard-tab');
+    if (container) {
+      container.outerHTML = this.render();
+    }
+    if ((window as any).uiRenderer) {
+      (window as any).uiRenderer.showToast('🔄 Данные обновлены', 'info', 1500);
     }
   }
 
@@ -132,6 +132,13 @@ export class AdminDashboardTab implements IAdminTab {
   }
 }
 
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminDashboardTab = {
+  refresh: () => {
+    const tab = adminRegistry.getInstance('dashboard') as AdminDashboardTab;
+    if (tab) tab.refresh();
+  }
+};
+
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('dashboard', AdminDashboardTab);
