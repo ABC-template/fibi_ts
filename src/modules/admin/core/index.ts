@@ -5,6 +5,3 @@
 // ============================================
 
 export * from './admin-tab.interface';
-export * from './admin-registry';
-
-export { adminRegistry } from './admin-registry';
