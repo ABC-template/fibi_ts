@@ -1,16 +1,15 @@
 // ============================================
 // src/modules/admin/tabs/AdminDashboardTab.ts
 // Дашборд админ-панели (статистика)
-// Версия: 1.0.1 — добавлена привязка к window
+// Версия: 1.0.1 — исправлена привязка методов
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import { adminRegistry } from '../core/admin-registry';
 
 export class AdminDashboardTab implements IAdminTab {
   id = 'dashboard';
-  label = '📊 Дашборд';
+  label = 'Дашборд';
   icon = '📊';
   priority = 0;
 
@@ -35,65 +34,45 @@ export class AdminDashboardTab implements IAdminTab {
 
     return `
       <div class="admin-dashboard-tab">
-        <!-- Ключевые показатели -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value">${stats.total_users}</div>
-            <div class="stat-label">👥 Всего пользователей</div>
-          </div>
-          <div class="stat-card premium">
-            <div class="stat-value">${stats.premium_users}</div>
-            <div class="stat-label">⭐ PRO подписка</div>
-          </div>
-          <div class="stat-card trial">
-            <div class="stat-value">${stats.trial_users}</div>
-            <div class="stat-label">🔓 Trial</div>
-          </div>
-          <div class="stat-card coins">
-            <div class="stat-value">${stats.total_coins}</div>
-            <div class="stat-label">🪙 Всего монет</div>
-          </div>
-          <div class="stat-card tokens">
-            <div class="stat-value">${stats.total_tokens}</div>
-            <div class="stat-label">⚡ Всего токенов</div>
-          </div>
-          <div class="stat-card requests">
-            <div class="stat-value">${stats.requests_today}</div>
-            <div class="stat-label">📨 Запросов сегодня</div>
-          </div>
-        </div>
+        <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+          <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📊 Дашборд</h3>
+          <p style="color: var(--app-text-tertiary); margin-bottom: 16px;">Общая статистика системы</p>
 
-        <!-- Топ пользователей -->
-        <div class="top-users-section">
-          <h4>🏆 Топ пользователей</h4>
-          <div class="top-users-list">
-            ${this.renderTopUsers(stats.top_users || [])}
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
+            <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
+              <div style="font-size: 28px; font-weight: 700; color: var(--app-accent-primary);">${stats.total_users || 0}</div>
+              <div style="font-size: 12px; color: var(--app-text-tertiary);">👥 Пользователей</div>
+            </div>
+            <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
+              <div style="font-size: 28px; font-weight: 700; color: #27ae60;">${stats.premium_users || 0}</div>
+              <div style="font-size: 12px; color: var(--app-text-tertiary);">⭐ PRO</div>
+            </div>
+            <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
+              <div style="font-size: 28px; font-weight: 700; color: #f39c12;">${stats.trial_users || 0}</div>
+              <div style="font-size: 12px; color: var(--app-text-tertiary);">🔓 Trial</div>
+            </div>
+            <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
+              <div style="font-size: 28px; font-weight: 700; color: #f1c40f;">${stats.total_coins || 0}</div>
+              <div style="font-size: 12px; color: var(--app-text-tertiary);">🪙 Монет</div>
+            </div>
+            <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
+              <div style="font-size: 28px; font-weight: 700; color: #3498db;">${stats.total_tokens || 0}</div>
+              <div style="font-size: 12px; color: var(--app-text-tertiary);">⚡ Токенов</div>
+            </div>
+            <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
+              <div style="font-size: 28px; font-weight: 700; color: #8e44ad;">${stats.requests_today || 0}</div>
+              <div style="font-size: 12px; color: var(--app-text-tertiary);">📨 Запросов</div>
+            </div>
           </div>
-        </div>
 
-        <div class="dashboard-actions">
-          <button class="btn btn-secondary" onclick="window.AdminDashboardTab.refresh()">
-            🔄 Обновить
-          </button>
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button class="btn btn-secondary" onclick="window.adminModule.switchTab('dashboard')" style="padding: 8px 16px; font-size: 13px;">
+              🔄 Обновить
+            </button>
+          </div>
         </div>
       </div>
     `;
-  }
-
-  private renderTopUsers(users: any[]): string {
-    if (!users || users.length === 0) {
-      return `<div class="empty-state">Нет данных</div>`;
-    }
-
-    return users.map((user, index) => `
-      <div class="top-user-item">
-        <span class="rank">#${index + 1}</span>
-        <span class="username">${user.username || 'Пользователь'}</span>
-        <span class="coins">${user.coins || 0} 🪙</span>
-        <span class="tokens">${user.tokens || 0} ⚡</span>
-        <span class="role ${user.role}">${user.role}</span>
-      </div>
-    `).join('');
   }
 
   onShow(): void {
@@ -118,27 +97,9 @@ export class AdminDashboardTab implements IAdminTab {
 
   async refresh(): Promise<void> {
     await this.loadData();
-    const container = document.querySelector('.admin-dashboard-tab');
-    if (container) {
-      container.outerHTML = this.render();
-    }
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('🔄 Данные обновлены', 'info', 1500);
-    }
   }
 
   destroy(): void {
     // Очистка
   }
 }
-
-// ✅ ПРИВЯЗЫВАЕМ К WINDOW
-(window as any).AdminDashboardTab = {
-  refresh: () => {
-    const tab = adminRegistry.getInstance('dashboard') as AdminDashboardTab;
-    if (tab) tab.refresh();
-  }
-};
-
-// Регистрируем вкладку
-adminRegistry.register('dashboard', AdminDashboardTab);
