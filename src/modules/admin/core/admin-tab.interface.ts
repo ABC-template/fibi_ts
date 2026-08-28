@@ -1,0 +1,41 @@
+// ============================================
+// src/modules/admin/core/admin-tab.interface.ts
+// Интерфейс для вкладок админ-панели
+// Версия: 1.0.0
+// ============================================
+
+export interface IAdminTab {
+  /** Уникальный идентификатор вкладки */
+  id: string;
+  
+  /** Отображаемое название вкладки */
+  label: string;
+  
+  /** Иконка (эмодзи или HTML) */
+  icon?: string;
+  
+  /** Приоритет (порядок отображения) */
+  priority: number;
+  
+  /** Инициализация вкладки (загрузка данных) */
+  init(): Promise<void>;
+  
+  /** Рендеринг HTML контента */
+  render(): string;
+  
+  /** Очистка ресурсов */
+  destroy(): void;
+  
+  /** Вызывается при показе вкладки */
+  onShow?(): void;
+  
+  /** Вызывается при скрытии вкладки */
+  onHide?(): void;
+  
+  /** Обновление данных вкладки */
+  refresh?(): Promise<void>;
+}
+
+export interface IAdminTabConstructor {
+  new (): IAdminTab;
+}
