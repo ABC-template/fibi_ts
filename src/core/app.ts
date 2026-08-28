@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 12.0.1 - FIXED: удален импорт из api
+// Версия: 13.0.0 — начисление токенов через auth/check
 // ============================================
 
 import './config';
@@ -53,14 +53,12 @@ import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
 import { ProfileModule } from '@/modules/profile/ProfileModule';
 import { QuestsModule } from '@/modules/quests/QuestsModule';
 import { GamesModule } from '@/modules/games/GamesModule';
-
-// ✅ НОВЫЙ МОДУЛЬ ЭКОНОМИКИ (вместо CoinsModule)
 import { EconomyModule } from '@/modules/economy/EconomyModule';
 
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
 
-console.log('🚀 App v12.0.1 начал загрузку');
+console.log('🚀 App v13.0.0 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -173,7 +171,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 12.0.1
+                    Версия 13.0.0
                 </div>
             </div>
         `;
@@ -360,7 +358,7 @@ function setupTelegramWebApp(): void {
 }
 
 // ==========================================
-// 8. ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ БАЛАНСА
+// 8. ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
 // ==========================================
 
 function updateAllBalanceDisplays(): void {
@@ -485,6 +483,9 @@ async function initApp(): Promise<void> {
             const result = await authService.checkSubscription();
             updateSplashProgress(70, '🔐 Проверка подписки...');
 
+            // ✅ ТОКЕНЫ УЖЕ НАЧИСЛЕНЫ В auth/check.ts
+            // Просто получаем информацию о них
+            const tokenInfo = result.tokens || { bonus: 0, permanent: 0 };
             const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
             const needFullReload = authService.needFullReload(result.syncToken);
 
@@ -508,7 +509,7 @@ async function initApp(): Promise<void> {
             updateCoinsDisplay();
             updateDrawerTrashCount();
 
-            // ✅ СИНХРОНИЗАЦИЯ ЗАДАНИЙ (ДО ежедневного входа)
+            // ✅ СИНХРОНИЗАЦИЯ ЗАДАНИЙ
             try {
                 await questsStore.sync();
                 console.log('✅ Задания синхронизированы');
@@ -516,7 +517,7 @@ async function initApp(): Promise<void> {
                 console.warn('⚠️ Не удалось синхронизировать задания:', err);
             }
 
-            // ✅ ЕЖЕДНЕВНЫЙ ВХОД И СТРИК (ПОСЛЕ синхронизации)
+            // ✅ ЕЖЕДНЕВНЫЙ ВХОД И СТРИК
             try {
                 console.log('🔍 [initApp] Начинаем обработку ежедневного входа...');
 
@@ -527,16 +528,9 @@ async function initApp(): Promise<void> {
                     console.log('📊 [initApp] Результат daily_login:', loginResult);
 
                     if (loginResult.success && loginResult.claimed) {
-                        // ✅ Получаем количество бонусных токенов из конфига через economyStore
-                        let bonusTokens = 0;
-                        try {
-                            const { economyStore } = await import('@/economy');
-                            await economyStore.loadConfig();
-                            const config = economyStore.getConfig();
-                            bonusTokens = config?.bonus_tokens_per_day || 0;
-                        } catch (err) {
-                            console.warn('⚠️ Не удалось получить настройку бонусных токенов:', err);
-                        }
+                        // ✅ ТОКЕНЫ УЖЕ НАЧИСЛЕНЫ В auth/check.ts
+                        // Берем их из результата аутентификации
+                        const bonusTokens = tokenInfo.bonus || 0;
 
                         setTimeout(() => {
                             console.log('🎯 Показываем модалку стрика...');
@@ -703,7 +697,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v12.0.1 успешно загружено (с EconomyModule)');
+        console.log('✅ Приложение v13.0.0 успешно загружено');
     }, 500);
 }
 
@@ -731,19 +725,16 @@ function setupEventSubscriptions(): void {
     eventBus.on('chat:renamed', () => renderChatsInDrawer());
     eventBus.on('chat:trash_cleared', () => updateDrawerTrashCount());
 
-    // ✅ УЛУЧШЕННАЯ ПОДПИСКА: обновление баланса
     eventBus.on('economy:balance:updated', (data) => {
         console.log(`📡 [EventBus] Баланс обновлён: ${data.newBalance} (${data.source})`);
         updateAllBalanceDisplays();
     });
 
-    // ✅ ПОДПИСКА НА ЗАГРУЗКУ БАЛАНСА
     eventBus.on('economy:balance:loaded', (data) => {
         console.log(`📡 [EventBus] Баланс загружен: ${data.balance}`);
         updateAllBalanceDisplays();
     });
 
-    // ✅ ПОДПИСКА НА ОБНОВЛЕНИЕ ТОКЕНОВ
     eventBus.on('economy:tokens:updated', (data) => {
         console.log(`📡 [EventBus] Токены обновлены: ${data.bonus} бонусных, ${data.permanent} постоянных`);
         if (window.chatModule) {
@@ -751,7 +742,6 @@ function setupEventSubscriptions(): void {
         }
     });
 
-    // ✅ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ ЗАДАНИЙ
     eventBus.on('chat:message_added', (data) => {
         if (data.message && data.message.type === 'user-msg') {
             questsStore.updateProgress('send_message_1').catch(() => {});
@@ -773,7 +763,6 @@ function setupEventSubscriptions(): void {
         questsStore.updateProgress('create_reminder').catch(() => {});
     });
 
-    // ✅ ПОДПИСКА НА СОБЫТИЯ РЕКЛАМЫ
     eventBus.on('ad:initialized', (data) => {
         if (data.success) {
             console.log('✅ Рекламный модуль готов к работе');
@@ -840,4 +829,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v12.0.1 полностью загружен');
+console.log('✅ app.ts v13.0.0 полностью загружен');
