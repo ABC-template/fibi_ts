@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (загружает вкладки из реестра)
-// Версия: 5.0.2 — исправлено переключение вкладок и дублирование иконок
+// Версия: 5.0.3 — исправлена ошибка Unicode в регулярном выражении
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -65,7 +65,7 @@ export class AdminModule {
     this._subscribeToEvents();
 
     this.isInitialized = true;
-    console.log('✅ AdminModule v5.0.2 инициализирован');
+    console.log('✅ AdminModule v5.0.3 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -134,9 +134,10 @@ export class AdminModule {
           flex-wrap: wrap;
         ">
           ${this._tabs.map(tab => {
-            // ✅ Убираем дублирование иконок: если в label уже есть иконка — не добавляем отдельно
+            // ✅ Убираем дублирование иконок
             const labelText = tab.label || tab.id;
-            const hasIcon = /[\u{1F000}-\u{1FFFF}]|[\u2600-\u27BF]|[📊📋⚙️📦📜👤🔐🤖]/.test(labelText);
+            // Простая проверка на наличие иконки (эмодзи)
+            const hasIcon = /[📊📋⚙️📦📜👤🔐🤖⭐🔒🎁💰🔄]/.test(labelText);
             const displayLabel = hasIcon ? labelText : `${tab.icon || ''} ${labelText}`.trim();
             
             return `
@@ -192,7 +193,6 @@ export class AdminModule {
     
     if (this._activeTabId === tabId) {
       console.log(`ℹ️ [AdminModule] Уже на вкладке ${tabId}, обновляем`);
-      // Уже на этой вкладке — просто обновляем
       const tab = this._tabs.find(t => t.id === tabId);
       if (tab) {
         const contentEl = document.getElementById('admin-tab-content');
@@ -298,7 +298,6 @@ export class AdminModule {
       (window as any).navigation.hide();
     }
 
-    // Обновляем содержимое при показе
     const activeTab = this._tabs.find(t => t.id === this._activeTabId);
     if (activeTab) {
       const contentEl = document.getElementById('admin-tab-content');
@@ -326,7 +325,6 @@ export class AdminModule {
   }
 
   destroy(): void {
-    // Уничтожаем все вкладки
     for (const tab of this._tabs) {
       try {
         tab.destroy();
@@ -335,7 +333,6 @@ export class AdminModule {
       }
     }
 
-    // Очищаем подписки
     for (const unsub of this._subscriptions) {
       try {
         unsub();
@@ -365,4 +362,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   adminModuleInstance.switchTab(tabId);
 };
 
-console.log('✅ AdminModule v5.0.2 загружен');
+console.log('✅ AdminModule v5.0.3 загружен');
