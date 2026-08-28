@@ -1,12 +1,13 @@
 // ============================================
 // src/modules/admin/tabs/AdminSubscriptionsTab.ts
 // Управление тарифами подписки
-// Версия: 1.0.2 — добавлена привязка к window
+// Версия: 1.0.1 — исправлена привязка методов
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import { adminRegistry } from '../core/admin-registry';
+import { modalManager } from '@/core/modal-manager';
+import { uiRenderer } from '@/modules/ui/renderer';
 
 interface ITier {
   id: string;
@@ -25,177 +26,79 @@ interface ITier {
 
 export class AdminSubscriptionsTab implements IAdminTab {
   id = 'subscriptions';
-  label = '📦 Подписки';
+  label = 'Подписки';
   icon = '📦';
   priority = 50;
 
   private tiers: ITier[] = [];
   private loading: boolean = false;
-  private saving: boolean = false;
-  private editing: ITier | null = null;
-  private showForm: boolean = false;
+  private modalManager = modalManager;
+  private uiRenderer = uiRenderer;
 
   async init(): Promise<void> {
     await this.loadData();
   }
 
   render(): string {
-    return `
-      <div class="admin-subscriptions-tab">
-        <div class="admin-section">
-          <div class="section-header">
-            <h3>📦 Тарифы подписки</h3>
-            <button class="btn btn-primary" onclick="window.AdminSubscriptionsTab.showCreateForm()">
-              ➕ Добавить тариф
-            </button>
-          </div>
-          <p class="hint">
-            Управление тарифами подписки. Цены указываются в ⭐ Stars.
-          </p>
-
-          ${this.showForm ? this.renderForm() : ''}
-
-          <div class="tiers-table-wrapper">
-            <table class="tiers-table">
-              <thead>
-                <tr>
-                  <th>Название</th>
-                  <th>Дней</th>
-                  <th>Цена ⭐</th>
-                  <th>Постоянных ⚡</th>
-                  <th>Пробный</th>
-                  <th>1 раз</th>
-                  <th>Активен</th>
-                  <th>Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${this.tiers.map(tier => `
-                  <tr>
-                    <td>
-                      <strong>${tier.name}</strong>
-                      <span class="tier-key">${tier.tier_key}</span>
-                    </td>
-                    <td>${tier.days}</td>
-                    <td>${tier.price_stars} ⭐</td>
-                    <td>${tier.permanent_tokens} ⚡</td>
-                    <td>${tier.is_trial ? '✅' : '—'}</td>
-                    <td>${tier.is_one_time ? '✅' : '—'}</td>
-                    <td>${tier.is_active ? '✅' : '❌'}</td>
-                    <td>
-                      <button class="btn btn-sm btn-secondary" onclick="window.AdminSubscriptionsTab.edit('${tier.id}')">
-                        ✏️
-                      </button>
-                      <button class="btn btn-sm btn-danger" onclick="window.AdminSubscriptionsTab.deleteTier('${tier.id}')">
-                        🗑️
-                      </button>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="window.AdminSubscriptionsTab.refresh()">
-              🔄 Обновить
-            </button>
-          </div>
+    if (this.tiers.length === 0) {
+      return `
+        <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+          <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📦 Тарифы подписки</h3>
+          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">⏳ Загрузка данных...</div>
         </div>
-      </div>
-    `;
-  }
-
-  private renderForm(): string {
-    const t = this.editing || {
-      tier_key: '',
-      name: '',
-      name_en: '',
-      days: 30,
-      price_stars: 5,
-      permanent_tokens: 100,
-      is_active: true,
-      is_trial: false,
-      is_one_time: false,
-      description: '',
-      sort_order: 0,
-    };
-
-    const isEdit = !!this.editing?.id;
+      `;
+    }
 
     return `
-      <div class="tier-form">
-        <h4>${isEdit ? '✏️ Редактировать тариф' : '➕ Новый тариф'}</h4>
-        
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Ключ тарифа *</label>
-            <input 
-              type="text" 
-              id="tier_key" 
-              value="${t.tier_key}"
-              ${isEdit ? 'readonly' : ''}
-              placeholder="trial, basic, pro, ultimate"
-            />
-          </div>
-          
-          <div class="form-group">
-            <label>Название (RU) *</label>
-            <input type="text" id="name" value="${t.name}" placeholder="Пробный, Базовый, PRO" />
-          </div>
-          
-          <div class="form-group">
-            <label>Название (EN) *</label>
-            <input type="text" id="name_en" value="${t.name_en}" placeholder="Trial, Basic, Pro" />
-          </div>
-          
-          <div class="form-group">
-            <label>Дней *</label>
-            <input type="number" id="days" value="${t.days}" min="1" />
-          </div>
-          
-          <div class="form-group">
-            <label>Цена ⭐ *</label>
-            <input type="number" id="price_stars" value="${t.price_stars}" min="0" />
-          </div>
-          
-          <div class="form-group">
-            <label>Постоянных токенов</label>
-            <input type="number" id="permanent_tokens" value="${t.permanent_tokens}" min="0" />
-          </div>
-          
-          <div class="form-group">
-            <label>Порядок сортировки</label>
-            <input type="number" id="sort_order" value="${t.sort_order}" min="0" />
-          </div>
-          
-          <div class="form-group">
-            <label>Описание</label>
-            <input type="text" id="description" value="${t.description || ''}" placeholder="Описание тарифа" />
-          </div>
-        </div>
-        
-        <div class="form-checkboxes">
-          <label>
-            <input type="checkbox" id="is_active" ${t.is_active ? 'checked' : ''} />
-            Активен
-          </label>
-          <label>
-            <input type="checkbox" id="is_trial" ${t.is_trial ? 'checked' : ''} />
-            Пробный период
-          </label>
-          <label>
-            <input type="checkbox" id="is_one_time" ${t.is_one_time ? 'checked' : ''} />
-            Только 1 раз
-          </label>
-        </div>
-        
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="window.AdminSubscriptionsTab.saveTier()">
-            💾 ${isEdit ? 'Обновить' : 'Создать'}
+      <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0; color: var(--app-text-primary);">📦 Тарифы подписки</h3>
+          <button class="btn btn-primary" onclick="window.adminModule.showTierForm()" style="padding: 6px 14px; font-size: 13px;">
+            ➕ Добавить
           </button>
-          <button class="btn btn-secondary" onclick="window.AdminSubscriptionsTab.cancelForm()">
-            ✕ Отмена
+        </div>
+        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
+          Цены указываются в ⭐ Stars.
+        </p>
+
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--app-border-color);">
+                <th style="text-align: left; padding: 8px 10px; color: var(--app-text-tertiary);">Название</th>
+                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Дней</th>
+                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Цена ⭐</th>
+                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">⚡ Токенов</th>
+                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Пробный</th>
+                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Активен</th>
+                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this.tiers.map((tier: any) => `
+                <tr style="border-bottom: 1px solid var(--app-border-color-light);">
+                  <td style="padding: 8px 10px; font-weight: 600; color: var(--app-text-primary);">
+                    ${tier.name}
+                    <span style="font-size: 11px; color: var(--app-text-tertiary); font-weight: 400;">${tier.tier_key}</span>
+                  </td>
+                  <td style="text-align: center; padding: 8px 10px;">${tier.days}</td>
+                  <td style="text-align: center; padding: 8px 10px;">${tier.price_stars} ⭐</td>
+                  <td style="text-align: center; padding: 8px 10px;">${tier.permanent_tokens}</td>
+                  <td style="text-align: center; padding: 8px 10px;">${tier.is_trial ? '✅' : '—'}</td>
+                  <td style="text-align: center; padding: 8px 10px;">${tier.is_active ? '✅' : '❌'}</td>
+                  <td style="text-align: center; padding: 8px 10px;">
+                    <button class="btn btn-sm btn-secondary" onclick="window.adminModule.editTier('${tier.id}')" style="padding: 2px 8px; font-size: 12px;">✏️</button>
+                    <button class="btn btn-sm btn-danger" onclick="window.adminModule.deleteTier('${tier.id}')" style="padding: 2px 8px; font-size: 12px;">🗑️</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('subscriptions')" style="padding: 10px 20px;">
+            🔄 Обновить
           </button>
         </div>
       </div>
@@ -218,177 +121,15 @@ export class AdminSubscriptionsTab implements IAdminTab {
     }
   }
 
-  static showCreateForm(): void {
-    const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-    if (tab) {
-      tab.editing = null;
-      tab.showForm = true;
-      const container = document.querySelector('.admin-subscriptions-tab');
-      if (container) {
-        container.outerHTML = tab.render();
-      }
-    }
-  }
-
-  static edit(id: string): void {
-    const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-    if (tab) {
-      const tier = tab.tiers.find(t => t.id === id);
-      if (tier) {
-        tab.editing = tier;
-        tab.showForm = true;
-        const container = document.querySelector('.admin-subscriptions-tab');
-        if (container) {
-          container.outerHTML = tab.render();
-        }
-      }
-    }
-  }
-
-  static cancelForm(): void {
-    const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-    if (tab) {
-      tab.editing = null;
-      tab.showForm = false;
-      const container = document.querySelector('.admin-subscriptions-tab');
-      if (container) {
-        container.outerHTML = tab.render();
-      }
-    }
-  }
-
-  static async saveTier(): Promise<void> {
-    const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-    if (!tab) return;
-
-    const isEdit = !!tab.editing?.id;
-
-    const data = {
-      tier_key: (document.getElementById('tier_key') as HTMLInputElement)?.value.trim(),
-      name: (document.getElementById('name') as HTMLInputElement)?.value.trim(),
-      name_en: (document.getElementById('name_en') as HTMLInputElement)?.value.trim(),
-      days: parseInt((document.getElementById('days') as HTMLInputElement)?.value || '0'),
-      price_stars: parseInt((document.getElementById('price_stars') as HTMLInputElement)?.value || '0'),
-      permanent_tokens: parseInt((document.getElementById('permanent_tokens') as HTMLInputElement)?.value || '0'),
-      sort_order: parseInt((document.getElementById('sort_order') as HTMLInputElement)?.value || '0'),
-      description: (document.getElementById('description') as HTMLInputElement)?.value.trim() || null,
-      is_active: (document.getElementById('is_active') as HTMLInputElement)?.checked ?? true,
-      is_trial: (document.getElementById('is_trial') as HTMLInputElement)?.checked ?? false,
-      is_one_time: (document.getElementById('is_one_time') as HTMLInputElement)?.checked ?? false,
-    };
-
-    if (!data.tier_key || !data.name || !data.name_en || data.days <= 0) {
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Заполните все обязательные поля', 'error', 2000);
-      }
-      return;
-    }
-
-    try {
-      let response;
-      if (isEdit) {
-        response = await apiClient.put('/admin/economy/subscriptions', { id: tab.editing!.id, ...data });
-      } else {
-        response = await apiClient.post('/admin/economy/subscriptions', data);
-      }
-
-      if (response.success) {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast(
-            isEdit ? '✅ Тариф обновлён' : '✅ Тариф создан',
-            'success',
-            2000
-          );
-        }
-        tab.editing = null;
-        tab.showForm = false;
-        await tab.loadData();
-        const container = document.querySelector('.admin-subscriptions-tab');
-        if (container) {
-          container.outerHTML = tab.render();
-        }
-      } else {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast('⚠️ Ошибка сохранения', 'error', 2000);
-        }
-      }
-    } catch (err) {
-      console.error('[AdminSubscriptionsTab] Error saving tier:', err);
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Ошибка сервера', 'error', 2000);
-      }
-    }
-  }
-
-  static async deleteTier(id: string): Promise<void> {
-    const userConfirmed = await new Promise<boolean>((resolve) => {
-      if ((window as any).tg?.showConfirm) {
-        (window as any).tg.showConfirm(
-          'Удалить этот тариф? Пользователи с активной подпиской не пострадают.',
-          (ok: boolean) => resolve(ok)
-        );
-      } else {
-        resolve(window.confirm('Удалить этот тариф?'));
-      }
-    });
-
-    if (!userConfirmed) return;
-
-    try {
-      const response = await apiClient.delete(`/admin/economy/subscriptions?id=${id}`);
-      if (response.success) {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast('🗑️ Тариф удалён', 'info', 2000);
-        }
-        const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-        if (tab) {
-          await tab.loadData();
-          const container = document.querySelector('.admin-subscriptions-tab');
-          if (container) {
-            container.outerHTML = tab.render();
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[AdminSubscriptionsTab] Error deleting tier:', err);
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Ошибка удаления', 'error', 2000);
-      }
-    }
-  }
-
   async refresh(): Promise<void> {
     await this.loadData();
-    const container = document.querySelector('.admin-subscriptions-tab');
-    if (container) {
-      container.outerHTML = this.render();
-    }
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('🔄 Данные обновлены', 'info', 1500);
-    }
   }
 
   onShow(): void {
-    this.refresh();
+    this.loadData();
   }
 
   destroy(): void {
     // Очистка
   }
 }
-
-// ✅ ПРИВЯЗЫВАЕМ К WINDOW
-(window as any).AdminSubscriptionsTab = {
-  showCreateForm: AdminSubscriptionsTab.showCreateForm,
-  edit: AdminSubscriptionsTab.edit,
-  cancelForm: AdminSubscriptionsTab.cancelForm,
-  saveTier: AdminSubscriptionsTab.saveTier,
-  deleteTier: AdminSubscriptionsTab.deleteTier,
-  refresh: () => {
-    const tab = adminRegistry.getInstance('subscriptions') as AdminSubscriptionsTab;
-    if (tab) tab.refresh();
-  }
-};
-
-// Регистрируем вкладку
-adminRegistry.register('subscriptions', AdminSubscriptionsTab);
