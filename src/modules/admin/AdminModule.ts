@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (максимально простой)
-// Версия: 6.0.3 — принудительный рендеринг при show()
+// Версия: 6.0.4 — исправлены типы для checked
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -18,7 +18,7 @@ export class AdminModule {
   private eventBus = eventBus;
   private userStore = userStore;
 
-  // Данные для вкладок (загружаются при показе)
+  // Данные для вкладок
   private limits: any[] = [];
   private settings: any = null;
   private tiers: any[] = [];
@@ -35,7 +35,6 @@ export class AdminModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
-    // Проверяем права доступа
     if (this.userStore.role !== 'creator') {
       this.container.innerHTML = `
         <div style="padding: 40px; text-align: center; color: var(--app-text-tertiary);">
@@ -48,16 +47,10 @@ export class AdminModule {
       return;
     }
 
-    // Загружаем данные
     await this.loadAllData();
-
     this.isInitialized = true;
-    console.log('✅ AdminModule v6.0.3 инициализирован');
+    console.log('✅ AdminModule v6.0.4 инициализирован');
   }
-
-  // ==========================================
-  // ЗАГРУЗКА ДАННЫХ
-  // ==========================================
 
   private async loadAllData(): Promise<void> {
     try {
@@ -86,14 +79,9 @@ export class AdminModule {
     }
   }
 
-  // ==========================================
-  // РЕНДЕРИНГ
-  // ==========================================
-
   private render(): void {
     console.log('🎨 [AdminModule] Рендеринг...');
     
-    // Очищаем контейнер
     this.container.innerHTML = '';
 
     const tabs = [
@@ -107,7 +95,6 @@ export class AdminModule {
       { id: 'testing', label: '🤖 Тестирование' },
     ];
 
-    // Создаем контейнер для контента
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
       padding: 16px;
@@ -119,7 +106,6 @@ export class AdminModule {
       height: 100%;
     `;
 
-    // Заголовок
     const header = document.createElement('div');
     header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 16px;';
     header.innerHTML = `
@@ -128,7 +114,6 @@ export class AdminModule {
     `;
     wrapper.appendChild(header);
 
-    // Табы
     const tabsContainer = document.createElement('div');
     tabsContainer.style.cssText = `
       display: flex;
@@ -160,14 +145,11 @@ export class AdminModule {
         white-space: nowrap;
         font-family: var(--app-font-family);
       `;
-      btn.onclick = () => {
-        this.switchTab(tab.id);
-      };
+      btn.onclick = () => { this.switchTab(tab.id); };
       tabsContainer.appendChild(btn);
     });
     wrapper.appendChild(tabsContainer);
 
-    // Контент
     const content = document.createElement('div');
     content.id = 'admin-tab-content';
     content.style.cssText = 'flex: 1; overflow-y: auto;';
@@ -177,10 +159,6 @@ export class AdminModule {
     this.container.appendChild(wrapper);
     console.log('✅ [AdminModule] Рендеринг завершен');
   }
-
-  // ==========================================
-  // РЕНДЕРИНГ КОНТЕНТА ВКЛАДКИ
-  // ==========================================
 
   private renderTabContent(tabId: string): string {
     switch (tabId) {
@@ -195,10 +173,6 @@ export class AdminModule {
       default: return '<div style="padding: 20px; text-align: center; color: var(--app-text-tertiary);">Вкладка не найдена</div>';
     }
   }
-
-  // ==========================================
-  // ВКЛАДКА: ДАШБОРД
-  // ==========================================
 
   private renderDashboard(): string {
     return `
@@ -241,10 +215,6 @@ export class AdminModule {
       </div>
     `;
   }
-
-  // ==========================================
-  // ВКЛАДКА: ЛИМИТЫ
-  // ==========================================
 
   private renderLimits(): string {
     if (this.limits.length === 0) {
@@ -319,10 +289,6 @@ export class AdminModule {
     `;
   }
 
-  // ==========================================
-  // ВКЛАДКА: НАСТРОЙКИ
-  // ==========================================
-
   private renderSettings(): string {
     const s = this.settings || {
       exchange_enabled: true,
@@ -349,7 +315,6 @@ export class AdminModule {
         </p>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <!-- Обмен -->
           <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
             <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">💱 Обмен</div>
             <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-text-secondary); margin-bottom: 6px;">
@@ -375,7 +340,6 @@ export class AdminModule {
             </div>
           </div>
 
-          <!-- Бонусы -->
           <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
             <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🎁 Ежедневные бонусы</div>
             <div style="display: flex; gap: 12px; flex-wrap: wrap;">
@@ -390,7 +354,6 @@ export class AdminModule {
             </div>
           </div>
 
-          <!-- Белый список -->
           <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
             <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🔒 Белый список</div>
             <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-text-secondary);">
@@ -399,7 +362,6 @@ export class AdminModule {
             </label>
           </div>
 
-          <!-- Системные -->
           <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
             <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">⚙️ Системные</div>
             <div style="display: flex; gap: 12px; flex-wrap: wrap;">
@@ -420,7 +382,6 @@ export class AdminModule {
             </div>
           </div>
 
-          <!-- Логи -->
           <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
             <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">📋 Хранение логов</div>
             <div style="display: flex; gap: 12px; flex-wrap: wrap;">
@@ -449,10 +410,6 @@ export class AdminModule {
       </div>
     `;
   }
-
-  // ==========================================
-  // ВКЛАДКА: ПОДПИСКИ (упрощенно)
-  // ==========================================
 
   private renderSubscriptions(): string {
     if (this.tiers.length === 0) {
@@ -502,10 +459,6 @@ export class AdminModule {
       </div>
     `;
   }
-
-  // ==========================================
-  // ВКЛАДКА: АУДИТ (упрощенно)
-  // ==========================================
 
   private renderAudit(): string {
     if (this.auditLogs.length === 0) {
@@ -577,10 +530,6 @@ export class AdminModule {
     `;
   }
 
-  // ==========================================
-  // ВКЛАДКА: ПОЛЬЗОВАТЕЛИ (упрощенно)
-  // ==========================================
-
   private renderUsers(): string {
     if (this.users.length === 0) {
       return `
@@ -637,10 +586,6 @@ export class AdminModule {
     `;
   }
 
-  // ==========================================
-  // ВКЛАДКА: БЕЗОПАСНОСТЬ (упрощенно)
-  // ==========================================
-
   private renderSecurity(): string {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
@@ -691,10 +636,6 @@ export class AdminModule {
       </div>
     `;
   }
-
-  // ==========================================
-  // ВКЛАДКА: ТЕСТИРОВАНИЕ
-  // ==========================================
 
   private renderTesting(): string {
     return `
@@ -763,13 +704,13 @@ export class AdminModule {
       const limits: any[] = [];
 
       inputs.forEach((input: any) => {
-        const id = input.dataset.id;
-        const field = input.dataset.field;
-        const value = parseInt(input.value) || 0;
+        const id = (input as HTMLInputElement).dataset.id;
+        const field = (input as HTMLInputElement).dataset.field;
+        const value = parseInt((input as HTMLInputElement).value) || 0;
         let limit = limits.find((l: any) => l.id === id);
         if (!limit) {
-          const checkbox = Array.from(checkboxes).find((cb: any) => cb.dataset.id === id);
-          limit = { id, is_active: checkbox?.checked || false };
+          const checkbox = Array.from(checkboxes).find((cb: any) => (cb as HTMLInputElement).dataset.id === id);
+          limit = { id, is_active: checkbox ? (checkbox as HTMLInputElement).checked : false };
           limits.push(limit);
         }
         limit[field] = value;
@@ -947,7 +888,6 @@ export class AdminModule {
       (window as any).navigation.hide();
     }
 
-    // Загружаем данные и рендерим
     await this.loadAllData();
     this.render();
 
@@ -1007,4 +947,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   hide: () => adminModuleInstance.hide(),
 };
 
-console.log('✅ AdminModule v6.0.3 загружен');
+console.log('✅ AdminModule v6.0.4 загружен');
