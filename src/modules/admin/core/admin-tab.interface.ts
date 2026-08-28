@@ -11,8 +11,8 @@ export interface IAdminTab {
   /** Отображаемое название вкладки */
   label: string;
   
-  /** Иконка (эмодзи или HTML) */
-  icon?: string;
+  /** Иконка (эмодзи) */
+  icon: string;
   
   /** Приоритет (порядок отображения) */
   priority: number;
@@ -34,8 +34,4 @@ export interface IAdminTab {
   
   /** Обновление данных вкладки */
   refresh?(): Promise<void>;
-}
-
-export interface IAdminTabConstructor {
-  new (): IAdminTab;
 }
