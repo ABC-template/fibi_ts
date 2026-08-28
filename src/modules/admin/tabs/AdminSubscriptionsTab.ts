@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminSubscriptionsTab.ts
 // Управление тарифами подписки
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлен confirm
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -320,18 +320,18 @@ export class AdminSubscriptionsTab implements IAdminTab {
   }
 
   static async deleteTier(id: string): Promise<void> {
-    const confirm = await new Promise<boolean>((resolve) => {
+    const userConfirmed = await new Promise<boolean>((resolve) => {
       if ((window as any).tg?.showConfirm) {
         (window as any).tg.showConfirm(
           'Удалить этот тариф? Пользователи с активной подпиской не пострадают.',
           (ok: boolean) => resolve(ok)
         );
       } else {
-        resolve(confirm('Удалить этот тариф?'));
+        resolve(window.confirm('Удалить этот тариф?'));
       }
     });
 
-    if (!confirm) return;
+    if (!userConfirmed) return;
 
     try {
       const response = await apiClient.delete(`/admin/economy/subscriptions?id=${id}`);
