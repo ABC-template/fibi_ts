@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.0.0 - покупка подписки за ⭐ Stars
+// Версия: 2.0.1 — исправлен subscription_tier
 // ============================================
 
 import './economy.css';
@@ -42,7 +42,6 @@ export class EconomyModule {
     this.headerManager.setTitle('💰 Экономика');
     this.headerManager.setActions([]);
 
-    // Загружаем данные
     await this.economyStore.loadBalances();
     await this.economyStore.loadConfig();
     await this.subscriptionStore.loadTiers();
@@ -57,7 +56,7 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v2.0.0 инициализирован');
+    console.log('✅ EconomyModule v2.0.1 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -388,7 +387,7 @@ export class EconomyModule {
             (ok: boolean) => resolve(ok)
           );
         } else {
-          resolve(confirm(`⚠️ Вы обмениваете более ${maxPercent}% всех монет. Продолжить?`));
+          resolve(window.confirm(`⚠️ Вы обмениваете более ${maxPercent}% всех монет. Продолжить?`));
         }
       });
 
@@ -443,6 +442,9 @@ export class EconomyModule {
       return;
     }
 
+    // ✅ ИСПРАВЛЕНО: используем (this.userStore as any)
+    const currentTier = (this.userStore as any)._data?.subscription_tier || null;
+
     const content = `
       <div style="padding: 4px 0;">
         ${isPremium ? `
@@ -458,7 +460,8 @@ export class EconomyModule {
           ${tiers.map((tier: any) => {
             const isTrial = tier.is_trial;
             const isDisabled = isTrial && trialUsed;
-            const isCurrent = isPremium && this.userStore._data.subscription_tier === tier.tier_key;
+            // ✅ ИСПРАВЛЕНО
+            const isCurrent = isPremium && currentTier === tier.tier_key;
             
             return `
               <div style="
@@ -549,10 +552,8 @@ export class EconomyModule {
       let result;
       
       if (tier.is_trial) {
-        // Активация пробного периода
         result = await this.subscriptionService.activateTrial();
       } else {
-        // Покупка подписки
         result = await this.subscriptionService.purchaseSubscription(tierKey);
       }
 
@@ -656,4 +657,4 @@ export class EconomyModule {
   (window as any).economyModule
 );
 
-console.log('✅ EconomyModule v2.0.0 загружен');
+console.log('✅ EconomyModule v2.0.1 загружен');
