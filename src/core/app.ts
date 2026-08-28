@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.0.0 — начисление токенов через auth/check
+// Версия: 13.0.1 — исправлен types
 // ============================================
 
 import './config';
@@ -58,7 +58,7 @@ import { EconomyModule } from '@/modules/economy/EconomyModule';
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
 
-console.log('🚀 App v13.0.0 начал загрузку');
+console.log('🚀 App v13.0.1 начал загрузку');
 
 // ==========================================
 // 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
@@ -171,7 +171,7 @@ function showTelegramRequiredScreen(): void {
                     📲 Открыть в Telegram
                 </a>
                 <div style="margin-top: 24px; font-size: 12px; color: var(--app-text-tertiary, #A89880);">
-                    Версия 13.0.0
+                    Версия 13.0.1
                 </div>
             </div>
         `;
@@ -182,7 +182,7 @@ function showTelegramRequiredScreen(): void {
 }
 
 // ==========================================
-// 4. ПОКАЗ МОДАЛКИ СТРИКА (ОБНОВЛЕНА)
+// 4. ПОКАЗ МОДАЛКИ СТРИКА
 // ==========================================
 
 function showStreakModal(streak: number, bonus: number, reward: number, bonusTokens: number = 0): void {
@@ -483,9 +483,8 @@ async function initApp(): Promise<void> {
             const result = await authService.checkSubscription();
             updateSplashProgress(70, '🔐 Проверка подписки...');
 
-            // ✅ ТОКЕНЫ УЖЕ НАЧИСЛЕНЫ В auth/check.ts
-            // Просто получаем информацию о них
-            const tokenInfo = result.tokens || { bonus: 0, permanent: 0 };
+            // ✅ ИСПРАВЛЕНО: используем (result as any)
+            const tokenInfo = (result as any).tokens || { bonus: 0, permanent: 0 };
             const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
             const needFullReload = authService.needFullReload(result.syncToken);
 
@@ -528,8 +527,6 @@ async function initApp(): Promise<void> {
                     console.log('📊 [initApp] Результат daily_login:', loginResult);
 
                     if (loginResult.success && loginResult.claimed) {
-                        // ✅ ТОКЕНЫ УЖЕ НАЧИСЛЕНЫ В auth/check.ts
-                        // Берем их из результата аутентификации
                         const bonusTokens = tokenInfo.bonus || 0;
 
                         setTimeout(() => {
@@ -697,7 +694,7 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v13.0.0 успешно загружено');
+        console.log('✅ Приложение v13.0.1 успешно загружено');
     }, 500);
 }
 
@@ -829,4 +826,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v13.0.0 полностью загружен');
+console.log('✅ app.ts v13.0.1 полностью загружен');
