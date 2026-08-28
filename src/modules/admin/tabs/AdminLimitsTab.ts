@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminLimitsTab.ts
 // Управление лимитами по ролям
-// Версия: 1.0.1 — исправлены типы
+// Версия: 1.0.2 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 interface ILimit {
   id: string;
@@ -102,10 +103,10 @@ export class AdminLimitsTab implements IAdminTab {
           </div>
 
           <div class="admin-actions">
-            <button class="btn btn-primary" onclick="AdminLimitsTab.save()" id="save-limits-btn">
+            <button class="btn btn-primary" onclick="window.AdminLimitsTab.save()" id="save-limits-btn">
               💾 Сохранить лимиты
             </button>
-            <button class="btn btn-secondary" onclick="AdminLimitsTab.refresh()">
+            <button class="btn btn-secondary" onclick="window.AdminLimitsTab.refresh()">
               🔄 Обновить
             </button>
           </div>
@@ -212,17 +213,17 @@ export class AdminLimitsTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminLimitsTab as any).save = () => {
-  const tab = adminRegistry.getInstance('limits') as AdminLimitsTab;
-  if (tab) tab.save();
-};
-
-(AdminLimitsTab as any).refresh = () => {
-  const tab = adminRegistry.getInstance('limits') as AdminLimitsTab;
-  if (tab) tab.refresh();
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminLimitsTab = {
+  save: () => {
+    const tab = adminRegistry.getInstance('limits') as AdminLimitsTab;
+    if (tab) tab.save();
+  },
+  refresh: () => {
+    const tab = adminRegistry.getInstance('limits') as AdminLimitsTab;
+    if (tab) tab.refresh();
+  }
 };
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('limits', AdminLimitsTab);
