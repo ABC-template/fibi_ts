@@ -1,11 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminAuditTab.ts
 // Аудит экономических операций
-// Версия: 1.0.0
+// Версия: 1.0.1 — добавлена привязка к window
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { adminRegistry } from '../core/admin-registry';
 
 interface IAuditLog {
   id: string;
@@ -92,10 +93,10 @@ export class AdminAuditTab implements IAdminTab {
           </div>
 
           <div class="filter-actions">
-            <button class="btn btn-primary" onclick="AdminAuditTab.applyFilters()">
+            <button class="btn btn-primary" onclick="window.AdminAuditTab.applyFilters()">
               🔍 Применить
             </button>
-            <button class="btn btn-secondary" onclick="AdminAuditTab.resetFilters()">
+            <button class="btn btn-secondary" onclick="window.AdminAuditTab.resetFilters()">
               🔄 Сбросить
             </button>
           </div>
@@ -133,20 +134,20 @@ export class AdminAuditTab implements IAdminTab {
 
           <!-- Пагинация -->
           <div class="audit-pagination">
-            <button class="btn btn-sm btn-secondary" onclick="AdminAuditTab.prevPage()" ${this.page === 0 ? 'disabled' : ''}>
+            <button class="btn btn-sm btn-secondary" onclick="window.AdminAuditTab.prevPage()" ${this.page === 0 ? 'disabled' : ''}>
               ◀ Назад
             </button>
             <span class="page-info">Страница ${this.page + 1}</span>
-            <button class="btn btn-sm btn-secondary" onclick="AdminAuditTab.nextPage()" ${this.logs.length < this.pageSize ? 'disabled' : ''}>
+            <button class="btn btn-sm btn-secondary" onclick="window.AdminAuditTab.nextPage()" ${this.logs.length < this.pageSize ? 'disabled' : ''}>
               Вперед ▶
             </button>
           </div>
 
           <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="AdminAuditTab.refresh()">
+            <button class="btn btn-secondary" onclick="window.AdminAuditTab.refresh()">
               🔄 Обновить
             </button>
-            <button class="btn btn-secondary" onclick="AdminAuditTab.exportCSV()">
+            <button class="btn btn-secondary" onclick="window.AdminAuditTab.exportCSV()">
               📥 Экспорт CSV
             </button>
           </div>
@@ -178,7 +179,7 @@ export class AdminAuditTab implements IAdminTab {
             <tr>
               <td>${new Date(log.created_at).toLocaleString()}</td>
               <td>
-                <span class="user-link" onclick="AdminAuditTab.showUser('${log.user_id}')">
+                <span class="user-link" onclick="window.AdminAuditTab.showUser('${log.user_id}')">
                   ${log.username || '👤 ' + log.user_id}
                 </span>
               </td>
@@ -369,18 +370,19 @@ export class AdminAuditTab implements IAdminTab {
   }
 }
 
-// Статические методы для вызова из HTML
-(AdminAuditTab as any).applyFilters = AdminAuditTab.applyFilters;
-(AdminAuditTab as any).resetFilters = AdminAuditTab.resetFilters;
-(AdminAuditTab as any).showUser = AdminAuditTab.showUser;
-(AdminAuditTab as any).nextPage = AdminAuditTab.nextPage;
-(AdminAuditTab as any).prevPage = AdminAuditTab.prevPage;
-(AdminAuditTab as any).exportCSV = AdminAuditTab.exportCSV;
-(AdminAuditTab as any).refresh = () => {
-  const tab = adminRegistry.getInstance('audit') as AdminAuditTab;
-  if (tab) tab.refresh();
+// ✅ ПРИВЯЗЫВАЕМ К WINDOW
+(window as any).AdminAuditTab = {
+  applyFilters: AdminAuditTab.applyFilters,
+  resetFilters: AdminAuditTab.resetFilters,
+  showUser: AdminAuditTab.showUser,
+  nextPage: AdminAuditTab.nextPage,
+  prevPage: AdminAuditTab.prevPage,
+  exportCSV: AdminAuditTab.exportCSV,
+  refresh: () => {
+    const tab = adminRegistry.getInstance('audit') as AdminAuditTab;
+    if (tab) tab.refresh();
+  }
 };
 
 // Регистрируем вкладку
-import { adminRegistry } from '../core/admin-registry';
 adminRegistry.register('audit', AdminAuditTab);
