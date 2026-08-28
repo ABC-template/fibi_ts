@@ -1,12 +1,11 @@
 // ============================================
 // src/modules/admin/tabs/AdminSecurityTab.ts
 // Настройки безопасности и блокировки
-// Версия: 1.0.2 — добавлена привязка к window
+// Версия: 1.0.1 — исправлена привязка методов
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import { adminRegistry } from '../core/admin-registry';
 
 interface IBlock {
   id: string;
@@ -21,7 +20,7 @@ interface IBlock {
 
 export class AdminSecurityTab implements IAdminTab {
   id = 'security';
-  label = '🔐 Безопасность';
+  label = 'Безопасность';
   icon = '🔐';
   priority = 100;
 
@@ -34,71 +33,56 @@ export class AdminSecurityTab implements IAdminTab {
 
   render(): string {
     return `
-      <div class="admin-security-tab">
-        <div class="admin-section">
-          <h3>🔐 Настройки безопасности</h3>
-          <p class="hint">Управление блокировками пользователей и ограничениями.</p>
+      <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">🔐 Настройки безопасности</h3>
+        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
+          Управление блокировками пользователей.
+        </p>
 
-          <!-- Заблокировать пользователя -->
-          <div class="security-card">
-            <h4>🚫 Заблокировать пользователя</h4>
-            <div class="block-form">
-              <div class="form-group">
-                <input 
-                  type="number" 
-                  id="block-user-id" 
-                  placeholder="Telegram ID пользователя"
-                />
-              </div>
-              <div class="form-group">
-                <input 
-                  type="text" 
-                  id="block-reason" 
-                  placeholder="Причина блокировки (опционально)"
-                />
-              </div>
-              <div class="form-group">
-                <input 
-                  type="datetime-local" 
-                  id="block-expires" 
-                  placeholder="Дата окончания (опционально)"
-                />
-              </div>
-              <button class="btn btn-danger" onclick="window.AdminSecurityTab.blockUser()">
-                🔒 Заблокировать
-              </button>
-            </div>
-          </div>
-
-          <!-- Список блокировок -->
-          <div class="security-card">
-            <h4>🚫 Активные блокировки</h4>
-            ${this.blocks.length === 0 ? `
-              <div class="empty-state">🔓 Нет активных блокировок</div>
-            ` : `
-              <div class="blocks-list">
-                ${this.blocks.map(block => `
-                  <div class="block-item">
-                    <div class="block-info">
-                      <span class="user">${block.username || '👤 ' + block.user_id}</span>
-                      <span class="reason">${block.reason || 'Причина не указана'}</span>
-                      <span class="date">С ${new Date(block.blocked_at).toLocaleDateString()}</span>
-                      ${block.expires_at ? `<span class="expires">до ${new Date(block.expires_at).toLocaleDateString()}</span>` : ''}
-                    </div>
-                    <button class="btn btn-sm btn-success" onclick="window.AdminSecurityTab.unblockUser('${block.user_id}')">
-                      🔓 Разблокировать
-                    </button>
-                  </div>
-                `).join('')}
-              </div>
-            `}
-          </div>
-
-          <div class="admin-actions">
-            <button class="btn btn-secondary" onclick="window.AdminSecurityTab.refresh()">
-              🔄 Обновить
+        <!-- Заблокировать пользователя -->
+        <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; margin-bottom: 16px;">
+          <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🚫 Заблокировать пользователя</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <input type="number" id="block-user-id" placeholder="Telegram ID"
+                   style="flex: 1; min-width: 120px; padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+            <input type="text" id="block-reason" placeholder="Причина"
+                   style="flex: 1; min-width: 120px; padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+            <input type="datetime-local" id="block-expires" placeholder="До"
+                   style="padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
+            <button class="btn btn-danger" onclick="window.adminModule.blockUser()" style="padding: 8px 16px;">
+              🔒 Заблокировать
             </button>
           </div>
+        </div>
+
+        <!-- Список блокировок -->
+        <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px;">
+          <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🚫 Активные блокировки</div>
+          ${this.blocks.length === 0 ? `
+            <div style="text-align: center; padding: 20px; color: var(--app-text-tertiary);">🔓 Нет активных блокировок</div>
+          ` : `
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${this.blocks.map(block => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--app-bg-secondary); border-radius: 8px;">
+                  <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <span style="font-weight: 500;">${block.username || '👤 ' + block.user_id}</span>
+                    <span style="font-size: 12px; color: var(--app-text-tertiary);">${block.reason || 'Причина не указана'}</span>
+                    <span style="font-size: 11px; color: var(--app-text-tertiary);">С ${new Date(block.blocked_at).toLocaleDateString()}</span>
+                    ${block.expires_at ? `<span style="font-size: 11px; color: #e74c3c;">до ${new Date(block.expires_at).toLocaleDateString()}</span>` : ''}
+                  </div>
+                  <button class="btn btn-sm btn-success" onclick="window.adminModule.unblockUser('${block.user_id}')" style="padding: 4px 12px; font-size: 12px;">
+                    🔓 Разблокировать
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('security')" style="padding: 10px 20px;">
+            🔄 Обновить
+          </button>
         </div>
       </div>
     `;
@@ -120,124 +104,15 @@ export class AdminSecurityTab implements IAdminTab {
     }
   }
 
-  static async blockUser(): Promise<void> {
-    const userIdInput = document.getElementById('block-user-id') as HTMLInputElement;
-    const reasonInput = document.getElementById('block-reason') as HTMLInputElement;
-    const expiresInput = document.getElementById('block-expires') as HTMLInputElement;
-
-    const userId = parseInt(userIdInput?.value || '0');
-    if (!userId) {
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Введите ID пользователя', 'error', 2000);
-      }
-      return;
-    }
-
-    const reason = reasonInput?.value || null;
-    const expiresAt = expiresInput?.value || null;
-
-    try {
-      const response = await apiClient.post('/admin/economy/blocks', {
-        user_id: userId,
-        reason,
-        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-      });
-
-      if (response.success) {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast(`🔒 Пользователь ${userId} заблокирован`, 'success', 2000);
-        }
-        userIdInput.value = '';
-        reasonInput.value = '';
-        expiresInput.value = '';
-        
-        const tab = adminRegistry.getInstance('security') as AdminSecurityTab;
-        if (tab) {
-          await tab.loadData();
-          const container = document.querySelector('.admin-security-tab');
-          if (container) {
-            container.outerHTML = tab.render();
-          }
-        }
-      } else {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast('⚠️ Ошибка блокировки', 'error', 2000);
-        }
-      }
-    } catch (err) {
-      console.error('[AdminSecurityTab] Error blocking user:', err);
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Ошибка сервера', 'error', 2000);
-      }
-    }
-  }
-
-  static async unblockUser(userId: string): Promise<void> {
-    const userConfirmed = await new Promise<boolean>((resolve) => {
-      if ((window as any).tg?.showConfirm) {
-        (window as any).tg.showConfirm(
-          `Разблокировать пользователя ${userId}?`,
-          (ok: boolean) => resolve(ok)
-        );
-      } else {
-        resolve(window.confirm(`Разблокировать пользователя ${userId}?`));
-      }
-    });
-
-    if (!userConfirmed) return;
-
-    try {
-      const response = await apiClient.delete(`/admin/economy/blocks?user_id=${userId}`);
-      if (response.success) {
-        if ((window as any).uiRenderer) {
-          (window as any).uiRenderer.showToast(`🔓 Пользователь ${userId} разблокирован`, 'success', 2000);
-        }
-        const tab = adminRegistry.getInstance('security') as AdminSecurityTab;
-        if (tab) {
-          await tab.loadData();
-          const container = document.querySelector('.admin-security-tab');
-          if (container) {
-            container.outerHTML = tab.render();
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[AdminSecurityTab] Error unblocking user:', err);
-      if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('⚠️ Ошибка разблокировки', 'error', 2000);
-      }
-    }
-  }
-
   async refresh(): Promise<void> {
     await this.loadData();
-    const container = document.querySelector('.admin-security-tab');
-    if (container) {
-      container.outerHTML = this.render();
-    }
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('🔄 Данные обновлены', 'info', 1500);
-    }
   }
 
   onShow(): void {
-    this.refresh();
+    this.loadData();
   }
 
   destroy(): void {
     // Очистка
   }
 }
-
-// ✅ ПРИВЯЗЫВАЕМ К WINDOW
-(window as any).AdminSecurityTab = {
-  blockUser: AdminSecurityTab.blockUser,
-  unblockUser: AdminSecurityTab.unblockUser,
-  refresh: () => {
-    const tab = adminRegistry.getInstance('security') as AdminSecurityTab;
-    if (tab) tab.refresh();
-  }
-};
-
-// Регистрируем вкладку
-adminRegistry.register('security', AdminSecurityTab);
