@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.0.1 — исправлен types
+// Версия: 13.0.2 — today_bonus_added в модалке стрика
 // ============================================
 
 import './config';
@@ -483,8 +483,9 @@ async function initApp(): Promise<void> {
             const result = await authService.checkSubscription();
             updateSplashProgress(70, '🔐 Проверка подписки...');
 
-            // ✅ ИСПРАВЛЕНО: используем (result as any)
+            // ✅ Берём и текущий баланс, и сколько начислили сегодня
             const tokenInfo = (result as any).tokens || { bonus: 0, permanent: 0 };
+            const todayBonusAdded = (result as any).today_bonus_added || 0;
             const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
             const needFullReload = authService.needFullReload(result.syncToken);
 
@@ -527,10 +528,11 @@ async function initApp(): Promise<void> {
                     console.log('📊 [initApp] Результат daily_login:', loginResult);
 
                     if (loginResult.success && loginResult.claimed) {
-                        const bonusTokens = tokenInfo.bonus || 0;
+                        // Показываем именно то, что начислили сегодня
+                        const bonusTokens = todayBonusAdded;
 
                         setTimeout(() => {
-                            console.log('🎯 Показываем модалку стрика...');
+                            console.log('🎯 Показываем модалку стрика...', { streak: loginResult.streak, bonusTokens });
                             showStreakModal(
                                 loginResult.streak,
                                 loginResult.bonus,
@@ -826,4 +828,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v13.0.1 полностью загружен');
+console.log('✅ app.ts v13.0.2 полностью загружен');
