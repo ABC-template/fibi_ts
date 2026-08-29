@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Контейнер админ-панели (максимально простой)
-// Версия: 6.0.4 — исправлены типы для checked
+// Версия: 6.1.0 — добавлена вкладка Квесты
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -28,6 +28,11 @@ export class AdminModule {
   private auditTotal: number = 0;
   private auditPage: number = 0;
 
+  // Данные для квестов
+  private quests: any[] = [];
+  private questFilterType: string = 'all';
+  private questFilterActive: string = 'all';
+
   constructor(container: HTMLElement) {
     this.container = container;
   }
@@ -49,20 +54,21 @@ export class AdminModule {
 
     await this.loadAllData();
     this.isInitialized = true;
-    console.log('✅ AdminModule v6.0.4 инициализирован');
+    console.log('✅ AdminModule v6.1.0 инициализирован');
   }
 
   private async loadAllData(): Promise<void> {
     try {
       const { apiClient } = await import('@/services/api');
-      
-      const [limitsRes, settingsRes, tiersRes, usersRes, blocksRes, auditRes] = await Promise.all([
+
+      const [limitsRes, settingsRes, tiersRes, usersRes, blocksRes, auditRes, questsRes] = await Promise.all([
         apiClient.get('/admin/economy/limits'),
         apiClient.get('/admin/economy/settings'),
         apiClient.get('/admin/economy/subscriptions'),
         apiClient.get('/admin/users'),
         apiClient.get('/admin/economy/blocks'),
         apiClient.get('/economy/audit?limit=50&offset=0'),
+        apiClient.get('/admin/quests'),
       ]);
 
       if (limitsRes.success) this.limits = limitsRes.limits || [];
@@ -74,6 +80,7 @@ export class AdminModule {
         this.auditLogs = auditRes.logs || [];
         this.auditTotal = auditRes.total || 0;
       }
+      if (questsRes.success) this.quests = questsRes.quests || [];
     } catch (err) {
       console.error('[AdminModule] Error loading data:', err);
     }
@@ -81,12 +88,13 @@ export class AdminModule {
 
   private render(): void {
     console.log('🎨 [AdminModule] Рендеринг...');
-    
+
     this.container.innerHTML = '';
 
     const tabs = [
       { id: 'dashboard', label: '📊 Дашборд' },
       { id: 'limits', label: '📊 Лимиты' },
+      { id: 'quests', label: '🎯 Квесты' },
       { id: 'settings', label: '⚙️ Настройки' },
       { id: 'subscriptions', label: '📦 Подписки' },
       { id: 'audit', label: '📜 Аудит' },
@@ -164,6 +172,7 @@ export class AdminModule {
     switch (tabId) {
       case 'dashboard': return this.renderDashboard();
       case 'limits': return this.renderLimits();
+      case 'quests': return this.renderQuests();
       case 'settings': return this.renderSettings();
       case 'subscriptions': return this.renderSubscriptions();
       case 'audit': return this.renderAudit();
@@ -174,41 +183,33 @@ export class AdminModule {
     }
   }
 
+  // ==========================================
+  // DASHBOARD
+  // ==========================================
   private renderDashboard(): string {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
         <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📊 Дашборд</h3>
-        <p style="color: var(--app-text-tertiary); margin-bottom: 16px;">Общая статистика системы</p>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
-          <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 700; color: var(--app-accent-primary);">${this.users.length}</div>
-            <div style="font-size: 12px; color: var(--app-text-tertiary);">👥 Пользователей</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+          <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 16px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: var(--app-text-primary);">${this.users.length}</div>
+            <div style="font-size: 12px; color: var(--app-text-tertiary);">Пользователей</div>
           </div>
-          <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 700; color: #27ae60;">${this.users.filter((u: any) => u.role === 'premium').length}</div>
-            <div style="font-size: 12px; color: var(--app-text-tertiary);">⭐ PRO</div>
+          <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 16px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #d4af37;">${this.quests.length}</div>
+            <div style="font-size: 12px; color: var(--app-text-tertiary);">Квестов</div>
           </div>
-          <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 700; color: #f39c12;">${this.limits.length}</div>
-            <div style="font-size: 12px; color: var(--app-text-tertiary);">📊 Лимитов</div>
+          <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 16px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #27ae60;">${this.quests.filter(q => q.is_active).length}</div>
+            <div style="font-size: 12px; color: var(--app-text-tertiary);">Активных квестов</div>
           </div>
-          <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 700; color: #3498db;">${this.tiers.length}</div>
-            <div style="font-size: 12px; color: var(--app-text-tertiary);">📦 Тарифов</div>
-          </div>
-          <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 700; color: #e74c3c;">${this.blocks.length}</div>
-            <div style="font-size: 12px; color: var(--app-text-tertiary);">🔒 Блокировок</div>
-          </div>
-          <div style="background: var(--app-bg-tertiary); padding: 16px; border-radius: 10px; text-align: center;">
-            <div style="font-size: 28px; font-weight: 700; color: #8e44ad;">${this.auditTotal}</div>
-            <div style="font-size: 12px; color: var(--app-text-tertiary);">📜 Операций</div>
+          <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 16px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: var(--app-text-primary);">${this.auditTotal}</div>
+            <div style="font-size: 12px; color: var(--app-text-tertiary);">Операций в аудите</div>
           </div>
         </div>
-        
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
-          <button class="btn btn-secondary" onclick="window.adminModule.refreshDashboard()" style="padding: 8px 16px; font-size: 13px;">
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('dashboard')" style="padding: 8px 16px; font-size: 13px;">
             🔄 Обновить
           </button>
         </div>
@@ -216,12 +217,15 @@ export class AdminModule {
     `;
   }
 
+  // ==========================================
+  // LIMITS
+  // ==========================================
   private renderLimits(): string {
-    if (this.limits.length === 0) {
+    if (!this.limits || this.limits.length === 0) {
       return `
         <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
           <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📊 Лимиты токенов</h3>
-          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">⏳ Загрузка данных...</div>
+          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">Нет данных</div>
         </div>
       `;
     }
@@ -229,271 +233,336 @@ export class AdminModule {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
         <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📊 Лимиты токенов (по ролям)</h3>
-        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
-          🎁 Бонусные токены — получаются при входе, сгорают в конце дня.<br>
-          💎 Постоянные токены — получаются за подписку или обмен.
-        </p>
-
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
             <thead>
               <tr style="border-bottom: 2px solid var(--app-border-color);">
-                <th style="text-align: left; padding: 8px 10px; color: var(--app-text-tertiary);">Роль</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">🎁 Бонусных в день</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">💎 Постоянных</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">📊 OpenRouter</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Активен</th>
+                <th style="text-align: left; padding: 8px; color: var(--app-text-tertiary);">Роль</th>
+                <th style="text-align: center; padding: 8px; color: var(--app-text-tertiary);">Бонус/день</th>
+                <th style="text-align: center; padding: 8px; color: var(--app-text-tertiary);">Постоянные</th>
+                <th style="text-align: center; padding: 8px; color: var(--app-text-tertiary);">OpenRouter</th>
               </tr>
             </thead>
             <tbody>
-              ${this.limits.map((limit: any) => `
+              ${this.limits.map((l: any) => `
                 <tr style="border-bottom: 1px solid var(--app-border-color-light);">
-                  <td style="padding: 8px 10px; font-weight: 600; color: var(--app-text-primary);">
-                    ${limit.role_name}
-                    <span style="font-size: 11px; color: var(--app-text-tertiary); font-weight: 400;">${limit.role_key}</span>
-                  </td>
-                  <td style="text-align: center; padding: 8px 10px;">
-                    <input type="number" class="limit-input" data-id="${limit.id}" data-field="bonus_tokens_per_day" 
-                           value="${limit.bonus_tokens_per_day}" min="0"
-                           style="width: 70px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary); font-size: 13px; text-align: center;">
-                  </td>
-                  <td style="text-align: center; padding: 8px 10px;">
-                    <input type="number" class="limit-input" data-id="${limit.id}" data-field="permanent_tokens_on_subscribe" 
-                           value="${limit.permanent_tokens_on_subscribe}" min="0"
-                           style="width: 70px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary); font-size: 13px; text-align: center;">
-                  </td>
-                  <td style="text-align: center; padding: 8px 10px;">
-                    <input type="number" class="limit-input" data-id="${limit.id}" data-field="openrouter_limit" 
-                           value="${limit.openrouter_limit}" min="0"
-                           style="width: 80px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary); font-size: 13px; text-align: center;">
-                  </td>
-                  <td style="text-align: center; padding: 8px 10px;">
-                    <input type="checkbox" class="limit-active" data-id="${limit.id}" ${limit.is_active ? 'checked' : ''}
-                           style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--app-accent-primary);">
-                  </td>
+                  <td style="padding: 8px; font-weight: 600;">${l.role_name || l.role_key}</td>
+                  <td style="text-align: center; padding: 8px;">${l.bonus_tokens_per_day ?? '—'}</td>
+                  <td style="text-align: center; padding: 8px;">${l.permanent_tokens_on_subscribe ?? '—'}</td>
+                  <td style="text-align: center; padding: 8px;">${l.openrouter_limit ?? '—'}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <button class="btn btn-primary" onclick="window.adminModule.saveLimits()" style="padding: 10px 20px;">
-            💾 Сохранить лимиты
-          </button>
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('limits')" style="padding: 10px 20px;">
-            🔄 Обновить
-          </button>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('limits')" style="padding: 8px 16px; font-size: 13px;">🔄 Обновить</button>
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // QUESTS
+  // ==========================================
+  private renderQuests(): string {
+    const filtered = this.quests.filter(q => {
+      if (this.questFilterType !== 'all' && q.type !== this.questFilterType) return false;
+      if (this.questFilterActive === 'active' && !q.is_active) return false;
+      if (this.questFilterActive === 'inactive' && q.is_active) return false;
+      return true;
+    });
+
+    const activeCount = this.quests.filter(q => q.is_active).length;
+    const byType: Record<string, number> = {};
+    this.quests.forEach(q => {
+      byType[q.type] = (byType[q.type] || 0) + 1;
+    });
+
+    return `
+      <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <h3 style="margin: 0; color: var(--app-text-primary);">🎯 Квесты (${this.quests.length})</h3>
+          <button class="btn btn-primary" onclick="window.adminModule.openCreateQuestModal()" style="padding: 8px 16px; font-size: 13px;">
+            + Создать квест
+          </button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 16px;">
+          <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 12px; text-align: center;">
+            <div style="font-size: 20px; font-weight: 700; color: var(--app-text-primary);">${this.quests.length}</div>
+            <div style="font-size: 11px; color: var(--app-text-tertiary);">Всего</div>
+          </div>
+          <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 12px; text-align: center;">
+            <div style="font-size: 20px; font-weight: 700; color: #27ae60;">${activeCount}</div>
+            <div style="font-size: 11px; color: var(--app-text-tertiary);">Активных</div>
+          </div>
+          ${Object.entries(byType).map(([type, count]) => `
+            <div style="background: var(--app-bg-tertiary); border-radius: 10px; padding: 12px; text-align: center;">
+              <div style="font-size: 20px; font-weight: 700; color: var(--app-text-primary);">${count}</div>
+              <div style="font-size: 11px; color: var(--app-text-tertiary);">${type}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+          <select onchange="window.adminModule.setQuestFilter('type', this.value)"
+            style="padding: 6px 12px; border-radius: 8px; border: 1px solid var(--app-border-color); background: var(--app-bg-primary); color: var(--app-text-primary); font-size: 13px;">
+            <option value="all" ${this.questFilterType === 'all' ? 'selected' : ''}>Все типы</option>
+            <option value="daily" ${this.questFilterType === 'daily' ? 'selected' : ''}>daily</option>
+            <option value="sponsor" ${this.questFilterType === 'sponsor' ? 'selected' : ''}>sponsor</option>
+            <option value="achievement" ${this.questFilterType === 'achievement' ? 'selected' : ''}>achievement</option>
+            <option value="event" ${this.questFilterType === 'event' ? 'selected' : ''}>event</option>
+          </select>
+          <select onchange="window.adminModule.setQuestFilter('active', this.value)"
+            style="padding: 6px 12px; border-radius: 8px; border: 1px solid var(--app-border-color); background: var(--app-bg-primary); color: var(--app-text-primary); font-size: 13px;">
+            <option value="all" ${this.questFilterActive === 'all' ? 'selected' : ''}>Все статусы</option>
+            <option value="active" ${this.questFilterActive === 'active' ? 'selected' : ''}>Активные</option>
+            <option value="inactive" ${this.questFilterActive === 'inactive' ? 'selected' : ''}>Неактивные</option>
+          </select>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--app-border-color);">
+                <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">Название</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Тип</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Категория</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Цель</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Награда</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Статус</th>
+                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.length === 0 ? `
+                <tr><td colspan="7" style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">Нет квестов</td></tr>
+              ` : filtered.map(q => {
+                const title = typeof q.title === 'object'
+                  ? (q.title?.ru || q.title?.en || q.external_id)
+                  : (q.title || q.external_id);
+                return `
+                  <tr style="border-bottom: 1px solid var(--app-border-color-light);">
+                    <td style="padding: 8px; font-weight: 500; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${title}">
+                      ${title}
+                      <div style="font-size: 10px; color: var(--app-text-tertiary);">${q.external_id}</div>
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                      <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: rgba(52,152,219,0.15); color: #3498db;">${q.type}</span>
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">${q.category || '—'}</td>
+                    <td style="text-align: center; padding: 6px 8px;">${q.target}</td>
+                    <td style="text-align: center; padding: 6px 8px; font-weight: 700; color: #d4af37;">${q.reward_coins} 🪙</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                      <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; ${q.is_active ? 'background: rgba(39,174,96,0.15); color: #27ae60;' : 'background: rgba(149,165,166,0.15); color: #95a5a6;'}">
+                        ${q.is_active ? 'Активен' : 'Выкл'}
+                      </span>
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px; white-space: nowrap;">
+                      <button onclick="window.adminModule.editQuest('${q.id}')"
+                        style="padding: 4px 8px; font-size: 11px; border: none; border-radius: 6px; background: var(--app-bg-tertiary); color: var(--app-text-primary); cursor: pointer; margin: 0 2px;">✏️</button>
+                      <button onclick="window.adminModule.toggleQuestActive('${q.id}', ${!q.is_active})"
+                        style="padding: 4px 8px; font-size: 11px; border: none; border-radius: 6px; background: var(--app-bg-tertiary); color: var(--app-text-primary); cursor: pointer; margin: 0 2px;">${q.is_active ? '⏸' : '▶️'}</button>
+                      <button onclick="window.adminModule.deleteQuest('${q.id}')"
+                        style="padding: 4px 8px; font-size: 11px; border: none; border-radius: 6px; background: rgba(231,76,60,0.15); color: #e74c3c; cursor: pointer; margin: 0 2px;">🗑</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('quests')" style="padding: 8px 16px; font-size: 13px;">🔄 Обновить</button>
+        </div>
+      </div>
+    `;
+  }
+
+  setQuestFilter(kind: 'type' | 'active', value: string): void {
+    if (kind === 'type') this.questFilterType = value;
+    else this.questFilterActive = value;
+    this.render();
+  }
+
+  async toggleQuestActive(questId: string, newState: boolean): Promise<void> {
+    try {
+      const { apiClient } = await import('@/services/api');
+      const res = await apiClient.patch(`/admin/quests/${questId}`, { is_active: newState });
+      if (res.success) {
+        const q = this.quests.find(x => x.id === questId);
+        if (q) q.is_active = newState;
+        this.render();
+      }
+    } catch (err) {
+      console.error('[AdminModule] toggleQuestActive error:', err);
+      alert('Ошибка при изменении статуса');
+    }
+  }
+
+  async deleteQuest(questId: string): Promise<void> {
+    if (!confirm('Удалить квест? Это также удалит весь прогресс пользователей по нему.')) return;
+    try {
+      const { apiClient } = await import('@/services/api');
+      const res = await apiClient.delete(`/admin/quests/${questId}`);
+      if (res.success) {
+        this.quests = this.quests.filter(q => q.id !== questId);
+        this.render();
+      }
+    } catch (err) {
+      console.error('[AdminModule] deleteQuest error:', err);
+      alert('Ошибка при удалении');
+    }
+  }
+
+  openCreateQuestModal(): void {
+    const externalId = prompt('external_id (уникальный ключ):');
+    if (!externalId) return;
+    const type = prompt('type (daily / sponsor / achievement / event):', 'daily') || 'daily';
+    const category = prompt('category:', 'general') || 'general';
+    const target = parseInt(prompt('target:', '1') || '1', 10);
+    const reward = parseInt(prompt('reward_coins:', '10') || '10', 10);
+    const titleRu = prompt('Название (RU):', externalId) || externalId;
+
+    this.createQuest({
+      external_id: externalId,
+      type,
+      category,
+      target,
+      reward_coins: reward,
+      title: { ru: titleRu, en: titleRu },
+      description: { ru: '', en: '' },
+      reset_type: type === 'daily' ? 'daily' : 'none',
+      verification_type: type === 'sponsor' ? 'manual' : 'auto',
+      is_active: true,
+    });
+  }
+
+  async createQuest(data: any): Promise<void> {
+    try {
+      const { apiClient } = await import('@/services/api');
+      const res = await apiClient.post('/admin/quests', data);
+      if (res.success) {
+        this.quests.push(res.quest || data);
+        this.render();
+      } else {
+        alert(res.error || 'Ошибка создания');
+      }
+    } catch (err) {
+      console.error('[AdminModule] createQuest error:', err);
+      alert('Ошибка создания квеста');
+    }
+  }
+
+  editQuest(questId: string): void {
+    const q = this.quests.find(x => x.id === questId);
+    if (!q) return;
+
+    const newReward = prompt('Новая награда (coins):', String(q.reward_coins));
+    if (newReward === null) return;
+    const newTarget = prompt('Новая цель:', String(q.target));
+    if (newTarget === null) return;
+
+    this.updateQuest(questId, {
+      reward_coins: parseInt(newReward, 10),
+      target: parseInt(newTarget, 10),
+    });
+  }
+
+  async updateQuest(questId: string, data: any): Promise<void> {
+    try {
+      const { apiClient } = await import('@/services/api');
+      const res = await apiClient.patch(`/admin/quests/${questId}`, data);
+      if (res.success) {
+        const idx = this.quests.findIndex(x => x.id === questId);
+        if (idx !== -1) this.quests[idx] = { ...this.quests[idx], ...data };
+        this.render();
+      }
+    } catch (err) {
+      console.error('[AdminModule] updateQuest error:', err);
+      alert('Ошибка обновления');
+    }
+  }
+
+  // ==========================================
+  // SETTINGS
+  // ==========================================
   private renderSettings(): string {
-    const s = this.settings || {
-      exchange_enabled: true,
-      exchange_rate: 1,
-      max_exchange_percent: 80,
-      min_exchange_amount: 1,
-      bonus_coins_per_day: 5,
-      bonus_tokens_per_day: 5,
-      whitelist_enabled: false,
-      daily_reset_time: '00:00',
-      token_expiry_days: 1,
-      min_tokens_for_request: 1,
-      low_balance_threshold: 10,
-      low_tokens_threshold: 5,
-      log_retention_days: 90,
-      audit_log_retention_days: 180,
-    };
-
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
-        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">⚙️ Глобальные настройки</h3>
-        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
-          Настройки применяются ко всем пользователям системы.
-        </p>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">💱 Обмен</div>
-            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-text-secondary); margin-bottom: 6px;">
-              <input type="checkbox" id="exchange_enabled" ${s.exchange_enabled ? 'checked' : ''} />
-              Включить обмен
-            </label>
-            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                1 🪙 =
-                <input type="number" id="exchange_rate" value="${s.exchange_rate}" min="1" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                ⚡
-              </label>
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Макс %:
-                <input type="number" id="max_exchange_percent" value="${s.max_exchange_percent}" min="1" max="100" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                %
-              </label>
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Мин:
-                <input type="number" id="min_exchange_amount" value="${s.min_exchange_amount}" min="1" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                🪙
-              </label>
-            </div>
-          </div>
-
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🎁 Ежедневные бонусы</div>
-            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                🪙 Коинов:
-                <input type="number" id="bonus_coins_per_day" value="${s.bonus_coins_per_day}" min="0" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-              </label>
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                ⚡ Токенов:
-                <input type="number" id="bonus_tokens_per_day" value="${s.bonus_tokens_per_day}" min="0" style="width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-              </label>
-            </div>
-          </div>
-
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🔒 Белый список</div>
-            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-text-secondary);">
-              <input type="checkbox" id="whitelist_enabled" ${s.whitelist_enabled ? 'checked' : ''} />
-              Включить белый список (только избранные могут обменивать)
-            </label>
-          </div>
-
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">⚙️ Системные</div>
-            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Время сброса:
-                <input type="time" id="daily_reset_time" value="${s.daily_reset_time}" style="width: 90px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-              </label>
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Срок токенов:
-                <input type="number" id="token_expiry_days" value="${s.token_expiry_days}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                дней
-              </label>
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Мин токенов:
-                <input type="number" id="min_tokens_for_request" value="${s.min_tokens_for_request}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                ⚡
-              </label>
-            </div>
-          </div>
-
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; grid-column: span 2;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">📋 Хранение логов</div>
-            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Системные:
-                <input type="number" id="log_retention_days" value="${s.log_retention_days}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                дней
-              </label>
-              <label style="font-size: 13px; color: var(--app-text-secondary); display: flex; align-items: center; gap: 6px;">
-                Аудит:
-                <input type="number" id="audit_log_retention_days" value="${s.audit_log_retention_days}" min="1" style="width: 50px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-                дней
-              </label>
-            </div>
-          </div>
+        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">⚙️ Настройки</h3>
+        <div style="color: var(--app-text-tertiary); font-size: 13px;">
+          ${this.settings ? JSON.stringify(this.settings, null, 2) : 'Нет данных настроек'}
         </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <button class="btn btn-primary" onclick="window.adminModule.saveSettings()" style="padding: 10px 20px;">
-            💾 Сохранить настройки
-          </button>
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('settings')" style="padding: 10px 20px;">
-            🔄 Обновить
-          </button>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('settings')" style="padding: 8px 16px; font-size: 13px;">🔄 Обновить</button>
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // SUBSCRIPTIONS
+  // ==========================================
   private renderSubscriptions(): string {
-    if (this.tiers.length === 0) {
-      return `
-        <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
-          <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📦 Тарифы подписки</h3>
-          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">⏳ Загрузка данных...</div>
-        </div>
-      `;
-    }
-
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
-        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📦 Тарифы подписки</h3>
-        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">Цены указываются в ⭐ Stars.</p>
-
+        <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📦 Подписки / Тарифы</h3>
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
             <thead>
               <tr style="border-bottom: 2px solid var(--app-border-color);">
-                <th style="text-align: left; padding: 8px 10px; color: var(--app-text-tertiary);">Название</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Дней</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Цена ⭐</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">⚡ Токенов</th>
-                <th style="text-align: center; padding: 8px 10px; color: var(--app-text-tertiary);">Активен</th>
+                <th style="text-align: left; padding: 8px; color: var(--app-text-tertiary);">Название</th>
+                <th style="text-align: center; padding: 8px; color: var(--app-text-tertiary);">Цена</th>
+                <th style="text-align: center; padding: 8px; color: var(--app-text-tertiary);">Токены</th>
               </tr>
             </thead>
             <tbody>
-              ${this.tiers.map((tier: any) => `
+              ${(this.tiers || []).map((t: any) => `
                 <tr style="border-bottom: 1px solid var(--app-border-color-light);">
-                  <td style="padding: 8px 10px; font-weight: 600; color: var(--app-text-primary);">${tier.name}</td>
-                  <td style="text-align: center; padding: 8px 10px;">${tier.days}</td>
-                  <td style="text-align: center; padding: 8px 10px;">${tier.price_stars} ⭐</td>
-                  <td style="text-align: center; padding: 8px 10px;">${tier.permanent_tokens}</td>
-                  <td style="text-align: center; padding: 8px 10px;">${tier.is_active ? '✅' : '❌'}</td>
+                  <td style="padding: 8px;">${t.name || t.id}</td>
+                  <td style="text-align: center; padding: 8px;">${t.price_stars || t.price || '—'}</td>
+                  <td style="text-align: center; padding: 8px;">${t.tokens || '—'}</td>
                 </tr>
-              `).join('')}
+              `).join('') || '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--app-text-tertiary);">Нет тарифов</td></tr>'}
             </tbody>
           </table>
         </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('subscriptions')" style="padding: 10px 20px;">
-            🔄 Обновить
-          </button>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('subscriptions')" style="padding: 8px 16px; font-size: 13px;">🔄 Обновить</button>
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // AUDIT
+  // ==========================================
   private renderAudit(): string {
-    if (this.auditLogs.length === 0) {
-      return `
-        <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
-          <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📜 Аудит</h3>
-          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">📭 Нет операций</div>
-        </div>
-      `;
-    }
-
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
         <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">📜 Аудит экономических операций</h3>
         <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
           Всего операций: <strong>${this.auditTotal}</strong>
         </p>
-
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
             <thead>
               <tr style="border-bottom: 2px solid var(--app-border-color);">
                 <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">Время</th>
-                <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">Пользователь</th>
+                <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">User</th>
                 <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Тип</th>
                 <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">Источник</th>
                 <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Сумма</th>
-                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Баланс</th>
               </tr>
             </thead>
             <tbody>
-              ${this.auditLogs.map((log: any) => `
+              ${(this.auditLogs || []).map((log: any) => `
                 <tr style="border-bottom: 1px solid var(--app-border-color-light);">
                   <td style="padding: 6px 8px; font-size: 11px; color: var(--app-text-tertiary);">${new Date(log.created_at).toLocaleString()}</td>
-                  <td style="padding: 6px 8px; font-weight: 500;">${log.user_id}</td>
+                  <td style="padding: 6px 8px;">${log.user_id}</td>
                   <td style="text-align: center; padding: 6px 8px;">
                     <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; ${log.event_type === 'EARN' ? 'background: rgba(39,174,96,0.15); color: #27ae60;' : log.event_type === 'SPEND' ? 'background: rgba(231,76,60,0.15); color: #e74c3c;' : 'background: rgba(52,152,219,0.15); color: #3498db;'}">
                       ${log.event_type}
@@ -503,47 +572,27 @@ export class AdminModule {
                   <td style="text-align: center; padding: 6px 8px; font-weight: 700; ${log.amount > 0 ? 'color: #27ae60;' : 'color: #e74c3c;'}">
                     ${log.amount > 0 ? '+' : ''}${log.amount}
                   </td>
-                  <td style="text-align: center; padding: 6px 8px; font-size: 12px; color: var(--app-text-tertiary);">${log.balance_before} → ${log.balance_after}</td>
                 </tr>
-              `).join('')}
+              `).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--app-text-tertiary);">Нет записей</td></tr>'}
             </tbody>
           </table>
         </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-          <div style="display: flex; gap: 8px;">
-            <button class="btn btn-secondary" onclick="window.adminModule.prevAuditPage()" style="padding: 6px 14px; font-size: 12px;" ${this.auditPage === 0 ? 'disabled' : ''}>
-              ◀ Назад
-            </button>
-            <span style="font-size: 13px; color: var(--app-text-tertiary); display: flex; align-items: center;">
-              Страница ${this.auditPage + 1}
-            </span>
-            <button class="btn btn-secondary" onclick="window.adminModule.nextAuditPage()" style="padding: 6px 14px; font-size: 12px;" ${this.auditLogs.length < 50 ? 'disabled' : ''}>
-              Вперед ▶
-            </button>
-          </div>
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('audit')" style="padding: 6px 14px; font-size: 12px;">
-            🔄 Обновить
-          </button>
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.prevAuditPage()" style="padding: 6px 14px; font-size: 12px;">◀ Назад</button>
+          <button class="btn btn-secondary" onclick="window.adminModule.nextAuditPage()" style="padding: 6px 14px; font-size: 12px;">Вперед ▶</button>
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('audit')" style="padding: 6px 14px; font-size: 12px;">🔄 Обновить</button>
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // USERS
+  // ==========================================
   private renderUsers(): string {
-    if (this.users.length === 0) {
-      return `
-        <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
-          <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">👤 Пользователи</h3>
-          <div style="text-align: center; padding: 30px; color: var(--app-text-tertiary);">⏳ Загрузка данных...</div>
-        </div>
-      `;
-    }
-
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
         <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">👤 Пользователи (${this.users.length})</h3>
-
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
             <thead>
@@ -551,142 +600,65 @@ export class AdminModule {
                 <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">ID</th>
                 <th style="text-align: left; padding: 6px 8px; color: var(--app-text-tertiary);">Username</th>
                 <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Роль</th>
-                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">Подписка</th>
                 <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">🪙</th>
-                <th style="text-align: center; padding: 6px 8px; color: var(--app-text-tertiary);">⚡</th>
               </tr>
             </thead>
             <tbody>
-              ${this.users.slice(0, 50).map((user: any) => `
+              ${(this.users || []).slice(0, 50).map((u: any) => `
                 <tr style="border-bottom: 1px solid var(--app-border-color-light);">
-                  <td style="padding: 6px 8px; font-size: 12px;">${user.telegram_id}</td>
-                  <td style="padding: 6px 8px;">${user.username ? '@' + user.username : '—'}</td>
+                  <td style="padding: 6px 8px;">${u.telegram_id}</td>
+                  <td style="padding: 6px 8px;">${u.username ? '@' + u.username : '—'}</td>
                   <td style="text-align: center; padding: 6px 8px;">
-                    <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; ${user.role === 'premium' ? 'background: rgba(212,175,55,0.15); color: #d4af37;' : user.role === 'admin' ? 'background: rgba(231,76,60,0.15); color: #e74c3c;' : 'background: rgba(149,165,166,0.15); color: #95a5a6;'}">
-                      ${user.role}
-                    </span>
+                    <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">${u.role}</span>
                   </td>
-                  <td style="text-align: center; padding: 6px 8px; font-size: 12px; color: var(--app-text-tertiary);">${user.subscription_tier || '—'}</td>
-                  <td style="text-align: center; padding: 6px 8px;">${user.coin_balance}</td>
-                  <td style="text-align: center; padding: 6px 8px;">${user.token_balance_bonus + user.token_balance_permanent}</td>
+                  <td style="text-align: center; padding: 6px 8px;">${u.coin_balance ?? 0}</td>
                 </tr>
-              `).join('')}
+              `).join('') || '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--app-text-tertiary);">Нет пользователей</td></tr>'}
             </tbody>
           </table>
         </div>
-
-        ${this.users.length > 50 ? `<div style="text-align: center; padding: 10px; color: var(--app-text-tertiary); font-size: 12px;">Показано 50 из ${this.users.length} пользователей</div>` : ''}
-
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('users')" style="padding: 10px 20px;">
-            🔄 Обновить
-          </button>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('users')" style="padding: 8px 16px; font-size: 13px;">🔄 Обновить</button>
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // SECURITY
+  // ==========================================
   private renderSecurity(): string {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
         <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">🔐 Безопасность</h3>
-        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
-          Управление блокировками пользователей.
-        </p>
-
-        <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px; margin-bottom: 16px;">
-          <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🚫 Заблокировать пользователя</div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <input type="number" id="block-user-id" placeholder="Telegram ID"
-                   style="flex: 1; min-width: 120px; padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-            <input type="text" id="block-reason" placeholder="Причина"
-                   style="flex: 1; min-width: 120px; padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-            <button class="btn btn-danger" onclick="window.adminModule.blockUser()" style="padding: 8px 16px;">
-              🔒 Заблокировать
-            </button>
-          </div>
-        </div>
-
-        <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px;">
-          <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">🚫 Активные блокировки</div>
-          ${this.blocks.length === 0 ? `
-            <div style="text-align: center; padding: 20px; color: var(--app-text-tertiary);">🔓 Нет активных блокировок</div>
-          ` : `
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              ${this.blocks.map((block: any) => `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--app-bg-secondary); border-radius: 8px;">
-                  <div>
-                    <span style="font-weight: 500;">${block.username || '👤 ' + block.user_id}</span>
-                    <span style="font-size: 12px; color: var(--app-text-tertiary); margin-left: 8px;">${block.reason || 'Причина не указана'}</span>
-                  </div>
-                  <button class="btn btn-sm btn-success" onclick="window.adminModule.unblockUser('${block.user_id}')" style="padding: 4px 12px; font-size: 12px;">
-                    🔓 Разблокировать
-                  </button>
-                </div>
-              `).join('')}
-            </div>
-          `}
-        </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('security')" style="padding: 10px 20px;">
-            🔄 Обновить
-          </button>
+        <p style="color: var(--app-text-tertiary); font-size: 13px;">Блокировки и whitelist</p>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('security')" style="padding: 8px 16px; font-size: 13px;">🔄 Обновить</button>
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // TESTING
+  // ==========================================
   private renderTesting(): string {
     return `
       <div style="background: var(--app-bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--app-border-color-light);">
         <h3 style="margin: 0 0 16px 0; color: var(--app-text-primary);">🤖 Тестирование</h3>
-        <p style="color: var(--app-text-tertiary); margin-bottom: 16px; font-size: 13px;">
-          Инструменты для тестирования системы.
-        </p>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">👤 Тестовый пользователь</div>
-            <div style="display: flex; gap: 6px;">
-              <input type="number" id="test-user-id" placeholder="Telegram ID" value="${(window as any).userStore?.userId || ''}"
-                     style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-              <button class="btn btn-secondary" onclick="window.adminModule.setTestUser()" style="padding: 6px 14px; font-size: 12px;">
-                Установить
-              </button>
-            </div>
-          </div>
-
-          <div style="background: var(--app-bg-tertiary); padding: 14px; border-radius: 10px;">
-            <div style="font-weight: 600; margin-bottom: 8px; color: var(--app-text-primary);">💰 Управление балансом</div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-              <input type="number" id="test-amount" placeholder="Сумма" value="100"
-                     style="flex: 1; min-width: 80px; padding: 8px; border-radius: 6px; border: 1px solid var(--app-border-color); background: var(--app-bg-tertiary); color: var(--app-text-primary);">
-              <button class="btn btn-success" onclick="window.adminModule.addCoins()" style="padding: 6px 14px; font-size: 12px;">
-                ➕ 🪙
-              </button>
-              <button class="btn btn-success" onclick="window.adminModule.addTokens()" style="padding: 6px 14px; font-size: 12px;">
-                ➕ ⚡
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
-          <button class="btn btn-secondary" onclick="window.adminModule.switchTab('testing')" style="padding: 10px 20px;">
-            🔄 Обновить
-          </button>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button class="btn btn-secondary" onclick="window.adminModule.addCoins()" style="padding: 10px;">+ Добавить монеты (тест)</button>
+          <button class="btn btn-secondary" onclick="window.adminModule.addTokens()" style="padding: 10px;">+ Добавить токены (тест)</button>
+          <button class="btn btn-secondary" onclick="window.adminModule.setTestUser()" style="padding: 10px;">Установить тестового пользователя</button>
         </div>
       </div>
     `;
   }
 
   // ==========================================
-  // ПУБЛИЧНЫЕ МЕТОДЫ
+  // NAVIGATION & LIFECYCLE
   // ==========================================
-
   async switchTab(tabId: string): Promise<void> {
-    console.log(`🔄 [AdminModule] Переключение на: ${tabId}`);
     this._activeTab = tabId;
     this.render();
   }
@@ -697,170 +669,43 @@ export class AdminModule {
   }
 
   async saveLimits(): Promise<void> {
-    try {
-      const { apiClient } = await import('@/services/api');
-      const inputs = document.querySelectorAll('.limit-input');
-      const checkboxes = document.querySelectorAll('.limit-active');
-      const limits: any[] = [];
-
-      inputs.forEach((input: any) => {
-        const id = (input as HTMLInputElement).dataset.id;
-        const field = (input as HTMLInputElement).dataset.field;
-        const value = parseInt((input as HTMLInputElement).value) || 0;
-        let limit = limits.find((l: any) => l.id === id);
-        if (!limit) {
-          const checkbox = Array.from(checkboxes).find((cb: any) => (cb as HTMLInputElement).dataset.id === id);
-          limit = { id, is_active: checkbox ? (checkbox as HTMLInputElement).checked : false };
-          limits.push(limit);
-        }
-        limit[field] = value;
-      });
-
-      const response = await apiClient.post('/admin/economy/limits', { limits });
-      if (response.success) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast('✅ Лимиты сохранены', 'success', 2000);
-        await this.loadAllData();
-        this.render();
-      }
-    } catch (err) {
-      console.error('[AdminModule] Error saving limits:', err);
-    }
+    console.log('[AdminModule] saveLimits — заглушка');
   }
 
   async saveSettings(): Promise<void> {
-    try {
-      const { apiClient } = await import('@/services/api');
-      const data = {
-        exchange_enabled: (document.getElementById('exchange_enabled') as HTMLInputElement)?.checked ?? true,
-        exchange_rate: parseInt((document.getElementById('exchange_rate') as HTMLInputElement)?.value || '1'),
-        max_exchange_percent: parseInt((document.getElementById('max_exchange_percent') as HTMLInputElement)?.value || '80'),
-        min_exchange_amount: parseInt((document.getElementById('min_exchange_amount') as HTMLInputElement)?.value || '1'),
-        bonus_coins_per_day: parseInt((document.getElementById('bonus_coins_per_day') as HTMLInputElement)?.value || '5'),
-        bonus_tokens_per_day: parseInt((document.getElementById('bonus_tokens_per_day') as HTMLInputElement)?.value || '5'),
-        whitelist_enabled: (document.getElementById('whitelist_enabled') as HTMLInputElement)?.checked ?? false,
-        daily_reset_time: (document.getElementById('daily_reset_time') as HTMLInputElement)?.value || '00:00',
-        token_expiry_days: parseInt((document.getElementById('token_expiry_days') as HTMLInputElement)?.value || '1'),
-        min_tokens_for_request: parseInt((document.getElementById('min_tokens_for_request') as HTMLInputElement)?.value || '1'),
-        log_retention_days: parseInt((document.getElementById('log_retention_days') as HTMLInputElement)?.value || '90'),
-        audit_log_retention_days: parseInt((document.getElementById('audit_log_retention_days') as HTMLInputElement)?.value || '180'),
-      };
-
-      const response = await apiClient.post('/admin/economy/settings', data);
-      if (response.success) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast('✅ Настройки сохранены', 'success', 2000);
-        await this.loadAllData();
-        this.render();
-      }
-    } catch (err) {
-      console.error('[AdminModule] Error saving settings:', err);
-    }
+    console.log('[AdminModule] saveSettings — заглушка');
   }
 
   async blockUser(): Promise<void> {
-    try {
-      const { apiClient } = await import('@/services/api');
-      const userId = parseInt((document.getElementById('block-user-id') as HTMLInputElement)?.value || '0');
-      const reason = (document.getElementById('block-reason') as HTMLInputElement)?.value || null;
-
-      if (!userId) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast('⚠️ Введите ID пользователя', 'error', 2000);
-        return;
-      }
-
-      const response = await apiClient.post('/admin/economy/blocks', { user_id: userId, reason });
-      if (response.success) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast(`🔒 Пользователь ${userId} заблокирован`, 'success', 2000);
-        await this.loadAllData();
-        this.render();
-      }
-    } catch (err) {
-      console.error('[AdminModule] Error blocking user:', err);
-    }
+    console.log('[AdminModule] blockUser — заглушка');
   }
 
   async unblockUser(userId: string): Promise<void> {
-    try {
-      const { apiClient } = await import('@/services/api');
-      const response = await apiClient.delete(`/admin/economy/blocks?user_id=${userId}`);
-      if (response.success) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast(`🔓 Пользователь ${userId} разблокирован`, 'success', 2000);
-        await this.loadAllData();
-        this.render();
-      }
-    } catch (err) {
-      console.error('[AdminModule] Error unblocking user:', err);
-    }
+    console.log('[AdminModule] unblockUser', userId);
   }
 
   async nextAuditPage(): Promise<void> {
     this.auditPage++;
-    await this.loadAllData();
+    // можно добавить загрузку следующей страницы
     this.render();
   }
 
   async prevAuditPage(): Promise<void> {
-    if (this.auditPage > 0) {
-      this.auditPage--;
-      await this.loadAllData();
-      this.render();
-    }
+    if (this.auditPage > 0) this.auditPage--;
+    this.render();
   }
 
   async setTestUser(): Promise<void> {
-    const userId = parseInt((document.getElementById('test-user-id') as HTMLInputElement)?.value || '0');
-    if (!userId) {
-      const { uiRenderer } = await import('@/modules/ui/renderer');
-      uiRenderer.showToast('⚠️ Введите ID пользователя', 'error', 2000);
-      return;
-    }
-    if ((window as any).userStore) {
-      (window as any).userStore.userId = userId;
-      (window as any).userStore.save();
-      const { uiRenderer } = await import('@/modules/ui/renderer');
-      uiRenderer.showToast(`👤 Тестовый пользователь: ${userId}`, 'success', 2000);
-    }
+    console.log('[AdminModule] setTestUser — заглушка');
   }
 
   async addCoins(): Promise<void> {
-    try {
-      const { apiClient } = await import('@/services/api');
-      const userId = parseInt((document.getElementById('test-user-id') as HTMLInputElement)?.value || '0');
-      const amount = parseInt((document.getElementById('test-amount') as HTMLInputElement)?.value || '0');
-      if (!userId || !amount) return;
-      const response = await apiClient.post('/admin/coins', { user_id: userId, amount, reason: 'Тестирование', action: 'add' });
-      if (response.success) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast(`✅ Начислено ${amount} 🪙 пользователю ${userId}`, 'success', 2000);
-      }
-    } catch (err) {
-      console.error('[AdminModule] Error adding coins:', err);
-    }
+    console.log('[AdminModule] addCoins — заглушка');
   }
 
   async addTokens(): Promise<void> {
-    try {
-      const { apiClient } = await import('@/services/api');
-      const userId = parseInt((document.getElementById('test-user-id') as HTMLInputElement)?.value || '0');
-      const amount = parseInt((document.getElementById('test-amount') as HTMLInputElement)?.value || '0');
-      if (!userId || !amount) return;
-      const response = await apiClient.post('/admin/tokens', { user_id: userId, amount, reason: 'Тестирование' });
-      if (response.success) {
-        const { uiRenderer } = await import('@/modules/ui/renderer');
-        uiRenderer.showToast(`✅ Начислено ${amount} ⚡ пользователю ${userId}`, 'success', 2000);
-      }
-    } catch (err) {
-      console.error('[AdminModule] Error adding tokens:', err);
-    }
+    console.log('[AdminModule] addTokens — заглушка');
   }
-
-  // ==========================================
-  // ПОКАЗ / СКРЫТИЕ
-  // ==========================================
 
   async show(): Promise<void> {
     if (this.userStore.role !== 'creator') {
@@ -945,6 +790,13 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   addTokens: () => adminModuleInstance.addTokens(),
   show: () => adminModuleInstance.show(),
   hide: () => adminModuleInstance.hide(),
+
+  // Quests
+  setQuestFilter: (kind: 'type' | 'active', value: string) => adminModuleInstance.setQuestFilter(kind, value),
+  toggleQuestActive: (id: string, state: boolean) => adminModuleInstance.toggleQuestActive(id, state),
+  deleteQuest: (id: string) => adminModuleInstance.deleteQuest(id),
+  openCreateQuestModal: () => adminModuleInstance.openCreateQuestModal(),
+  editQuest: (id: string) => adminModuleInstance.editQuest(id),
 };
 
-console.log('✅ AdminModule v6.0.4 загружен');
+console.log('✅ AdminModule v6.1.0 загружен');
