@@ -6,7 +6,7 @@
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import type { IAiAgent, IAiAgentInput, AgentModality } from '@/types/agents';
+import type { IAiAgent, IAiAgentInput, AgentModality } from '@types/agents';
 
 interface OpenRouterModelOption {
   id: string;
