@@ -12,6 +12,8 @@ export * from './user';
 // Chat
 export * from './chat';
 
+export * from './agents';
+
 // API
 export type {
   IStreamRequest,
