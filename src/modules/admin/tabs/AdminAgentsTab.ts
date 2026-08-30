@@ -1,12 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (конструктор)
-// Версия: 1.0.0
+// Версия: 1.0.1 - исправлены импорты
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import type { IAiAgent, IAiAgentInput, AgentModality } from '@types/agents';
+import type { IAiAgent, IAiAgentInput, AgentModality, ProTier } from '../../../../types/agents';
 
 interface OpenRouterModelOption {
   id: string;
@@ -430,7 +430,7 @@ export class AdminAgentsTab implements IAdminTab {
       markup_coefficient: Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value) || 3,
       min_charge: Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value) || 50,
       allowed_roles: allowedRoles,
-      min_pro_tier: (document.getElementById('agent-min-pro-tier') as HTMLSelectElement)?.value || null,
+      min_pro_tier: (document.getElementById('agent-min-pro-tier') as HTMLSelectElement)?.value as ProTier || null,
       is_active: (document.getElementById('agent-is-active') as HTMLInputElement)?.checked,
       sort_order: Number((document.getElementById('agent-sort-order') as HTMLInputElement)?.value) || 100,
     };
@@ -453,7 +453,6 @@ export class AdminAgentsTab implements IAdminTab {
         if (res.success) this.agents.push(res.agent);
       }
       this.closeModal();
-      // AdminModule сам вызовет render после proxy
     } catch (e: any) {
       alert(e?.message || 'Ошибка сохранения');
     } finally {
