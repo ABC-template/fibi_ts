@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.1.0 — все вкладки подключены
+// Версия: 7.2.0 — добавлена вкладка Агенты
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -17,6 +17,7 @@ import { AdminUsersTab } from './tabs/AdminUsersTab';
 import { AdminAuditTab } from './tabs/AdminAuditTab';
 import { AdminSecurityTab } from './tabs/AdminSecurityTab';
 import { AdminTestingTab } from './tabs/AdminTestingTab';
+import { AdminAgentsTab } from './tabs/AdminAgentsTab';
 
 export class AdminModule {
   private container: HTMLElement;
@@ -52,10 +53,11 @@ export class AdminModule {
     this.register(new AdminAuditTab());
     this.register(new AdminSecurityTab());
     this.register(new AdminTestingTab());
+    this.register(new AdminAgentsTab());
 
     await this.tabs.get(this.activeTabId)?.init();
     this.isInitialized = true;
-    console.log('✅ AdminModule v7.1.0 готов');
+    console.log('✅ AdminModule v7.2.0 готов');
   }
 
   private register(tab: IAdminTab): void {
@@ -275,7 +277,15 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   removeFromWhitelist: (userId: number) =>
     adminModuleInstance.proxy('security', 'removeWhitelist', userId),
 
-  // Testing (можно доработать под реальные API)
+  // Agents
+  setAgentFilter: (kind: 'modality' | 'active', value: string) =>
+    adminModuleInstance.proxy('agents', 'setFilter', kind, value),
+  createAgent: () => adminModuleInstance.proxy('agents', 'create'),
+  editAgent: (id: string) => adminModuleInstance.proxy('agents', 'edit', id),
+  toggleAgent: (id: string, state: boolean) =>
+    adminModuleInstance.proxy('agents', 'toggleActive', id, state),
+
+  // Testing
   testAddCoins: async () => {
     try {
       const { apiClient } = await import('@/services/api');
@@ -314,4 +324,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   },
 };
 
-console.log('✅ AdminModule v7.1.0 загружен');
+console.log('✅ AdminModule v7.2.0 загружен');
