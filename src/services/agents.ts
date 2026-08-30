@@ -5,7 +5,7 @@
 // ============================================
 
 import { apiClient } from './api';
-import type { IAiAgent, IAiAgentInput, IAiAgentWithAccess, AgentModality } from '@types/agents';
+import type { IAiAgent, IAiAgentInput, IAiAgentWithAccess, AgentModality } from '../../types/agents';
 
 export interface OpenRouterModelOption {
   id: string;
@@ -21,7 +21,7 @@ export interface OpenRouterModelOption {
  * Получить список моделей OpenRouter по modality (только для админки)
  */
 export async function fetchModelsByModality(modality: AgentModality): Promise<OpenRouterModelOption[]> {
-  const res = await apiClient.get(`/api/admin/agents/models?modality=${modality}`);
+  const res = await apiClient.get(`/admin/agents/models?modality=${modality}`);
   if (!res.success) {
     throw new Error(res.error || 'Failed to load models');
   }
@@ -32,7 +32,7 @@ export async function fetchModelsByModality(modality: AgentModality): Promise<Op
  * Получить все агенты (админка)
  */
 export async function fetchAllAgents(): Promise<IAiAgent[]> {
-  const res = await apiClient.get('/api/admin/agents');
+  const res = await apiClient.get('/admin/agents');
   if (!res.success) {
     throw new Error(res.error || 'Failed to load agents');
   }
@@ -47,7 +47,7 @@ export async function fetchAgentsWithAccess(): Promise<{
   user_role: string;
   user_pro_tier: string | null;
 }> {
-  const res = await apiClient.get('/api/agents');
+  const res = await apiClient.get('/agents');
   if (!res.success) {
     throw new Error(res.error || 'Failed to load agents');
   }
@@ -62,7 +62,7 @@ export async function fetchAgentsWithAccess(): Promise<{
  * Создать агента
  */
 export async function createAgent(data: IAiAgentInput): Promise<IAiAgent> {
-  const res = await apiClient.post('/api/admin/agents', data);
+  const res = await apiClient.post('/admin/agents', data);
   if (!res.success) {
     throw new Error(res.error || 'Failed to create agent');
   }
@@ -73,7 +73,7 @@ export async function createAgent(data: IAiAgentInput): Promise<IAiAgent> {
  * Обновить агента
  */
 export async function updateAgent(id: string, data: Partial<IAiAgentInput> & { is_active?: boolean }): Promise<IAiAgent> {
-  const res = await apiClient.patch(`/api/admin/agents/${id}`, data);
+  const res = await apiClient.patch(`/admin/agents/${id}`, data);
   if (!res.success) {
     throw new Error(res.error || 'Failed to update agent');
   }
