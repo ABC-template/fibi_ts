@@ -1,7 +1,7 @@
 // ============================================
 // api/chats/actions/create.ts
-// Описание: Создание нового чата (с user_uuid и sync_token)
-// Версия: 4.0.0 - добавлен pinned
+// Описание: Создание нового чата (с user_uuid, sync_token и agent_id)
+// Версия: 5.0.0 — добавлен agent_id
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
@@ -25,6 +25,8 @@ interface ICreateChatRequest {
     max_context?: number;
     user_renamed?: boolean;
     pinned?: boolean;
+    agent_id?: string | null; // ✅ НОВОЕ: ID агента
+    modality?: string | null; // ✅ НОВОЕ: модальность агента
   };
   firstMessage?: {
     id?: string;
@@ -51,6 +53,8 @@ async function createChat(
     const maxContext = chatData.max_context || 15;
     const userRenamed = chatData.user_renamed || false;
     const pinned = chatData.pinned || false;
+    const agentId = chatData.agent_id || null; // ✅ НОВОЕ
+    const modality = chatData.modality || null; // ✅ НОВОЕ
 
     validateTopic(topic);
 
@@ -77,6 +81,7 @@ async function createChat(
       };
     }
 
+    // ✅ СОЗДАЁМ ЧАТ С agent_id И modality
     const result = await supabaseFetch(
       'chats',
       {
@@ -89,7 +94,9 @@ async function createChat(
           title: title,
           max_context: maxContext,
           user_renamed: userRenamed,
-          pinned: pinned
+          pinned: pinned,
+          agent_id: agentId, // ✅ НОВОЕ
+          modality: modality, // ✅ НОВОЕ
         })
       },
       config
@@ -241,7 +248,9 @@ export default async function handler(request: Request): Promise<Response> {
       chatId: result.chatId,
       messageId: result.messageId,
       syncToken: result.syncToken,
-      pinned: chat.pinned || false
+      pinned: chat.pinned || false,
+      agentId: chat.agent_id || null, // ✅ НОВОЕ
+      modality: chat.modality || null, // ✅ НОВОЕ
     });
   } catch (err) {
     console.error('Create chat handler error:', (err as Error).message);
