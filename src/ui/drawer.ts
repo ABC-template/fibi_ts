@@ -554,6 +554,16 @@ export function appendDrawerNav(container: HTMLElement): void {
             action: () => window.showTrashModal(),
             show: true,
         },
+        {
+    id: 'drawer-agents',
+    icon: '🤖',
+    label: 'ИИ-агенты',
+    action: () => {
+      closeDrawer();
+      window.moduleLoader.load('agents');
+    },
+    show: true,
+  },
         // ✅ НОВЫЙ ПУНКТ: ЭКОНОМИКА (заменяет кошелек)
         {
             id: 'drawer-economy',
