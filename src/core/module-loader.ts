@@ -61,6 +61,7 @@ export class ModuleLoader {
     this.register('economy', EconomyModule);  // ✅ Вместо CoinsModule
     this.register('referral', ReferralModule);
     this.register('admin', AdminModule);
+    this.register('agents', AgentsModule);
 
     this._registered = true;
     console.log(`✅ Зарегистрировано ${Object.keys(this.modules).length} модулей`);
