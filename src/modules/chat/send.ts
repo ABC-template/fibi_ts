@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/send.ts
-// Отправка сообщений (EventBus-based)
-// Версия: 5.1.0 - восстановление пустых чатов
+// Отправка сообщений (EventBus-based) с поддержкой агентов
+// Версия: 5.2.0 — добавлена передача agentId
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -20,12 +20,8 @@ export class ChatSend {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v5.1.0 загружен (восстановление пустых чатов)');
+    console.log('✅ ChatSend v5.2.0 загружен (с поддержкой агентов)');
   }
-
-  // ==========================================
-  // ГАРАНТИРУЕТ ЗАГРУЗКУ stream.ts
-  // ==========================================
 
   private async _ensureStreamFunction(): Promise<void> {
     if (typeof (window as any).streamAiResponse === 'function') {
@@ -36,10 +32,6 @@ export class ChatSend {
     await import('./stream');
     console.log('✅ stream.ts загружен');
   }
-
-  // ==========================================
-  // ПОДПИСКА НА СОБЫТИЯ
-  // ==========================================
 
   private _subscribeToEvents(): void {
     const unsubFav = this.eventBus.on('chat:toggle-favorite', (data) => {
@@ -77,10 +69,6 @@ export class ChatSend {
 
     console.log('📡 ChatSend подписан на события');
   }
-
-  // ==========================================
-  // ОТПРАВКА СООБЩЕНИЯ
-  // ==========================================
 
   async sendMessage(): Promise<void> {
     if (!navigator.onLine) {
@@ -142,6 +130,8 @@ export class ChatSend {
     const chatId = activeChat.id;
     const chatTopic = this.chatStore.currentTopic;
     const userLang = activeChat.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
+    
+    const agentId = activeChat.agent_id || null;
 
     const messageId = this.chatStore.generateUUID();
 
@@ -184,12 +174,14 @@ export class ChatSend {
       }
 
       await this._ensureStreamFunction();
+      
       await (window as any).streamAiResponse(
         cleanHistoryMessages,
         chatTopic,
         userLang,
         mediaToAttach,
-        chatId
+        chatId,
+        agentId
       );
     } catch (error) {
       this.uiRenderer.hideSkeleton();
@@ -207,10 +199,6 @@ export class ChatSend {
       if (voiceBtn) (voiceBtn as HTMLButtonElement).disabled = false;
     }
   }
-
-  // ==========================================
-  // КОПИРОВАТЬ СООБЩЕНИЕ
-  // ==========================================
 
   copyMsgText(btn: HTMLElement, msgId: UUID): void {
     const found = this.chatStore.findChatByMessageId(msgId);
@@ -230,10 +218,6 @@ export class ChatSend {
       }
     });
   }
-
-  // ==========================================
-  // ПОДЕЛИТЬСЯ СООБЩЕНИЕМ
-  // ==========================================
 
   shareMsgText(btn: HTMLElement, msgId: UUID): void {
     const found = this.chatStore.findChatByMessageId(msgId);
@@ -255,10 +239,6 @@ export class ChatSend {
       }
     }, 300);
   }
-
-  // ==========================================
-  // ИЗБРАННОЕ
-  // ==========================================
 
   async toggleFavoriteMsg(msgId: UUID, chatId?: UUID): Promise<void> {
     if (!navigator.onLine) {
@@ -301,10 +281,6 @@ export class ChatSend {
     }
   }
 
-  // ==========================================
-  // УДАЛЕНИЕ СООБЩЕНИЯ (с авто-удалением пустого чата)
-  // ==========================================
-
   deleteMessage(msgId: UUID): void {
     if (!navigator.onLine) {
       if ((window as any).tg?.showAlert) {
@@ -344,10 +320,6 @@ export class ChatSend {
     }
   }
 
-  // ==========================================
-  // ОЧИСТКА ПОЛЯ ВВОДА
-  // ==========================================
-
   clearUserText(e?: Event): void {
     if (e) e.stopPropagation();
     const input = document.getElementById('user-input') as HTMLTextAreaElement;
@@ -368,10 +340,6 @@ export class ChatSend {
     }, 1200);
   }
 
-  // ==========================================
-  // ОЧИСТКА ПОДПИСОК
-  // ==========================================
-
   destroy(): void {
     for (const unsub of this._subscriptions) {
       try {
@@ -386,4 +354,4 @@ export class ChatSend {
 }
 
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v5.1.0 загружен (авто-удаление пустых чатов)');
+console.log('✅ ChatSend v5.2.0 загружен (с поддержкой агентов)');
