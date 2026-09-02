@@ -25,8 +25,8 @@ interface ICreateChatRequest {
     max_context?: number;
     user_renamed?: boolean;
     pinned?: boolean;
-    agent_id?: string | null; // ✅ НОВОЕ: ID агента
-    modality?: string | null; // ✅ НОВОЕ: модальность агента
+    agent_id?: string | null;
+    modality?: string | null;
   };
   firstMessage?: {
     id?: string;
@@ -37,9 +37,6 @@ interface ICreateChatRequest {
   action?: string;
 }
 
-/**
- * Создать новый чат
- */
 async function createChat(
   userId: number,
   userUuid: string,
@@ -53,8 +50,8 @@ async function createChat(
     const maxContext = chatData.max_context || 15;
     const userRenamed = chatData.user_renamed || false;
     const pinned = chatData.pinned || false;
-    const agentId = chatData.agent_id || null; // ✅ НОВОЕ
-    const modality = chatData.modality || null; // ✅ НОВОЕ
+    const agentId = chatData.agent_id || null;
+    const modality = chatData.modality || null;
 
     validateTopic(topic);
 
@@ -81,7 +78,6 @@ async function createChat(
       };
     }
 
-    // ✅ СОЗДАЁМ ЧАТ С agent_id И modality
     const result = await supabaseFetch(
       'chats',
       {
@@ -95,8 +91,8 @@ async function createChat(
           max_context: maxContext,
           user_renamed: userRenamed,
           pinned: pinned,
-          agent_id: agentId, // ✅ НОВОЕ
-          modality: modality, // ✅ НОВОЕ
+          agent_id: agentId,
+          modality: modality,
         })
       },
       config
@@ -110,7 +106,6 @@ async function createChat(
       };
     }
 
-    // Обновляем sync_token
     await updateSyncToken(userId, config);
     const newSyncToken = await getSyncToken(userId, config);
 
@@ -129,9 +124,6 @@ async function createChat(
   }
 }
 
-/**
- * Создать чат с первым сообщением
- */
 async function createChatWithMessage(
   userId: number,
   userUuid: string,
@@ -249,8 +241,8 @@ export default async function handler(request: Request): Promise<Response> {
       messageId: result.messageId,
       syncToken: result.syncToken,
       pinned: chat.pinned || false,
-      agentId: chat.agent_id || null, // ✅ НОВОЕ
-      modality: chat.modality || null, // ✅ НОВОЕ
+      agentId: chat.agent_id || null,
+      modality: chat.modality || null,
     });
   } catch (err) {
     console.error('Create chat handler error:', (err as Error).message);
