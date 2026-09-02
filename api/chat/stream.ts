@@ -35,7 +35,7 @@ interface IStreamRequestBody {
   currentTopic?: string;
   userLang?: string;
   attachedImage?: string | null;
-  agentId?: string | null; // ✅ НОВОЕ: ID агента
+  agentId?: string | null;
 }
 
 interface IAgent {
@@ -52,9 +52,6 @@ interface IAgent {
   is_active: boolean;
 }
 
-/**
- * Проверка доступа к агенту
- */
 function checkAgentAccess(
   agent: IAgent,
   userRole: string,
@@ -87,9 +84,6 @@ function checkAgentAccess(
   return { hasAccess: true, reason: null };
 }
 
-/**
- * Получить агента по ID
- */
 async function getAgentById(
   agentId: string,
   config: any
@@ -112,9 +106,6 @@ async function getAgentById(
   }
 }
 
-/**
- * Получить агента по slug (для обратной совместимости с топиками)
- */
 async function getAgentBySlug(
   slug: string,
   config: any
@@ -137,9 +128,6 @@ async function getAgentBySlug(
   }
 }
 
-/**
- * Списать абстрактные токены (сначала bonus, потом permanent)
- */
 async function spendTokens(
   userId: number,
   amount: number,
@@ -204,9 +192,6 @@ async function spendTokens(
   }
 }
 
-/**
- * Логировать использование агента
- */
 async function logAgentUsage(
   userId: number,
   agentId: string,
@@ -279,10 +264,6 @@ export default async function handler(request: Request): Promise<Response> {
       historyLength: historyMessages.length,
     });
 
-    // ==========================================
-    // 1. ОПРЕДЕЛЯЕМ АГЕНТА
-    // ==========================================
-
     let agent: IAgent | null = null;
     let effectiveAgentId: string | null = null;
     let effectiveTopic: string = currentTopic || 'code';
@@ -296,7 +277,6 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
-    // Если агент не найден по ID — пробуем по slug (обратная совместимость)
     if (!agent && currentTopic) {
       agent = await getAgentBySlug(currentTopic, config);
       if (agent) {
@@ -306,7 +286,6 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
-    // Если агент не найден — используем дефолтный (code)
     if (!agent) {
       agent = await getAgentBySlug('code', config);
       if (agent) {
@@ -315,14 +294,9 @@ export default async function handler(request: Request): Promise<Response> {
         console.log(`✅ [stream] Используем дефолтного агента: ${agent.slug}`);
       } else {
         console.warn('⚠️ [stream] Агент не найден, используем fallback');
-        // Fallback для обратной совместимости
         return errorResponse('Агент не найден', 404);
       }
     }
-
-    // ==========================================
-    // 2. ПРОВЕРКА ДОСТУПА К АГЕНТУ
-    // ==========================================
 
     const userRes = await supabaseFetch(
       `users?telegram_id=eq.${userId}&select=role,subscription_tier`,
@@ -353,10 +327,6 @@ export default async function handler(request: Request): Promise<Response> {
 
     console.log(`✅ [stream] Доступ разрешён для роли: ${userRole}`);
 
-    // ==========================================
-    // 3. ВАЛИДАЦИЯ ИЗОБРАЖЕНИЯ
-    // ==========================================
-
     const isVision = !!(attachedImage && attachedImage.trim().length > 0);
 
     if (isVision) {
@@ -376,32 +346,19 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
-    // ==========================================
-    // 4. ПРОВЕРКА КЛЮЧЕЙ OPENROUTER
-    // ==========================================
-
     const keysPool = getRotatedKeysPool();
     if (keysPool.length === 0) {
       return errorResponse('Серверные API ключи ROUTER_KEY не настроены в Vercel.', 500);
     }
 
-    // ==========================================
-    // 5. СБОРКА СООБЩЕНИЙ
-    // ==========================================
-
-    // Используем system_prompt из агента
     const systemPrompt = agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision);
     const messages = buildMessages(systemPrompt, historyMessages, attachedImage || undefined);
 
     const model = agent.model_id || 'openai/gpt-4o';
-    const temperature = 0.4; // Можно добавить поле в агента
+    const temperature = 0.4;
 
     console.log('📨 [stream] Модель:', model);
     console.log('📨 [stream] Количество сообщений:', messages.length);
-
-    // ==========================================
-    // 6. ОЦЕНКА ТОКЕНОВ ДЛЯ OPENROUTER
-    // ==========================================
 
     const estimatedTokens = estimateTokens(messages, systemPrompt);
     console.log(`📊 [stream] Оценка токенов OpenRouter: ~${estimatedTokens}`);
@@ -413,10 +370,6 @@ export default async function handler(request: Request): Promise<Response> {
         429
       );
     }
-
-    // ==========================================
-    // 7. ПРОВЕРКА АБСТРАКТНЫХ ТОКЕНОВ (min_charge)
-    // ==========================================
 
     const tokenCheck = await checkTokenAvailability(userId, agent.min_charge, config);
 
@@ -432,10 +385,6 @@ export default async function handler(request: Request): Promise<Response> {
         'X-Token-Needed': String(agent.min_charge),
       });
     }
-
-    // ==========================================
-    // 8. ОТПРАВКА ЗАПРОСА
-    // ==========================================
 
     let lastError: Error | null = null;
     let finalUsage: any = null;
@@ -472,10 +421,6 @@ export default async function handler(request: Request): Promise<Response> {
         }
 
         console.log('✅ [stream] OpenRouter ответил, начинаем стрим');
-
-        // ==========================================
-        // 9. ПАРСИНГ SSE СТРИМА
-        // ==========================================
 
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
@@ -527,15 +472,10 @@ export default async function handler(request: Request): Promise<Response> {
                 }
               }
 
-              // ==========================================
-              // 10. ФИНАЛИЗАЦИЯ (списание токенов!)
-              // ==========================================
-
               if (streamCompleted && accumulatedText.trim().length > 0) {
                 console.log(`📊 [stream] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
                 console.log(`📊 [stream] OpenRouter usage:`, finalUsage);
 
-                // ✅ РАССЧИТЫВАЕМ CHARGE
                 const actualTokens = totalTokens > 0 ? totalTokens : estimatedTokens;
                 const charge = Math.max(
                   Math.ceil(actualTokens * agent.markup_coefficient),
@@ -544,7 +484,6 @@ export default async function handler(request: Request): Promise<Response> {
 
                 console.log(`💰 [stream] Расчёт charge: ${actualTokens} × ${agent.markup_coefficient} = ${Math.ceil(actualTokens * agent.markup_coefficient)} → max(..., ${agent.min_charge}) = ${charge}`);
 
-                // ✅ СПИСЫВАЕМ АБСТРАКТНЫЕ ТОКЕНЫ
                 const spendResult = await spendTokens(userId, charge, config);
 
                 if (spendResult.success) {
@@ -554,7 +493,6 @@ export default async function handler(request: Request): Promise<Response> {
                   console.warn(`⚠️ [stream] Не удалось списать токены: ${spendResult.error}`);
                 }
 
-                // ✅ ЛОГИРУЕМ ИСПОЛЬЗОВАНИЕ OPENROUTER
                 if (totalTokens > 0) {
                   await logOpenRouterUsage(
                     userId,
@@ -571,7 +509,6 @@ export default async function handler(request: Request): Promise<Response> {
                   console.log(`✅ [stream] OpenRouter usage сохранен: ${totalTokens} токенов`);
                 }
 
-                // ✅ ЛОГИРУЕМ ИСПОЛЬЗОВАНИЕ АГЕНТА
                 if (effectiveAgentId && totalTokens > 0) {
                   await logAgentUsage(
                     userId,
