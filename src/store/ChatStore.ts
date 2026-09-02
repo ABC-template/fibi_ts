@@ -1,7 +1,7 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 6.0.0 - добавлен pinned, виртуализация, ленивая загрузка
+// Версия: 6.1.0 — добавлены agent_id и modality
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -51,10 +51,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     this.save();
   }
 
-  // ==========================================
-  // ГЕТТЕРЫ
-  // ==========================================
-
   get histories(): Record<TopicId, IChat[]> {
     return this._data.histories;
   }
@@ -73,10 +69,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     this._emitChange('chat:topic_changed', { topic: value });
   }
 
-  // ==========================================
-  // ПОЛУЧЕНИЕ АКТИВНОГО ЧАТА
-  // ==========================================
-
   getActiveChat(topicId?: TopicId): IChat | null {
     const targetTopic = topicId || this._data.currentTopic;
     const chats = this.getChats(targetTopic);
@@ -89,10 +81,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     
     return null;
   }
-
-  // ==========================================
-  // ПРОВЕРКА, ЕСТЬ ЛИ У ЧАТА СООБЩЕНИЯ
-  // ==========================================
 
   hasRealMessages(chat: IChat): boolean {
     if (!chat || !chat.messages) return false;
@@ -107,19 +95,11 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return !this.hasRealMessages(chat);
   }
 
-  // ==========================================
-  // ПОЛУЧЕНИЕ ЧАТОВ
-  // ==========================================
-
   getChats(topicId?: TopicId): IChat[] {
     if (!topicId) topicId = this._data.currentTopic;
     return this._data.histories[topicId] || [];
   }
 
-  /**
-   * Получить ВСЕ чаты (для виртуализации и поиска)
-   * Сортировка: сначала закреплённые (pinned = true), затем по updated_at DESC
-   */
   getAllChats(filter?: TopicId | 'all'): IChat[] {
     const allChats: IChat[] = [];
     
@@ -133,7 +113,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       }
     }
 
-    // Сортировка: pinned DESC (сначала закреплённые), затем updated_at DESC
     return allChats.sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
@@ -141,44 +120,25 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     });
   }
 
-  /**
-   * Получить закреплённые чаты
-   */
   getPinnedChats(filter?: TopicId | 'all'): IChat[] {
     const all = this.getAllChats(filter);
     return all.filter(chat => chat.pinned === true);
   }
 
-  /**
-   * Получить обычные чаты (не закреплённые)
-   */
   getUnpinnedChats(filter?: TopicId | 'all'): IChat[] {
     const all = this.getAllChats(filter);
     return all.filter(chat => chat.pinned !== true);
   }
 
-  // ==========================================
-  // УПРАВЛЕНИЕ ЗАКРЕПЛЕНИЕМ
-  // ==========================================
-
-  /**
-   * Проверить, можно ли закрепить чат (лимит 10)
-   */
   canPinChat(): boolean {
     const pinnedCount = this.getAllChats().filter(c => c.pinned === true).length;
     return pinnedCount < MAX_PINNED_CHATS;
   }
 
-  /**
-   * Получить количество закреплённых чатов
-   */
   getPinnedCount(): number {
     return this.getAllChats().filter(c => c.pinned === true).length;
   }
 
-  /**
-   * Закрепить/открепить чат
-   */
   togglePinChat(chatId: UUID): { success: boolean; pinned: boolean; error?: string } {
     const found = this.findChatById(chatId);
     if (!found) {
@@ -210,10 +170,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return { success: true, pinned: newPinned };
   }
 
-  // ==========================================
-  // ОСТАЛЬНЫЕ МЕТОДЫ
-  // ==========================================
-
   setActiveChat(topicId: TopicId, chatId: UUID | null): void {
     if (!topicId) topicId = this._data.currentTopic;
     this._data.activeIds[topicId] = chatId;
@@ -235,7 +191,9 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       topic: topicId,
       userRenamed: options.userRenamed || false,
       synced: options.synced || false,
-      pinned: options.pinned || false,                              // ✅ НОВОЕ
+      pinned: options.pinned || false,
+      agent_id: options.agent_id || null,
+      modality: options.modality || null,
       deleted_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -250,12 +208,12 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     this._data.activeIds[topicId] = newChat.id;
     this.save();
 
-    console.log(`📝 Создан чат ${newChat.id} в теме ${topicId}${newChat.pinned ? ' (закреплён)' : ''}`);
+    console.log(`📝 Создан чат ${newChat.id} в теме ${topicId}${newChat.pinned ? ' (закреплён)' : ''}${newChat.agent_id ? ' (агент: ' + newChat.agent_id + ')' : ''}`);
     this._emitChange('chat:created', { chat: newChat, topic: topicId });
     return newChat;
   }
 
-  createTempChat(topicId?: TopicId): IChat | null {
+  createTempChat(topicId?: TopicId, options: Partial<IChat> = {}): IChat | null {
     if (!topicId) topicId = this._data.currentTopic;
 
     console.log(`🧹 [createTempChat] Удаляем ВСЕ пустые чаты перед созданием нового в теме: ${topicId}`);
@@ -265,14 +223,16 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     console.log(`📝 [createTempChat] Создаем новый чат в теме: ${topicId}`);
     const newChat = this.createChat(topicId, undefined, {
       messages: [],
-      pinned: false
+      pinned: false,
+      agent_id: options.agent_id || null,
+      modality: options.modality || null,
     });
     
     newChat.topic = topicId;
     this._data.activeIds[topicId] = newChat.id;
     this.save();
     
-    console.log(`✅ [createTempChat] Создан новый чат ${newChat.id} в теме ${topicId}`);
+    console.log(`✅ [createTempChat] Создан новый чат ${newChat.id} в теме ${topicId}${newChat.agent_id ? ' (агент: ' + newChat.agent_id + ')' : ''}`);
     return newChat;
   }
 
@@ -387,7 +347,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       return false;
     }
 
-    // ✅ НОВОЕ: снимаем закрепление при удалении
     chat.pinned = false;
     chat.deleted_at = new Date().toISOString();
     chat.updated_at = new Date().toISOString();
@@ -425,7 +384,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       return false;
     }
 
-    // ✅ НОВОЕ: при восстановлении сбрасываем закрепление
     chat.pinned = false;
     chat.deleted_at = null;
     chat.updated_at = new Date().toISOString();
@@ -554,9 +512,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return (chat.messages || []).filter(m => !m.deleted_at);
   }
 
-  /**
-   * Получить последние N сообщений (для ленивой загрузки)
-   */
   getRecentMessages(chatId: UUID, limit: number = 50): IMessage[] {
     const messages = this.getMessages(chatId);
     return messages.slice(-limit);
@@ -666,7 +621,9 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     if (data.userRenamed !== undefined) chat.userRenamed = data.userRenamed;
     if (data.messages !== undefined) chat.messages = data.messages;
     if (data.synced !== undefined) chat.synced = data.synced;
-    if (data.pinned !== undefined) chat.pinned = data.pinned;        // ✅ НОВОЕ
+    if (data.pinned !== undefined) chat.pinned = data.pinned;
+    if (data.agent_id !== undefined) chat.agent_id = data.agent_id;
+    if (data.modality !== undefined) chat.modality = data.modality;
 
     chat.updated_at = new Date().toISOString();
     this.save();
@@ -710,7 +667,9 @@ export class ChatStore extends BaseStore<IChatStoreData> {
         topic: chatTopic,
         userRenamed: chat.userRenamed || false,
         synced: true,
-        pinned: chat.pinned || false,                       // ✅ НОВОЕ
+        pinned: chat.pinned || false,
+        agent_id: chat.agent_id || null,
+        modality: chat.modality || null,
         deleted_at: chat.deleted_at || null,
         created_at: chat.created_at || new Date().toISOString(),
         updated_at: chat.updated_at || new Date().toISOString(),
@@ -805,7 +764,9 @@ export class ChatStore extends BaseStore<IChatStoreData> {
         chat.userRenamed = meta.user_renamed || chat.userRenamed;
         chat.updated_at = meta.updated_at || chat.updated_at;
         chat.deleted_at = meta.deleted_at || chat.deleted_at;
-        if (meta.pinned !== undefined) chat.pinned = meta.pinned;     // ✅ НОВОЕ
+        if (meta.pinned !== undefined) chat.pinned = meta.pinned;
+        if (meta.agent_id !== undefined) chat.agent_id = meta.agent_id;
+        if (meta.modality !== undefined) chat.modality = meta.modality;
       }
     }
     this.save();
@@ -813,4 +774,4 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 }
 
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v6.0.0 загружен (pinned + виртуализация + ленивая загрузка)');
+console.log('✅ ChatStore v6.1.0 загружен (agent_id + modality)');
