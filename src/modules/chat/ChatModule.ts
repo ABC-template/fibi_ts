@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 8.11.0 — добавлена проверка агента при отправке
+// Версия: 8.11.1 — исправлен импорт типов
 // ============================================
 import './chat.css';
 import { chatStore } from '@/store/ChatStore';
@@ -21,7 +21,7 @@ import {
   type TopicId, 
   type UUID 
 } from '@/config';
-import type { IAiAgentWithAccess } from '@types/agents';
+import type { IAiAgentWithAccess } from '../../../types/agents';
 
 export class ChatModule {
   private container: HTMLElement;
@@ -60,7 +60,7 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.11.0 инициализирован (с проверкой агента)');
+    console.log('✅ ChatModule v8.11.1 инициализирован (исправлен импорт)');
   }
 
   private async _ensureVoiceFunction(): Promise<void> {
@@ -978,4 +978,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.11.0 загружен (с проверкой агента)');
+console.log('✅ ChatModule v8.11.1 загружен (исправлен импорт типов)');
