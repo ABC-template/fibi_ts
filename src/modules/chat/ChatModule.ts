@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
-// Страница чата (с индикатором токенов)
-// Версия: 8.10.0 - добавлен индикатор токенов
+// Страница чата (с проверкой доступа к агенту)
+// Версия: 8.11.0 — добавлена проверка агента при отправке
 // ============================================
 import './chat.css';
 import { chatStore } from '@/store/ChatStore';
@@ -12,6 +12,7 @@ import { moduleLoader } from '@/core/module-loader';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { ChatPatcher } from './ChatPatcher';
 import { economyStore } from '@/economy/EconomyStore';
+import { userStore } from '@/store/UserStore';
 import { 
   getWelcomeText, 
   getTopic, 
@@ -20,6 +21,7 @@ import {
   type TopicId, 
   type UUID 
 } from '@/config';
+import type { IAiAgentWithAccess } from '@types/agents';
 
 export class ChatModule {
   private container: HTMLElement;
@@ -31,9 +33,13 @@ export class ChatModule {
   private navigationState = navigationState;
   private moduleLoader = moduleLoader;
   private economyStore = economyStore;
+  private userStore = userStore;
 
   private _chatId: UUID | null = null;
   private _topic: TopicId | null = null;
+  private _agentId: string | null = null;
+  private _agentAccess: boolean = true;
+  private _agentReason: string | null = null;
   private _subscriptions: Array<() => void> = [];
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
@@ -54,16 +60,12 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.10.0 инициализирован (с индикатором токенов)');
+    console.log('✅ ChatModule v8.11.0 инициализирован (с проверкой агента)');
   }
 
   private async _ensureVoiceFunction(): Promise<void> {
     if (typeof (window as any).toggleVoiceRecording === 'function') {
       return;
-    }
-
-    if (this._voiceLoaded) {
-      console.warn('⚠️ voice.ts загружался, но функция не определена. Пробуем повторно...');
     }
 
     console.log('📦 Динамическая загрузка voice.ts...');
@@ -87,10 +89,6 @@ export class ChatModule {
   private async _ensureMediaFunction(): Promise<void> {
     if (typeof (window as any).triggerMediaSelector === 'function') {
       return;
-    }
-
-    if (this._mediaLoaded) {
-      console.warn('⚠️ media.ts загружался, но функция не определена. Пробуем повторно...');
     }
 
     console.log('📦 Динамическая загрузка media.ts...');
@@ -143,6 +141,12 @@ export class ChatModule {
       const sendBtn = target.closest('.send-btn') as HTMLElement;
       if (sendBtn) {
         console.log('📤 Делегирование: нажата кнопка отправки');
+        
+        if (!this._agentAccess) {
+          this._showAccessDeniedModal();
+          return;
+        }
+        
         this.eventBus.emit('chat:send-message');
         return;
       }
@@ -231,7 +235,6 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubOpen);
 
-    // ✅ Подписка на обновление токенов
     const unsubTokens = this.eventBus.on('economy:tokens:updated', () => {
       if (this._isShowing) {
         this._updateTokenIndicator();
@@ -239,7 +242,174 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubTokens);
 
-    console.log('📡 ChatModule подписан на события (с индикатором токенов)');
+    const unsubAgent = this.eventBus.on('agents:access_updated', () => {
+      if (this._isShowing && this._agentId) {
+        this._checkAgentAccess();
+        this._updateSendButton();
+      }
+    }, this);
+    this._subscriptions.push(unsubAgent);
+
+    console.log('📡 ChatModule подписан на события (с проверкой агента)');
+  }
+
+  private async _checkAgentAccess(): Promise<void> {
+    if (!this._agentId) {
+      this._agentAccess = true;
+      this._agentReason = null;
+      return;
+    }
+
+    try {
+      const { fetchAgentsWithAccess } = await import('@/services/agents');
+      const data = await fetchAgentsWithAccess();
+      const agent = data.agents.find(a => a.id === this._agentId);
+
+      if (agent) {
+        this._agentAccess = agent.has_access;
+        this._agentReason = agent.access_reason || null;
+        console.log(`🔍 [ChatModule] Доступ к агенту: ${this._agentAccess}, причина: ${this._agentReason}`);
+      } else {
+        this._agentAccess = false;
+        this._agentReason = 'not_found';
+        console.warn(`⚠️ [ChatModule] Агент ${this._agentId} не найден`);
+      }
+    } catch (err) {
+      console.error('❌ [ChatModule] Ошибка проверки доступа:', err);
+      this._agentAccess = true;
+    }
+
+    this._updateSendButton();
+  }
+
+  private _updateSendButton(): void {
+    const sendBtn = this.container.querySelector('.send-btn') as HTMLButtonElement;
+    if (!sendBtn) return;
+
+    if (!this._agentAccess) {
+      sendBtn.disabled = true;
+      sendBtn.style.opacity = '0.5';
+      sendBtn.style.cursor = 'not-allowed';
+      sendBtn.title = 'Доступ к агенту ограничен';
+      
+      const icon = sendBtn.querySelector('[data-lucide]');
+      if (icon) {
+        icon.setAttribute('data-lucide', 'lock');
+        if (typeof (window as any).lucide !== 'undefined') {
+          (window as any).lucide.createIcons({ root: sendBtn });
+        }
+      }
+    } else {
+      sendBtn.disabled = false;
+      sendBtn.style.opacity = '1';
+      sendBtn.style.cursor = 'pointer';
+      sendBtn.title = 'Отправить';
+      
+      const icon = sendBtn.querySelector('[data-lucide]');
+      if (icon) {
+        icon.setAttribute('data-lucide', 'send');
+        if (typeof (window as any).lucide !== 'undefined') {
+          (window as any).lucide.createIcons({ root: sendBtn });
+        }
+      }
+    }
+
+    this._updateTokenIndicator();
+  }
+
+  private _showAccessDeniedModal(): void {
+    const agentName = this._getAgentName();
+
+    let title = '🔒 Доступ ограничен';
+    let description = `Для отправки сообщений агенту "${agentName}" требуется:`;
+    let actionLabel = '📈 Расширить возможности';
+
+    if (this._agentReason === 'inactive') {
+      title = '⏳ Агент временно недоступен';
+      description = 'Этот агент отключён администратором. Попробуйте позже.';
+      actionLabel = '🔄 Обновить';
+    } else if (this._agentReason === 'role') {
+      description = `Для использования агента "${agentName}" требуется роль: PRO, Admin или Creator.`;
+    } else if (this._agentReason === 'tier') {
+      description = `Для использования агента "${agentName}" требуется подписка: PRO (Plus или Ultra).`;
+    } else if (this._agentReason === 'not_found') {
+      title = '❌ Агент не найден';
+      description = 'Этот агент больше не доступен. Пожалуйста, выберите другого агента.';
+      actionLabel = '⬅️ Вернуться к списку';
+    }
+
+    const content = `
+      <div style="text-align: center; padding: 8px 0;">
+        <div style="font-size: 56px; margin-bottom: 12px;">${this._agentReason === 'inactive' ? '⏳' : '🔒'}</div>
+        <div style="font-size: 20px; font-weight: 700; color: var(--app-text-primary);">${title}</div>
+        <div style="font-size: 14px; color: var(--app-text-secondary); margin-top: 8px; line-height: 1.6;">
+          ${description}
+        </div>
+        ${this._agentReason !== 'not_found' && this._agentReason !== 'inactive' ? `
+          <div style="
+            margin-top: 16px;
+            background: var(--app-bg-tertiary);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: left;
+          ">
+            <div style="font-size: 12px; color: var(--app-text-tertiary);">
+              💡 <strong>Как получить доступ?</strong>
+            </div>
+            <div style="font-size: 12px; color: var(--app-text-secondary); margin-top: 4px;">
+              ${this._agentReason === 'role' 
+                ? 'Оформите PRO-подписку в разделе "Экономика"' 
+                : 'Оформите PRO-подписку уровня Plus или Ultra'}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    const footer = `
+      <button id="modal-save-btn" class="btn" style="width:100%;">
+        ${actionLabel}
+      </button>
+    `;
+
+    const modalManager = (window as any).modalManager;
+    if (modalManager) {
+      modalManager.open({
+        title: title,
+        content: content,
+        footer: footer,
+        modalId: 'agent-chat-blocked',
+        showFooter: true,
+        onSave: () => {
+          if (this._agentReason === 'not_found') {
+            modalManager.close();
+            if (this.navigationState) {
+              this.navigationState.navigate('agents', {}, { replace: true });
+            }
+          } else if (this._agentReason === 'inactive') {
+            this._checkAgentAccess();
+            modalManager.close();
+          } else {
+            modalManager.close();
+            if (this.navigationState) {
+              this.navigationState.navigate('economy', {}, { addToHistory: true });
+            } else if (this.moduleLoader) {
+              this.moduleLoader.load('economy');
+            }
+          }
+        },
+      });
+    }
+  }
+
+  private _getAgentName(): string {
+    try {
+      const found = this.chatStore.findChatById(this._chatId!);
+      if (found?.chat?.title) {
+        return found.chat.title;
+      }
+    } catch (e) {}
+    return 'агента';
   }
 
   private _updateTokenIndicator(): void {
@@ -247,7 +417,29 @@ export class ChatModule {
     if (!indicator) return;
 
     const tokens = this.economyStore.getTokenBalances();
+    const isBlocked = !this._agentAccess;
     
+    if (isBlocked) {
+      indicator.innerHTML = `
+        <span class="token-badge blocked" style="
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 12px;
+          border-radius: 12px;
+          background: rgba(231, 76, 60, 0.12);
+          color: #e74c3c;
+          font-weight: 600;
+          font-size: 12px;
+        ">
+          🔒 Доступ ограничен
+        </span>
+      `;
+      indicator.style.display = 'flex';
+      indicator.style.justifyContent = 'center';
+      return;
+    }
+
     if (tokens.total > 0) {
       indicator.innerHTML = `
         <span class="token-badge" title="Бонусные токены">
@@ -261,6 +453,7 @@ export class ChatModule {
         </span>
       `;
       indicator.style.display = 'flex';
+      indicator.style.justifyContent = 'flex-end';
     } else {
       indicator.innerHTML = `
         <span class="token-badge empty" title="Нет токенов">
@@ -268,6 +461,7 @@ export class ChatModule {
         </span>
       `;
       indicator.style.display = 'flex';
+      indicator.style.justifyContent = 'flex-end';
     }
   }
 
@@ -313,6 +507,7 @@ export class ChatModule {
 
     this._chatId = chatId;
     this._topic = actualTopic;
+    this._agentId = found.chat.agent_id || null;
 
     if (this._topic) {
       this.chatStore.currentTopic = this._topic;
@@ -333,14 +528,17 @@ export class ChatModule {
       (window as any).navigation.hide();
     }
 
-    this._updateHeader();
-    this._loadMessages();
-    this._updateTokenIndicator();
+    this._checkAgentAccess().then(() => {
+      this._updateHeader();
+      this._loadMessages();
+      this._updateTokenIndicator();
+      this._updateSendButton();
+    });
 
     this._isShowing = true;
     this.chatStore.setActiveChat(actualTopic, this._chatId);
 
-    console.log(`✅ Чат ${this._chatId} открыт (topic: ${actualTopic})`);
+    console.log(`✅ Чат ${this._chatId} открыт (topic: ${actualTopic}, agent: ${this._agentId})`);
   }
 
   update(params: Record<string, any> = {}): void {
@@ -365,6 +563,7 @@ export class ChatModule {
       }
       this._updateHeader();
       this._updateTokenIndicator();
+      this._updateSendButton();
     }
   }
 
@@ -382,9 +581,8 @@ export class ChatModule {
         animation: fadeIn 0.3s ease;
         position: relative;
       ">
-        <!-- ✅ ИНДИКАТОР ТОКЕНОВ НАД ПОЛЕМ ВВОДА -->
         <div id="token-indicator" style="
-          display: ${tokens.total > 0 ? 'flex' : 'flex'};
+          display: flex;
           gap: 8px;
           padding: 4px 16px;
           background: var(--app-bg-secondary);
@@ -395,55 +593,18 @@ export class ChatModule {
           flex-shrink: 0;
           min-height: 32px;
         ">
-          ${tokens.total > 0 ? `
-            <span class="token-badge" title="Бонусные токены" style="
-              display: inline-flex;
-              align-items: center;
-              gap: 4px;
-              padding: 2px 8px;
-              border-radius: 12px;
-              background: rgba(241, 196, 15, 0.12);
-              color: #f1c40f;
-            ">
-              🎁 ${tokens.bonus}
-            </span>
-            <span class="token-badge" title="Постоянные токены" style="
-              display: inline-flex;
-              align-items: center;
-              gap: 4px;
-              padding: 2px 8px;
-              border-radius: 12px;
-              background: rgba(52, 152, 219, 0.12);
-              color: #3498db;
-            ">
-              💎 ${tokens.permanent}
-            </span>
-            <span class="token-badge total" title="Всего токенов" style="
-              display: inline-flex;
-              align-items: center;
-              gap: 4px;
-              padding: 2px 8px;
-              border-radius: 12px;
-              background: rgba(212, 175, 55, 0.12);
-              color: var(--app-accent-primary);
-              font-weight: 600;
-            ">
-              ⚡ ${tokens.total}
-            </span>
-          ` : `
-            <span class="token-badge empty" title="Нет токенов" style="
-              display: inline-flex;
-              align-items: center;
-              gap: 4px;
-              padding: 2px 8px;
-              border-radius: 12px;
-              background: rgba(231, 76, 60, 0.08);
-              color: #e74c3c;
-              font-size: 11px;
-            ">
-              ⚡ Нет токенов
-            </span>
-          `}
+          <span class="token-badge empty" title="Загрузка..." style="
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: rgba(149, 165, 166, 0.08);
+            color: #95a5a6;
+            font-size: 11px;
+          ">
+            ⏳ Загрузка...
+          </span>
         </div>
 
         <div id="chat-container" style="
@@ -723,8 +884,13 @@ export class ChatModule {
     if (!found) return;
 
     const chatTitle = found.chat.title || 'Versatile AI';
+    
+    let titleWithIndicator = chatTitle;
+    if (this._agentId) {
+      titleWithIndicator = `🤖 ${chatTitle}`;
+    }
 
-    this.headerManager.setTitle(chatTitle);
+    this.headerManager.setTitle(titleWithIndicator);
     this.headerManager.setActions([
       {
         id: 'context',
@@ -804,6 +970,7 @@ export class ChatModule {
     this._rendered = false;
     this._chatId = null;
     this._topic = null;
+    this._agentId = null;
     this._isShowing = false;
     this._patcher = null;
     this.container.innerHTML = '';
@@ -811,4 +978,4 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.10.0 загружен (с индикатором токенов)');
+console.log('✅ ChatModule v8.11.0 загружен (с проверкой агента)');
