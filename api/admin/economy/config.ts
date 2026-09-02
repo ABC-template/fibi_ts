@@ -1,7 +1,7 @@
 // ============================================
 // api/admin/economy/config.ts
 // Управление настройками экономики (админ)
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлена таблица economy_settings
 // ============================================
 
 import {
@@ -23,9 +23,6 @@ interface IConfigUpdate {
   exchange_rate?: number;
   max_exchange_percent?: number;
   bonus_tokens_per_day?: number;
-  daily_token_limit_trial?: number;
-  daily_token_limit_premium?: number;
-  daily_token_limit_admin?: number;
   whitelist_enabled?: boolean;
 }
 
@@ -44,8 +41,9 @@ export default async function handler(request: Request): Promise<Response> {
   // GET - получение текущих настроек
   if (request.method === 'GET') {
     try {
+      // ✅ ИСПРАВЛЕНО: используем economy_settings
       const result = await supabaseFetch(
-        'economy_config?limit=1',
+        'economy_settings?limit=1',
         { method: 'GET' },
         config
       );
@@ -58,9 +56,6 @@ export default async function handler(request: Request): Promise<Response> {
             exchange_rate: 1,
             max_exchange_percent: 80,
             bonus_tokens_per_day: 5,
-            daily_token_limit_trial: 5000,
-            daily_token_limit_premium: 50000,
-            daily_token_limit_admin: 999999,
             whitelist_enabled: false,
           },
         });
@@ -88,7 +83,7 @@ export default async function handler(request: Request): Promise<Response> {
 
       // Проверяем, есть ли уже запись
       const existing = await supabaseFetch(
-        'economy_config?limit=1',
+        'economy_settings?limit=1',
         { method: 'GET' },
         config
       );
@@ -103,7 +98,7 @@ export default async function handler(request: Request): Promise<Response> {
       if (existing && Array.isArray(existing) && existing.length > 0) {
         // Обновляем существующую
         result = await supabaseFetch(
-          `economy_config?id=eq.${existing[0].id}`,
+          `economy_settings?id=eq.${existing[0].id}`,
           {
             method: 'PATCH',
             body: JSON.stringify(updateData),
@@ -114,7 +109,7 @@ export default async function handler(request: Request): Promise<Response> {
       } else {
         // Создаем новую
         result = await supabaseFetch(
-          'economy_config',
+          'economy_settings',
           {
             method: 'POST',
             body: JSON.stringify({
