@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Модуль списка агентов для пользователя
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлен импорт типов
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -11,7 +11,7 @@ import { moduleLoader } from '@/core/module-loader';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { userStore } from '@/store/UserStore';
 import { chatStore } from '@/store/ChatStore';
-import type { IAiAgentWithAccess, AgentModality } from '@types/agents';
+import type { IAiAgentWithAccess, AgentModality } from '../../../types/agents';
 
 export class AgentsModule {
   private container: HTMLElement;
@@ -132,7 +132,7 @@ export class AgentsModule {
     await this.loadAgents();
 
     this.isInitialized = true;
-    console.log('✅ AgentsModule v1.0.0 инициализирован');
+    console.log('✅ AgentsModule v1.0.1 инициализирован');
   }
 
   private _bindEvents(): void {
@@ -550,4 +550,4 @@ export class AgentsModule {
 }
 
 (window as any).AgentsModule = AgentsModule;
-console.log('✅ AgentsModule v1.0.0 загружен');
+console.log('✅ AgentsModule v1.0.1 загружен');
