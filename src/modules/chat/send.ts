@@ -82,6 +82,33 @@ export class ChatSend {
     }
 
     if (this.isSending) return;
+    
+    // === Проверка доступа к агенту (согласованный UX) ===
+const activeChatForAccess = this.chatStore.getActiveChat();
+const agentIdForAccess = activeChatForAccess?.agent_id || null;
+
+if (agentIdForAccess) {
+  try {
+    const { fetchAgentsWithAccess } = await import('@/services/agents');
+    const data = await fetchAgentsWithAccess();
+    const agent = data.agents.find(a => a.id === agentIdForAccess);
+
+    if (agent && !agent.has_access) {
+      this.isSending = false;
+      // Показываем модалку через ChatModule, если есть
+      if ((window as any).chatModule?._showAccessDeniedModal) {
+        (window as any).chatModule._agentReason = agent.access_reason || 'role';
+        (window as any).chatModule._showAccessDeniedModal();
+      } else {
+        this.uiRenderer?.showToast('🔒 Доступ к агенту ограничен', 'error', 2000);
+      }
+      return;
+    }
+  } catch (e) {
+    console.warn('Не удалось проверить доступ агента:', e);
+    // fail-open: не блокируем из-за сетевой ошибки проверки
+  }
+}
 
     if ((window as any).isVoiceRecording) {
       (window as any).isExpressVoiceTarget = true;
