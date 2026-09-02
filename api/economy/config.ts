@@ -1,7 +1,7 @@
 // ============================================
 // api/economy/config.ts
 // Получение конфигурации экономики
-// Версия: 1.0.0
+// Версия: 1.0.1 — исправлена таблица economy_settings
 // ============================================
 
 import {
@@ -32,8 +32,9 @@ export default async function handler(request: Request): Promise<Response> {
 
     const config = getSupabaseConfig('service');
 
+    // ✅ ИСПРАВЛЕНО: используем economy_settings вместо economy_config
     const result = await supabaseFetch(
-      'economy_config?limit=1',
+      'economy_settings?limit=1',
       { method: 'GET' },
       config
     );
