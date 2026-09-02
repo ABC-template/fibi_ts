@@ -1,7 +1,7 @@
 // ============================================
 // types/chat.ts
 // Типы для чатов и сообщений
-// Версия: 2.0.0 - добавлен pinned
+// Версия: 2.1.0 — добавлены agent_id и modality
 // ============================================
 
 import { UUID, TopicId, MessageType, ISODateString } from './common';
@@ -32,7 +32,9 @@ export interface IChat {
   language: string;
   userRenamed: boolean;
   synced: boolean;
-  pinned: boolean;                // ✅ НОВОЕ: закреплён ли чат
+  pinned: boolean;
+  agent_id?: string | null;
+  modality?: string | null;
   created_at: ISODateString;
   updated_at: ISODateString;
   deleted_at: ISODateString | null;
@@ -48,7 +50,9 @@ export interface IChatDB {
   title: string;
   max_context: number;
   user_renamed: boolean;
-  pinned: boolean;                // ✅ НОВОЕ
+  pinned: boolean;
+  agent_id: UUID | null;
+  modality: string | null;
   created_at: ISODateString;
   updated_at: ISODateString;
   deleted_at: ISODateString | null;
@@ -61,7 +65,9 @@ export interface ICreateChatData {
   title?: string;
   max_context?: number;
   user_renamed?: boolean;
-  pinned?: boolean;               // ✅ НОВОЕ
+  pinned?: boolean;
+  agent_id?: string | null;
+  modality?: string | null;
 }
 
 /** Данные для создания сообщения */
@@ -86,7 +92,9 @@ export interface IExportArchive {
   topic_name: string;
   max_context: number;
   user_renamed: boolean;
-  pinned: boolean;                // ✅ НОВОЕ
+  pinned: boolean;
+  agent_id?: string | null;
+  modality?: string | null;
   created_at: ISODateString;
   updated_at: ISODateString;
   messages: IMessage[];
