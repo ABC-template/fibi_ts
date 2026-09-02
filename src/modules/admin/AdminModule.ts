@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.2.0 — добавлена вкладка Агенты
+// Версия: 7.3.0 — добавлена вкладка Агенты
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -57,14 +57,13 @@ export class AdminModule {
 
     await this.tabs.get(this.activeTabId)?.init();
     this.isInitialized = true;
-    console.log('✅ AdminModule v7.2.0 готов');
+    console.log('✅ AdminModule v7.3.0 готов');
   }
 
   private register(tab: IAdminTab): void {
     this.tabs.set(tab.id, tab);
   }
 
-  /** Универсальный вызов метода вкладки */
   async proxy(tabId: string, method: string, ...args: any[]): Promise<void> {
     const tab = this.tabs.get(tabId) as any;
     if (tab && typeof tab[method] === 'function') {
@@ -116,7 +115,6 @@ export class AdminModule {
       height: 100%;
     `;
 
-    // Заголовок
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:16px';
     header.innerHTML = `
@@ -125,7 +123,6 @@ export class AdminModule {
     `;
     wrapper.appendChild(header);
 
-    // Переключатель вкладок
     const tabsBar = document.createElement('div');
     tabsBar.style.cssText = `
       display: flex;
@@ -161,7 +158,6 @@ export class AdminModule {
     });
     wrapper.appendChild(tabsBar);
 
-    // Контент активной вкладки
     const content = document.createElement('div');
     content.id = 'admin-tab-content';
     content.style.cssText = 'flex:1;overflow-y:auto';
@@ -171,9 +167,7 @@ export class AdminModule {
     this.container.appendChild(wrapper);
   }
 
-  // ==========================================
   // Lifecycle
-  // ==========================================
 
   async show(): Promise<void> {
     if (userStore.role !== 'creator') {
@@ -324,4 +318,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   },
 };
 
-console.log('✅ AdminModule v7.2.0 загружен');
+console.log('✅ AdminModule v7.3.0 загружен');
