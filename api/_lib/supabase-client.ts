@@ -1,7 +1,7 @@
 // ============================================
 // api/_lib/supabase-client.ts 
 // Описание: Работа с Supabase через fetch (Edge Runtime)
-// Версия: 13.0.0 - добавлены функции для квестов и стрика
+// Версия: 14.0.0 — добавлена spendAbstractTokens
 // ============================================
 
 import type { ITelegramUser } from './auth';
@@ -17,9 +17,6 @@ export interface IUsageLimitResult {
   limit: number;
 }
 
-/**
- * Получить конфигурацию Supabase
- */
 export function getSupabaseConfig(type: 'anon' | 'service' = 'anon'): ISupabaseConfig {
   const url = process.env.SUPABASE_URL?.trim();
   if (!url) {
@@ -42,9 +39,6 @@ export function getSupabaseConfig(type: 'anon' | 'service' = 'anon'): ISupabaseC
   return { url, key };
 }
 
-/**
- * Выполнить запрос к Supabase REST API
- */
 export async function supabaseFetch(
   path: string,
   options: RequestInit = {},
@@ -89,9 +83,6 @@ export async function supabaseFetch(
   return { success: true };
 }
 
-/**
- * Выполнить RPC-запрос к Supabase
- */
 export async function supabaseRPC(
   functionName: string,
   params: Record<string, any> = {},
@@ -122,13 +113,6 @@ export async function supabaseRPC(
   return { success: true };
 }
 
-// ==========================================
-// ФУНКЦИИ ДЛЯ РАБОТЫ С ПОЛЬЗОВАТЕЛЯМИ
-// ==========================================
-
-/**
- * Получить UUID пользователя по telegram_id
- */
 export async function getUserUuid(
   telegramId: number,
   config: ISupabaseConfig | null = null
@@ -150,9 +134,6 @@ export async function getUserUuid(
   }
 }
 
-/**
- * Обновить sync_token пользователя
- */
 export async function updateSyncToken(
   telegramId: number,
   config: ISupabaseConfig | null = null
@@ -181,9 +162,6 @@ export async function updateSyncToken(
   }
 }
 
-/**
- * Получить текущий sync_token пользователя
- */
 export async function getSyncToken(
   telegramId: number,
   config: ISupabaseConfig | null = null
@@ -205,13 +183,6 @@ export async function getSyncToken(
   }
 }
 
-// ==========================================
-// ОСТАЛЬНЫЕ ФУНКЦИИ
-// ==========================================
-
-/**
- * Проверить лимит использований пользователя
- */
 export async function checkUsageLimit(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -232,9 +203,6 @@ export async function checkUsageLimit(
   }
 }
 
-/**
- * Инкрементировать счетчик использований
- */
 export async function incrementUsage(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -248,9 +216,6 @@ export async function incrementUsage(
   }
 }
 
-/**
- * Проверить, может ли пользователь синхронизироваться
- */
 export async function canUserSync(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -264,9 +229,6 @@ export async function canUserSync(
   }
 }
 
-/**
- * Установить контекст пользователя для RLS
- */
 export async function setAppUserContext(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -277,10 +239,6 @@ export async function setAppUserContext(
     console.error('Failed to set user context:', (err as Error).message);
   }
 }
-
-// ==========================================
-// ГЛАВНОЕ: СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ И ГЕНЕРАЦИЯ JWT
-// ==========================================
 
 export interface IAuthUserResult {
   userId: string;
@@ -324,10 +282,6 @@ export async function getOrCreateAuthUser(
 
   console.log(`🔍 [getOrCreateAuthUser] Email: ${email}`);
 
-  // ==========================================
-  // 1. ИЩЕМ ПОЛЬЗОВАТЕЛЯ В public.users
-  // ==========================================
-
   console.log(`🔍 [getOrCreateAuthUser] Проверяем public.users...`);
   let existingUser: any = null;
   let userId: string | null = null;
@@ -358,10 +312,6 @@ export async function getOrCreateAuthUser(
   } catch (err) {
     console.error(`❌ [getOrCreateAuthUser] Ошибка поиска в public.users:`, (err as Error).message);
   }
-
-  // ==========================================
-  // 2. ЕСЛИ НАШЛИ В public.users → ИЩЕМ В auth.users ПО ID
-  // ==========================================
 
   let authUser: any = null;
   let authUserId: string | null = null;
@@ -398,10 +348,6 @@ export async function getOrCreateAuthUser(
     }
   }
 
-  // ==========================================
-  // 3. ЕСЛИ НЕ НАШЛИ В public.users → ИЩЕМ В auth.users ПО EMAIL
-  // ==========================================
-
   if (!existingUser) {
     console.log(`🔍 [getOrCreateAuthUser] Нет в public.users, ищем в auth.users по email...`);
 
@@ -432,10 +378,6 @@ export async function getOrCreateAuthUser(
     }
   }
 
-  // ==========================================
-  // 4. ЕСТЬ В auth.users, НЕТ В public.users → СОЗДАЁМ В public.users
-  // ==========================================
-
   if (authUser && !existingUser) {
     console.log(`🆕 [getOrCreateAuthUser] Есть в auth.users, создаем в public.users...`);
     userId = authUserId;
@@ -464,10 +406,6 @@ export async function getOrCreateAuthUser(
     isNew = false;
     console.log(`✅ [getOrCreateAuthUser] Пользователь создан в public.users: ${userId}`);
   }
-
-  // ==========================================
-  // 5. НЕТ НИГДЕ → СОЗДАЁМ ВСЁ С НУЛЯ
-  // ==========================================
 
   if (!existingUser && !authUser) {
     console.log(`🆕 [getOrCreateAuthUser] Создаем пользователя с нуля...`);
@@ -559,7 +497,6 @@ export async function getOrCreateAuthUser(
     console.log(`✅ [getOrCreateAuthUser] Пользователь создан с нуля: ${userId}`);
   }
 
-  // Если userId все еще null — ошибка
   if (!userId) {
     console.error(`❌ [getOrCreateAuthUser] НЕ УДАЛОСЬ ОПРЕДЕЛИТЬ userId!`);
     throw new Error('Failed to get or create user');
@@ -568,10 +505,6 @@ export async function getOrCreateAuthUser(
   if (!userUuid) {
     userUuid = userId;
   }
-
-  // ==========================================
-  // 6. ГЕНЕРИРУЕМ JWT ЧЕРЕЗ SIGN-IN
-  // ==========================================
 
   console.log(`🔍 [getOrCreateAuthUser] Генерируем JWT для userId: ${userId}`);
   let jwtToken: string | null = null;
@@ -674,7 +607,6 @@ export async function getOrCreateAuthUser(
     throw new Error('Failed to generate JWT token');
   }
 
-  // Получаем текущий sync_token
   const currentSyncToken = await getSyncToken(telegramId, config);
 
   console.log(`✅ [getOrCreateAuthUser] Успешно завершено! userId: ${userId}, userUuid: ${userUuid}, isNew: ${isNew}`);
@@ -691,13 +623,6 @@ export async function getOrCreateAuthUser(
   };
 }
 
-// ==========================================
-// НОВЫЕ ФУНКЦИИ ДЛЯ КВЕСТОВ И СТРИКА
-// ==========================================
-
-/**
- * Обновить стрик пользователя
- */
 export async function updateStreak(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -723,9 +648,6 @@ export async function updateStreak(
   }
 }
 
-/**
- * Забрать награду за квест с бонусом
- */
 export async function claimQuestWithBonus(
   userQuestId: string,
   bonusAmount: number = 0,
@@ -764,9 +686,6 @@ export async function claimQuestWithBonus(
   }
 }
 
-/**
- * Сбросить ежедневные квесты пользователя
- */
 export async function resetDailyQuests(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -784,9 +703,6 @@ export async function resetDailyQuests(
   }
 }
 
-/**
- * Инициализировать квесты для пользователя
- */
 export async function initUserQuests(
   userId: number,
   config: ISupabaseConfig | null = null
@@ -804,9 +720,10 @@ export async function initUserQuests(
   }
 }
 
-/**
- * Списать абстрактные токены (сначала bonus, потом permanent)
- */
+// ==========================================
+// ✅ НОВАЯ ФУНКЦИЯ: СПИСАНИЕ АБСТРАКТНЫХ ТОКЕНОВ
+// ==========================================
+
 export async function spendAbstractTokens(
   userId: number,
   amount: number,
