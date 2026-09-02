@@ -1,15 +1,16 @@
 // ============================================
 // src/modules/admin/tabs/index.ts
 // Экспорт всех вкладок админ-панели
-// Версия: 1.1.0 — добавлен AdminQuestsTab
+// Версия: 2.0.0 — добавлен AdminAgentsTab
 // ============================================
 
 export { AdminDashboardTab } from './AdminDashboardTab';
 export { AdminLimitsTab } from './AdminLimitsTab';
+export { AdminQuestsTab } from './AdminQuestsTab';
 export { AdminSettingsTab } from './AdminSettingsTab';
 export { AdminSubscriptionsTab } from './AdminSubscriptionsTab';
-export { AdminAuditTab } from './AdminAuditTab';
 export { AdminUsersTab } from './AdminUsersTab';
+export { AdminAuditTab } from './AdminAuditTab';
 export { AdminSecurityTab } from './AdminSecurityTab';
 export { AdminTestingTab } from './AdminTestingTab';
-export { AdminQuestsTab } from './AdminQuestsTab';
+export { AdminAgentsTab } from './AdminAgentsTab';
