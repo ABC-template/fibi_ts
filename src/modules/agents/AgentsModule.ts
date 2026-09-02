@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.1.0 — можно открыть чат без доступа, блок только на send
+// Версия: 1.1.1 — можно открыть чат без доступа, блок только на send
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
@@ -11,7 +11,6 @@ import { fetchAgentsWithAccess } from '@/services/agents';
 import type { IAiAgentWithAccess } from '@/types/agents';
 
 export class AgentsModule {
-  private container:
   private container: HTMLElement;
   private eventBus = eventBus;
   private chatStore = chatStore;
@@ -29,7 +28,7 @@ export class AgentsModule {
   async init(): Promise<void> {
     this._subscribe();
     await this.loadAgents();
-    console.log('✅ AgentsModule v1.1.0 инициализирован');
+    console.log('✅ AgentsModule v1.1.1 инициализирован');
   }
 
   private _subscribe(): void {
@@ -274,7 +273,6 @@ export class AgentsModule {
         modal.style.display = 'none';
       }
       if (!isInactive) {
-        // Переход в экономику / подписки
         this.eventBus.emit('navigation:open_economy');
       }
     });
@@ -349,5 +347,4 @@ export class AgentsModule {
 }
 
 (window as any).AgentsModule = AgentsModule;
-(window as any).agentsModule = null; // инстанс создаётся module-loader'ом
-console.log('✅ AgentsModule v1.1.0 загружен');
+console.log('✅ AgentsModule v1.1.1 загружен');
