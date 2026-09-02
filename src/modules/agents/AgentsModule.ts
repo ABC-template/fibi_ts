@@ -13,13 +13,6 @@ import { userStore } from '@/store/UserStore';
 import { chatStore } from '@/store/ChatStore';
 import type { IAiAgentWithAccess, AgentModality } from '@types/agents';
 
-interface IAgentsCacheData {
-  agents: IAiAgentWithAccess[];
-  user_role: string;
-  user_pro_tier: string | null;
-  lastSync: string | null;
-}
-
 export class AgentsModule {
   private container: HTMLElement;
   private isInitialized: boolean = false;
@@ -242,12 +235,10 @@ export class AgentsModule {
   private _filterAgents(): IAiAgentWithAccess[] {
     let result = [...this._agents];
 
-    // Фильтр по модальности
     if (this._filterModality !== 'all') {
       result = result.filter(a => a.modality === this._filterModality);
     }
 
-    // Поиск
     if (this._searchQuery) {
       const q = this._searchQuery.toLowerCase();
       result = result.filter(a => {
@@ -259,7 +250,6 @@ export class AgentsModule {
       });
     }
 
-    // Сортировка: сначала доступные, потом по порядку
     return result.sort((a, b) => {
       if (a.has_access && !b.has_access) return -1;
       if (!a.has_access && b.has_access) return 1;
@@ -295,7 +285,6 @@ export class AgentsModule {
       audio: 'Аудио',
     };
 
-    // Определяем, кому доступен агент
     let accessInfo = 'Доступен всем';
     if (!hasAccess) {
       if (accessReason === 'role') {
@@ -377,7 +366,6 @@ export class AgentsModule {
       </div>
     `;
 
-    // Клик по карточке (если доступ есть — открываем чат)
     if (hasAccess) {
       card.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('button')) return;
@@ -387,10 +375,6 @@ export class AgentsModule {
 
     return card;
   }
-
-  // ==========================================
-  // ДЕЙСТВИЯ
-  // ==========================================
 
   async startChatWithAgent(agentId: string): Promise<void> {
     console.log(`🚀 [AgentsModule] Запуск чата с агентом: ${agentId}`);
@@ -406,7 +390,6 @@ export class AgentsModule {
       return;
     }
 
-    // Проверяем, есть ли уже чат с этим агентом
     let existingChat = this.chatStore.getAllChats('all').find(c => c.agent_id === agentId && !c.deleted_at);
 
     if (existingChat) {
@@ -419,10 +402,8 @@ export class AgentsModule {
       return;
     }
 
-    // Создаём новый чат с агентом
     const chat = this.chatStore.createTempChat(agent.slug as any);
     if (chat) {
-      // Сохраняем agent_id в чате
       chat.agent_id = agentId;
       chat.modality = agent.modality;
       chat.title = agent.name?.ru || agent.slug;
@@ -430,7 +411,6 @@ export class AgentsModule {
 
       console.log(`✅ [AgentsModule] Создан новый чат с агентом: ${chat.id}`);
 
-      // Открываем чат
       this.eventBus.emit('navigation:open_chat', {
         chatId: chat.id,
         topic: agent.slug,
@@ -505,7 +485,6 @@ export class AgentsModule {
           if (isInactive) {
             this.loadAgents();
           } else {
-            // Переход на страницу подписки
             modalManager.close();
             if (this.navigationState) {
               this.navigationState.navigate('economy', {}, { addToHistory: true });
@@ -518,10 +497,6 @@ export class AgentsModule {
       });
     }
   }
-
-  // ==========================================
-  // УПРАВЛЕНИЕ МОДУЛЕМ
-  // ==========================================
 
   show(): void {
     console.log('📱 AgentsModule.show() вызван');
@@ -574,6 +549,5 @@ export class AgentsModule {
   }
 }
 
-// Экспортируем в глобальный объект
 (window as any).AgentsModule = AgentsModule;
 console.log('✅ AgentsModule v1.0.0 загружен');
