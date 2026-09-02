@@ -1,7 +1,7 @@
 // ============================================
 // src/ui/drawer.ts
-// ВСЁ о сайдбаре (обновлен для экономики)
-// Версия: 2.5.0 - добавлена экономика, удален кошелек
+// ВСЁ о сайдбаре (обновлен для экономики и агентов)
+// Версия: 2.6.0 — добавлен пункт "ИИ-агенты"
 // ============================================
 
 import './drawer.css';
@@ -15,22 +15,10 @@ import { uiRenderer } from '@/modules/ui/renderer';
 import { profileUI } from '@/modules/ui/profile-ui';
 import type { TopicId, IChat } from '@types';
 
-// ==========================================
-// КОНСТАНТЫ
-// ==========================================
-
 const MAX_PINNED_CHATS = 10;
-
-// ==========================================
-// СОСТОЯНИЕ
-// ==========================================
 
 let drawerFilter: string = 'all';
 let activeChatMenu: HTMLElement | null = null;
-
-// ==========================================
-// ОТКРЫТИЕ / ЗАКРЫТИЕ
-// ==========================================
 
 export function openDrawer(): void {
     const overlay = document.getElementById('drawer-overlay');
@@ -78,10 +66,6 @@ export function closeDrawer(options: { instant?: boolean } = {}): void {
         drawer.classList.remove('drawer-anim-out');
     }
 }
-
-// ==========================================
-// РЕНДЕРИНГ ЧАТОВ В САЙДБАРЕ
-// ==========================================
 
 export function renderChatsInDrawer(): void {
     const container = document.getElementById('drawer-chats-list');
@@ -132,10 +116,6 @@ export function renderChatsInDrawer(): void {
         }
     }, 50);
 }
-
-// ==========================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РЕНДЕРИНГА
-// ==========================================
 
 function createFilters(): HTMLElement {
     const container = document.createElement('div');
@@ -260,10 +240,6 @@ function createChatItem(chat: any): HTMLElement {
     return item;
 }
 
-// ==========================================
-// УМНОЕ ПОЗИЦИОНИРОВАНИЕ МЕНЮ
-// ==========================================
-
 function positionChatMenu(button: HTMLElement, menu: HTMLElement): void {
     const buttonRect = button.getBoundingClientRect();
     const menuHeight = 200;
@@ -344,10 +320,6 @@ function createChatMenu(chatId: string, chatTitle: string, isPinned: boolean): H
     return container;
 }
 
-// ==========================================
-// УПРАВЛЕНИЕ МЕНЮ
-// ==========================================
-
 export function toggleChatMenu(chatId: string, container: HTMLElement): void {
     const menu = container.querySelector('.chat-menu') as HTMLElement;
     if (!menu) return;
@@ -377,10 +349,6 @@ export function closeAllChatMenus(): void {
     activeChatMenu = null;
 }
 
-// ==========================================
-// ДЕЙСТВИЯ С ЧАТАМИ (С СИНХРОНИЗАЦИЕЙ)
-// ==========================================
-
 export function handleChatAction(action: string, chatId: string, chatTitle: string, isPinned: boolean): void {
     switch (action) {
         case 'pin':
@@ -399,10 +367,6 @@ export function handleChatAction(action: string, chatId: string, chatTitle: stri
             break;
     }
 }
-
-// ==========================================
-// ЗАКРЕПЛЕНИЕ С ПРОВЕРКОЙ ЛИМИТА
-// ==========================================
 
 export async function togglePinChat(chatId: string, pinned: boolean): Promise<void> {
     const found = chatStore.findChatById(chatId);
@@ -452,10 +416,6 @@ export async function togglePinChat(chatId: string, pinned: boolean): Promise<vo
         }
     }
 }
-
-// ==========================================
-// ПЕРЕИМЕНОВАНИЕ С СИНХРОНИЗАЦИЕЙ
-// ==========================================
 
 export function renameChatFromDrawer(chatId: string, currentTitle: string): void {
     const newTitle = prompt('Введите новое название для чата:', currentTitle);
@@ -519,10 +479,6 @@ export function deleteChatFromDrawer(chatId: string): void {
     }
 }
 
-// ==========================================
-// НИЖНЯЯ ЧАСТЬ САЙДБАРА (НАВИГАЦИЯ) - ОБНОВЛЕНА
-// ==========================================
-
 export function appendDrawerNav(container: HTMLElement): void {
     if (container.querySelector('.drawer-nav-bottom')) return;
 
@@ -555,16 +511,15 @@ export function appendDrawerNav(container: HTMLElement): void {
             show: true,
         },
         {
-    id: 'drawer-agents',
-    icon: '🤖',
-    label: 'ИИ-агенты',
-    action: () => {
-      closeDrawer();
-      window.moduleLoader.load('agents');
-    },
-    show: true,
-  },
-        // ✅ НОВЫЙ ПУНКТ: ЭКОНОМИКА (заменяет кошелек)
+            id: 'drawer-agents',
+            icon: '🤖',
+            label: 'ИИ-агенты',
+            action: () => {
+                closeDrawer();
+                window.moduleLoader.load('agents');
+            },
+            show: true,
+        },
         {
             id: 'drawer-economy',
             icon: '💰',
@@ -758,10 +713,6 @@ export function appendDrawerNav(container: HTMLElement): void {
     setTimeout(() => updateDrawerTrashCount(), 100);
 }
 
-// ==========================================
-// ОБНОВЛЕНИЕ СЧЕТЧИКОВ
-// ==========================================
-
 export function updateDrawerCoins(): void {
     const balance = questsStore.getBalance() || 0;
     const coinEl = document.getElementById('drawer-coins-amount');
@@ -796,20 +747,12 @@ export function updateDrawerTrashCount(): void {
     }
 }
 
-// ==========================================
-// ОБНОВЛЕНИЕ НАДПИСИ ТЕМЫ
-// ==========================================
-
 export function updateThemeLabel(theme: 'light' | 'amoled'): void {
     const label = document.getElementById('drawer-theme-label');
     if (!label) return;
     const names = { 'light': 'Светлая', 'amoled': 'AMOLED' };
     label.textContent = names[theme] || 'Светлая';
 }
-
-// ==========================================
-// ОБНОВЛЕНИЕ САЙДБАРА ПРИ СМЕНЕ ТЕМЫ
-// ==========================================
 
 export function updateDrawerTheme(): void {
     const drawer = document.getElementById('drawer');
@@ -820,10 +763,6 @@ export function updateDrawerTheme(): void {
     
     renderChatsInDrawer();
 }
-
-// ==========================================
-// ИНИЦИАЛИЗАЦИЯ
-// ==========================================
 
 export function initDrawer(): void {
     if (!document.getElementById('drawer')) {
@@ -854,10 +793,6 @@ export function initDrawer(): void {
     }
 }
 
-// ==========================================
-// ОБРАБОТЧИКИ ГЛОБАЛЬНЫХ СОБЫТИЙ
-// ==========================================
-
 export function setupDrawerEventListeners(): void {
     document.addEventListener('click', function(e: MouseEvent) {
         const drawer = document.getElementById('drawer');
@@ -881,10 +816,6 @@ export function setupDrawerEventListeners(): void {
     });
 }
 
-// ==========================================
-// ПРИВЯЗКА К WINDOW
-// ==========================================
-
 (window as any).openDrawer = openDrawer;
 (window as any).closeDrawer = closeDrawer;
 (window as any).renderChatsInDrawer = renderChatsInDrawer;
@@ -900,4 +831,4 @@ export function setupDrawerEventListeners(): void {
 (window as any).renameChatFromDrawer = renameChatFromDrawer;
 (window as any).deleteChatFromDrawer = deleteChatFromDrawer;
 
-console.log('✅ drawer.ts v2.5.0 загружен (экономика добавлена, кошелек удален)');
+console.log('✅ drawer.ts v2.6.0 загружен (добавлены агенты)');
