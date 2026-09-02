@@ -1,381 +1,165 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
-// Модуль списка агентов для пользователя
-// Версия: 1.0.1 — исправлен импорт типов
+// Список ИИ-агентов для пользователя
+// Версия: 1.1.0 — можно открыть чат без доступа, блок только на send
 // ============================================
 
-import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
-import { navigationState } from '@/core/navigation-state';
-import { moduleLoader } from '@/core/module-loader';
-import { uiRenderer } from '@/modules/ui/renderer';
-import { userStore } from '@/store/UserStore';
 import { chatStore } from '@/store/ChatStore';
-import type { IAiAgentWithAccess, AgentModality } from '../../../types/agents';
+import { uiRenderer } from '@/modules/ui/renderer';
+import { fetchAgentsWithAccess } from '@/services/agents';
+import type { IAiAgentWithAccess } from '@/types/agents';
 
 export class AgentsModule {
+  private container:
   private container: HTMLElement;
-  private isInitialized: boolean = false;
-  private _subscriptions: Array<() => void> = [];
-  private _isVisible: boolean = false;
-  private _agents: IAiAgentWithAccess[] = [];
-  private _userRole: string = 'trial';
-  private _userProTier: string | null = null;
-  private _filterModality: string = 'all';
-  private _searchQuery: string = '';
-
-  private headerManager = headerManager;
   private eventBus = eventBus;
-  private navigationState = navigationState;
-  private moduleLoader = moduleLoader;
-  private uiRenderer = uiRenderer;
-  private userStore = userStore;
   private chatStore = chatStore;
+  private uiRenderer = uiRenderer;
+
+  private _agents: IAiAgentWithAccess[] = [];
+  private _loading = false;
+  private _isShowing = false;
+  private _subscriptions: Array<() => void> = [];
 
   constructor(container: HTMLElement) {
     this.container = container;
   }
 
   async init(): Promise<void> {
-    if (this.isInitialized) return;
-
-    (window as any).agentsModule = this;
-
-    this.container.innerHTML = `
-      <div class="agents-container" style="
-        padding: 16px;
-        flex: 1;
-        overflow-y: auto;
-        padding-bottom: 80px;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      ">
-        <h2 style="
-          font-size: 18px;
-          font-weight: 700;
-          margin: 0 0 8px 0;
-          color: var(--app-text-primary);
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        ">
-          <i data-lucide="bot" style="width:24px;height:24px;"></i>
-          ИИ-агенты
-        </h2>
-        <p style="
-          font-size: 13px;
-          color: var(--app-text-tertiary);
-          margin: 0 0 16px 0;
-        ">
-          Выберите агента для выполнения задачи
-        </p>
-
-        <div style="
-          display: flex;
-          gap: 8px;
-          margin-bottom: 16px;
-          flex-shrink: 0;
-        ">
-          <input type="text" id="agents-search-input" placeholder="Поиск агентов..."
-            style="
-              flex: 1;
-              padding: 10px 14px;
-              border-radius: 12px;
-              border: 1px solid var(--app-border-color);
-              background: var(--app-bg-tertiary);
-              color: var(--app-text-primary);
-              font-size: 14px;
-              outline: none;
-            "
-          >
-          <select id="agents-modality-filter" style="
-            padding: 10px 12px;
-            border-radius: 12px;
-            border: 1px solid var(--app-border-color);
-            background: var(--app-bg-tertiary);
-            color: var(--app-text-primary);
-            font-size: 13px;
-            outline: none;
-          ">
-            <option value="all">Все типы</option>
-            <option value="text">Текст</option>
-            <option value="image">Изображение</option>
-            <option value="video">Видео</option>
-            <option value="audio">Аудио</option>
-          </select>
-        </div>
-
-        <div id="agents-list" style="
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          overflow-y: auto;
-        ">
-          <div style="text-align: center; padding: 40px 0; color: var(--app-text-tertiary);">
-            ⏳ Загрузка агентов...
-          </div>
-        </div>
-      </div>
-    `;
-
-    this._bindEvents();
-    this._subscribeToEvents();
-
-    setTimeout(() => {
-      if (typeof (window as any).lucide !== 'undefined') {
-        (window as any).lucide.createIcons();
-      }
-    }, 200);
-
+    this._subscribe();
     await this.loadAgents();
-
-    this.isInitialized = true;
-    console.log('✅ AgentsModule v1.0.1 инициализирован');
+    console.log('✅ AgentsModule v1.1.0 инициализирован');
   }
 
-  private _bindEvents(): void {
-    const searchInput = document.getElementById('agents-search-input') as HTMLInputElement;
-    const filterSelect = document.getElementById('agents-modality-filter') as HTMLSelectElement;
-
-    if (searchInput) {
-      searchInput.addEventListener('input', () => {
-        this._searchQuery = searchInput.value.trim().toLowerCase();
-        this.render();
-      });
-    }
-
-    if (filterSelect) {
-      filterSelect.addEventListener('change', () => {
-        this._filterModality = filterSelect.value;
-        this.render();
-      });
-    }
-  }
-
-  private _subscribeToEvents(): void {
-    const unsub = this.eventBus.on('agents:reload', () => {
+  private _subscribe(): void {
+    const unsub = this.eventBus.on('agents:refresh', () => {
       this.loadAgents();
     }, this);
     this._subscriptions.push(unsub);
-
-    const unsub2 = this.eventBus.on('user:role_changed', () => {
-      this.loadAgents();
-    }, this);
-    this._subscriptions.push(unsub2);
-
     console.log('📡 AgentsModule подписан на события');
   }
 
   async loadAgents(): Promise<void> {
+    if (this._loading) return;
+    this._loading = true;
     try {
-      const { fetchAgentsWithAccess } = await import('@/services/agents');
       const data = await fetchAgentsWithAccess();
-
       this._agents = data.agents || [];
-      this._userRole = data.user_role || 'trial';
-      this._userProTier = data.user_pro_tier || null;
-
       console.log(`📋 [AgentsModule] Загружено ${this._agents.length} агентов`);
-      this.render();
+      if (this._isShowing) this.render();
+      this.eventBus.emit('agents:access_updated', { agents: this._agents });
     } catch (err) {
       console.error('❌ [AgentsModule] Ошибка загрузки агентов:', err);
-      this.uiRenderer?.showToast('⚠️ Не удалось загрузить агентов', 'error', 2000);
-
-      const list = document.getElementById('agents-list');
-      if (list) {
-        list.innerHTML = `
-          <div style="text-align: center; padding: 40px 0; color: var(--app-text-tertiary);">
-            <div style="font-size: 48px; margin-bottom: 12px;">⚠️</div>
-            <div style="font-size: 16px; font-weight: 600;">Ошибка загрузки</div>
-            <div style="font-size: 13px; margin-top: 4px;">Попробуйте обновить страницу</div>
-            <button onclick="window.agentsModule.loadAgents()" style="
-              margin-top: 16px;
-              padding: 8px 24px;
-              border-radius: 10px;
-              border: none;
-              background: var(--app-gradient-primary);
-              color: var(--app-text-inverse);
-              font-weight: 600;
-              cursor: pointer;
-            ">
-              🔄 Повторить
-            </button>
-          </div>
-        `;
-      }
+    } finally {
+      this._loading = false;
     }
   }
 
-  render(): void {
-    const list = document.getElementById('agents-list');
-    if (!list) return;
-
-    const filtered = this._filterAgents();
-
-    if (filtered.length === 0) {
-      list.innerHTML = `
-        <div style="text-align: center; padding: 40px 0; color: var(--app-text-tertiary);">
-          <div style="font-size: 48px; margin-bottom: 12px;">🔍</div>
-          <div style="font-size: 16px; font-weight: 600;">Агенты не найдены</div>
-          <div style="font-size: 13px; margin-top: 4px;">Попробуйте изменить фильтры</div>
-        </div>
-      `;
-      return;
-    }
-
-    list.innerHTML = '';
-    for (const agent of filtered) {
-      const card = this._createAgentCard(agent);
-      list.appendChild(card);
-    }
-  }
-
-  private _filterAgents(): IAiAgentWithAccess[] {
-    let result = [...this._agents];
-
-    if (this._filterModality !== 'all') {
-      result = result.filter(a => a.modality === this._filterModality);
-    }
-
-    if (this._searchQuery) {
-      const q = this._searchQuery.toLowerCase();
-      result = result.filter(a => {
-        const nameRu = a.name?.ru?.toLowerCase() || '';
-        const nameEn = a.name?.en?.toLowerCase() || '';
-        const descRu = a.description?.ru?.toLowerCase() || '';
-        const slug = a.slug?.toLowerCase() || '';
-        return nameRu.includes(q) || nameEn.includes(q) || descRu.includes(q) || slug.includes(q);
-      });
-    }
-
-    return result.sort((a, b) => {
+  private getSortedAgents(): IAiAgentWithAccess[] {
+    return [...this._agents].sort((a, b) => {
       if (a.has_access && !b.has_access) return -1;
       if (!a.has_access && b.has_access) return 1;
-      return (a.sort_order || 0) - (b.sort_order || 0);
+      return (a.sort_order || 100) - (b.sort_order || 100);
     });
   }
 
-  private _createAgentCard(agent: IAiAgentWithAccess): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'agent-card';
-    card.style.cssText = `
-      background: var(--app-bg-secondary);
-      border-radius: 16px;
-      padding: 16px;
-      border: 1px solid ${agent.has_access ? 'var(--app-border-color-light)' : 'var(--app-border-color)'};
-      transition: all 0.2s ease;
-      opacity: ${agent.is_active ? '1' : '0.5'};
-      cursor: ${agent.has_access ? 'pointer' : 'default'};
-    `;
-
+  private renderAgentCard(agent: IAiAgentWithAccess): HTMLElement {
     const hasAccess = agent.has_access;
     const accessReason = agent.access_reason;
+
     const modalityEmoji: Record<string, string> = {
-      text: '📝',
+      text: '💬',
       image: '🖼️',
       video: '🎬',
-      audio: '🎵',
-    };
-    const modalityLabel: Record<string, string> = {
-      text: 'Текст',
-      image: 'Изображение',
-      video: 'Видео',
-      audio: 'Аудио',
+      audio: '🎧',
     };
 
-    let accessInfo = 'Доступен всем';
+    let accessInfo = '';
     if (!hasAccess) {
-      if (accessReason === 'role') {
-        const roles = agent.allowed_roles?.filter(r => r !== 'trial') || [];
-        accessInfo = `Требуется: ${roles.join(', ')}`;
+      if (accessReason === 'inactive') {
+        accessInfo = 'Временно недоступен';
       } else if (accessReason === 'tier') {
         accessInfo = `Требуется: Pro (${agent.min_pro_tier})`;
-      } else if (accessReason === 'inactive') {
-        accessInfo = '⏳ Временно недоступен';
-      }
-    } else {
-      if (agent.allowed_roles?.includes('trial')) {
-        accessInfo = '🔓 Доступен бесплатно';
-      } else if (agent.allowed_roles?.includes('pro')) {
-        accessInfo = '⭐ Доступен по PRO';
+      } else if (accessReason === 'role') {
+        const roles = agent.allowed_roles?.filter(r => r !== 'trial') || [];
+        accessInfo = roles.length ? `Требуется: ${roles.join(', ')}` : 'Требуется PRO';
+      } else {
+        if (agent.allowed_roles?.includes('trial')) {
+          accessInfo = 'Доступ ограничен';
+        } else if (agent.allowed_roles?.includes('pro')) {
+          accessInfo = 'Требуется PRO';
+        } else {
+          accessInfo = 'Доступ ограничен';
+        }
       }
     }
 
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background: var(--app-bg-secondary);
+      border: 1px solid ${hasAccess ? 'var(--app-border-color-light)' : 'var(--app-border-color)'};
+      border-radius: 14px;
+      padding: 14px 16px;
+      opacity: ${agent.is_active ? '1' : '0.55'};
+      cursor: pointer;
+      transition: all 0.2s ease;
+    `;
+
+    const title = agent.name?.ru || agent.slug;
+
     card.innerHTML = `
-      <div style="display: flex; align-items: flex-start; gap: 12px;">
-        <div style="
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          background: ${hasAccess ? 'var(--app-accent-glow)' : 'var(--app-bg-tertiary)'};
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 24px;
-          flex-shrink: 0;
-        ">
-          ${modalityEmoji[agent.modality] || '🤖'}
-        </div>
-        <div style="flex: 1; min-width: 0;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <div style="font-size: 16px; font-weight: 600; color: var(--app-text-primary);">
-              ${agent.name?.ru || agent.slug}
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="font-size:20px;">${modalityEmoji[agent.modality] || '🤖'}</span>
+            <div style="font-weight:700;font-size:15px;color:var(--app-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${title}
             </div>
-            ${!hasAccess ? `<span style="font-size: 14px;">🔒</span>` : ''}
-            ${!agent.is_active ? `<span style="font-size: 11px; color: #95a5a6;">⏳</span>` : ''}
+            ${!hasAccess ? '<span style="font-size:14px;">🔒</span>' : ''}
           </div>
-          <div style="font-size: 13px; color: var(--app-text-secondary); margin-top: 2px;">
-            ${agent.description?.ru || agent.modality || 'ИИ-агент'}
+          <div style="font-size:12px;color:var(--app-text-tertiary);margin-bottom:6px;">
+            ${agent.description?.ru || agent.slug}
           </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
-            <span style="
-              font-size: 10px;
-              padding: 2px 8px;
-              border-radius: 10px;
-              background: var(--app-bg-tertiary);
-              color: var(--app-text-tertiary);
-            ">
-              ${modalityLabel[agent.modality] || agent.modality}
-            </span>
-            <span style="
-              font-size: 10px;
-              padding: 2px 8px;
-              border-radius: 10px;
-              background: ${hasAccess ? 'rgba(39,174,96,0.12)' : 'rgba(231,76,60,0.12)'};
-              color: ${hasAccess ? '#27ae60' : '#e74c3c'};
-            ">
+          ${!hasAccess ? `
+            <div style="font-size:11px;color:#d4af37;font-weight:600;">
               ${accessInfo}
-            </span>
-          </div>
+            </div>
+          ` : `
+            <div style="font-size:11px;color:var(--app-text-tertiary);">
+              ×${agent.markup_coefficient} · min ${agent.min_charge} ⚡
+            </div>
+          `}
         </div>
-      </div>
-      <div style="margin-top: 12px;">
-        ${hasAccess ? `
-          <button class="btn" style="width:100%; padding: 10px; font-size: 14px; font-weight: 600;" 
-                  onclick="window.agentsModule.startChatWithAgent('${agent.id}')">
-            💬 Начать чат
-          </button>
-        ` : `
-          <button class="btn btn-secondary" style="width:100%; padding: 10px; font-size: 14px; font-weight: 600;"
-                  onclick="window.agentsModule.showUpgradeModal('${agent.id}')">
-            ${agent.is_active ? '🔒 Расширить возможности' : '⏳ Временно недоступен'}
-          </button>
-        `}
+        <div>
+          ${hasAccess
+            ? `<button class="btn btn-primary" style="padding:8px 12px;font-size:12px;" data-action="start">Открыть</button>`
+            : `<button class="btn btn-secondary" style="padding:8px 12px;font-size:12px;" data-action="start">
+                 🔒 Открыть
+               </button>`
+          }
+        </div>
       </div>
     `;
 
-    if (hasAccess) {
-      card.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('button')) return;
-        this.startChatWithAgent(agent.id);
-      });
-    }
+    // Можно открыть чат всегда (и с доступом, и без)
+    card.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-action="upgrade"]')) {
+        this.showUpgradeModal(agent.id);
+        return;
+      }
+      this.startChatWithAgent(agent.id);
+    });
 
     return card;
   }
 
+  /**
+   * Согласованное поведение:
+   * - чат можно открыть всегда
+   * - отправка блокируется в ChatModule, если нет доступа
+   */
   async startChatWithAgent(agentId: string): Promise<void> {
     console.log(`🚀 [AgentsModule] Запуск чата с агентом: ${agentId}`);
 
@@ -385,12 +169,9 @@ export class AgentsModule {
       return;
     }
 
-    if (!agent.has_access) {
-      this.showUpgradeModal(agentId);
-      return;
-    }
-
-    let existingChat = this.chatStore.getAllChats('all').find(c => c.agent_id === agentId && !c.deleted_at);
+    let existingChat = this.chatStore
+      .getAllChats('all')
+      .find(c => c.agent_id === agentId && !c.deleted_at);
 
     if (existingChat) {
       console.log(`📂 [AgentsModule] Найден существующий чат: ${existingChat.id}`);
@@ -436,7 +217,7 @@ export class AgentsModule {
       description = 'Этот агент отключён администратором. Попробуйте позже.';
     } else if (reason === 'role') {
       const roles = agent.allowed_roles?.filter(r => r !== 'trial') || [];
-      description = `Требуется роль: ${roles.join(', ')}`;
+      description = `Требуется роль: ${roles.join(', ') || 'PRO'}`;
     } else if (reason === 'tier') {
       description = `Требуется подписка: Pro (${agent.min_pro_tier})`;
     }
@@ -460,94 +241,113 @@ export class AgentsModule {
               💡 <strong>Как получить доступ?</strong>
             </div>
             <div style="font-size: 12px; color: var(--app-text-secondary); margin-top: 4px;">
-              ${reason === 'role' ? 'Обновите роль в настройках профиля' : 'Оформите PRO-подписку в разделе "Экономика"'}
+              Оформите подходящую подписку в разделе экономики / подписок.
             </div>
           </div>
         ` : ''}
       </div>
     `;
 
-    const footer = `
-      <button id="modal-save-btn" class="btn" style="width:100%;">
-        ${isInactive ? '🔄 Обновить список' : '📈 Перейти к подписке'}
-      </button>
-    `;
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const modalFooter = document.getElementById('modal-footer');
+    const modal = document.getElementById('universal-modal');
 
-    const modalManager = (window as any).modalManager;
-    if (modalManager) {
-      modalManager.open({
-        title: title,
-        content: content,
-        footer: footer,
-        modalId: 'agent-upgrade',
-        showFooter: true,
-        onSave: () => {
-          if (isInactive) {
-            this.loadAgents();
-          } else {
-            modalManager.close();
-            if (this.navigationState) {
-              this.navigationState.navigate('economy', {}, { addToHistory: true });
-            } else if (this.moduleLoader) {
-              this.moduleLoader.load('economy');
-            }
-          }
-          modalManager.close();
-        },
-      });
+    if (modalTitle) modalTitle.textContent = title;
+    if (modalBody) modalBody.innerHTML = content;
+    if (modalFooter) {
+      modalFooter.classList.remove('hidden');
+      modalFooter.innerHTML = `
+        <button class="btn btn-primary" id="agent-upgrade-btn" style="width:100%;padding:10px 16px;">
+          ${isInactive ? 'Понятно' : '📈 Расширить возможности'}
+        </button>
+      `;
     }
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+    }
+
+    document.getElementById('agent-upgrade-btn')?.addEventListener('click', () => {
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+      if (!isInactive) {
+        // Переход в экономику / подписки
+        this.eventBus.emit('navigation:open_economy');
+      }
+    });
   }
 
-  show(): void {
-    console.log('📱 AgentsModule.show() вызван');
+  render(): void {
+    const agents = this.getSortedAgents();
 
+    this.container.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'padding: 16px; display:flex; flex-direction:column; gap:12px;';
+
+    const header = document.createElement('div');
+    header.innerHTML = `
+      <h2 style="margin:0 0 4px 0;font-size:20px;font-weight:700;color:var(--app-text-primary);">🤖 Агенты</h2>
+      <div style="font-size:13px;color:var(--app-text-tertiary);margin-bottom:8px;">
+        Выберите агента для общения
+      </div>
+    `;
+    wrapper.appendChild(header);
+
+    if (this._loading) {
+      const loading = document.createElement('div');
+      loading.style.cssText = 'text-align:center;padding:40px;color:var(--app-text-tertiary);';
+      loading.textContent = 'Загрузка...';
+      wrapper.appendChild(loading);
+    } else if (agents.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'text-align:center;padding:40px;color:var(--app-text-tertiary);';
+      empty.textContent = 'Агенты пока не настроены';
+      wrapper.appendChild(empty);
+    } else {
+      agents.forEach(agent => {
+        wrapper.appendChild(this.renderAgentCard(agent));
+      });
+    }
+
+    this.container.appendChild(wrapper);
+  }
+
+  async show(): Promise<void> {
+    console.log('📱 AgentsModule.show() вызван');
+    this._isShowing = true;
     this.container.classList.remove('hidden');
     this.container.style.display = 'flex';
     this.container.style.flexDirection = 'column';
     this.container.style.height = '100%';
     this.container.style.width = '100%';
+    this.container.style.overflowY = 'auto';
 
-    this._isVisible = true;
-
-    this.headerManager.setTitle('🤖 Агенты');
-    this.headerManager.setActions([]);
-
-    this.loadAgents();
-
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
-
-    setTimeout(() => {
-      if (typeof (window as any).lucide !== 'undefined') {
-        (window as any).lucide.createIcons();
-      }
-    }, 100);
+    await this.loadAgents();
+    this.render();
   }
 
   hide(): void {
-    this._isVisible = false;
+    this._isShowing = false;
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
-
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
   }
 
   destroy(): void {
-    for (const unsub of this._subscriptions) {
-      try {
-        unsub();
-      } catch (e) {
+    this._subscriptions.forEach(unsub => {
+      try { unsub(); } catch (e) {
         console.warn('Ошибка отписки AgentsModule:', e);
       }
-    }
+    });
     this._subscriptions = [];
-    this._isVisible = false;
+    this.container.innerHTML = '';
     console.log('📡 AgentsModule отписан от событий');
   }
 }
 
 (window as any).AgentsModule = AgentsModule;
-console.log('✅ AgentsModule v1.0.1 загружен');
+(window as any).agentsModule = null; // инстанс создаётся module-loader'ом
+console.log('✅ AgentsModule v1.1.0 загружен');
