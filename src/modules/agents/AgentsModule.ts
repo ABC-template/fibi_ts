@@ -8,7 +8,7 @@ import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { fetchAgentsWithAccess } from '@/services/agents';
-import type { IAiAgentWithAccess } from '@types/agents';
+import type { IAiAgentWithAccess } from '@/types/agents';
 
 export class AgentsModule {
   private container: HTMLElement;
