@@ -1,14 +1,14 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.1.1 — можно открыть чат без доступа, блок только на send
+// Версия: 1.1.2 — фикс пути типов
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { fetchAgentsWithAccess } from '@/services/agents';
-import type { IAiAgentWithAccess } from '@/types/agents';
+import type { IAiAgentWithAccess } from '@types/agents';
 
 export class AgentsModule {
   private container: HTMLElement;
@@ -28,7 +28,7 @@ export class AgentsModule {
   async init(): Promise<void> {
     this._subscribe();
     await this.loadAgents();
-    console.log('✅ AgentsModule v1.1.1 инициализирован');
+    console.log('✅ AgentsModule v1.1.2 инициализирован');
   }
 
   private _subscribe(): void {
@@ -141,7 +141,6 @@ export class AgentsModule {
       </div>
     `;
 
-    // Можно открыть чат всегда (и с доступом, и без)
     card.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       if (target.closest('[data-action="upgrade"]')) {
@@ -154,11 +153,6 @@ export class AgentsModule {
     return card;
   }
 
-  /**
-   * Согласованное поведение:
-   * - чат можно открыть всегда
-   * - отправка блокируется в ChatModule, если нет доступа
-   */
   async startChatWithAgent(agentId: string): Promise<void> {
     console.log(`🚀 [AgentsModule] Запуск чата с агентом: ${agentId}`);
 
@@ -347,4 +341,4 @@ export class AgentsModule {
 }
 
 (window as any).AgentsModule = AgentsModule;
-console.log('✅ AgentsModule v1.1.1 загружен');
+console.log('✅ AgentsModule v1.1.2 загружен');
