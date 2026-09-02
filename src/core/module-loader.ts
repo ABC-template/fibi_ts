@@ -1,7 +1,7 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 8.0.0 - удален CoinsModule
+// Версия: 8.1.0 — добавлен AgentsModule
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -18,6 +18,7 @@ import { GamesModule } from '@/modules/games/GamesModule';
 import { EconomyModule } from '@/modules/economy/EconomyModule';
 import { ReferralModule } from '@/modules/referral/ReferralModule';
 import { AdminModule } from '@/modules/admin/AdminModule';
+import { AgentsModule } from '@/modules/agents/AgentsModule';
 
 export interface IModuleOptions {
   silent?: boolean;
@@ -37,7 +38,7 @@ export class ModuleLoader {
   constructor() {
     this.container = document.getElementById('app-screen');
     this._registerAllModules();
-    console.log('✅ ModuleLoader v8.0.0 загружен');
+    console.log('✅ ModuleLoader v8.1.0 загружен');
   }
 
   /**
@@ -58,7 +59,7 @@ export class ModuleLoader {
     this.register('profile', ProfileModule);
 
     // Новые модули
-    this.register('economy', EconomyModule);  // ✅ Вместо CoinsModule
+    this.register('economy', EconomyModule);
     this.register('referral', ReferralModule);
     this.register('admin', AdminModule);
     this.register('agents', AgentsModule);
@@ -360,10 +361,8 @@ export class ModuleLoader {
   }
 }
 
-// Создаем экземпляр
 export const moduleLoader = new ModuleLoader();
 
-// Привязываем к window для глобального доступа
 (window as any).moduleLoader = moduleLoader;
 
-console.log('✅ ModuleLoader v8.0.0 загружен');
+console.log('✅ ModuleLoader v8.1.0 загружен');
