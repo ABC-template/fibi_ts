@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/stream.ts
-// Стриминг ответов от ИИ
-// Версия: 4.1.0 - с ChatPatcher для точечных обновлений
+// Стриминг ответов от ИИ (с поддержкой агентов)
+// Версия: 4.2.0 — добавлен параметр agentId
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -17,11 +17,12 @@ let streamCallCounter = 0;
   topic: TopicId,
   userLang: string,
   attachedImage: string | null,
-  chatId: UUID
+  chatId: UUID,
+  agentId: string | null = null
 ): Promise<boolean> {
   const callId = ++streamCallCounter;
   console.log(`🔴 [СТРИМ #${callId}] ===== НАЧАЛО =====`);
-  console.log(`🔴 [СТРИМ #${callId}] chatId: ${chatId}, topic: ${topic}, history: ${historyMessages?.length || 0} сообщений`);
+  console.log(`🔴 [СТРИМ #${callId}] chatId: ${chatId}, topic: ${topic}, agentId: ${agentId}, history: ${historyMessages?.length || 0} сообщений`);
 
   const container = document.getElementById('chat-container');
   if (!container) {
@@ -41,7 +42,6 @@ let streamCallCounter = 0;
   let finalizeCalled = false;
   let generatedAiMsgId: UUID | null = null;
 
-  // Получаем патчер из ChatModule
   const chatModule = (window as any).chatModule;
   const patcher = chatModule?.getPatcher?.() || null;
 
@@ -65,7 +65,8 @@ let streamCallCounter = 0;
       historyMessages: historyMessages || [],
       currentTopic: topic || chatStoreInstance.currentTopic,
       userLang: userLang || 'ru',
-      attachedImage: attachedImage || null
+      attachedImage: attachedImage || null,
+      agentId: agentId,
     };
 
     console.log(`🌊 [СТРИМ #${callId}] Отправляем запрос к /api/chat/stream`);
@@ -87,6 +88,22 @@ let streamCallCounter = 0;
     if (!response.ok) {
       const text = await response.text();
       console.error(`❌ [СТРИМ #${callId}] Ошибка ${response.status}: ${text.substring(0, 200)}`);
+      
+      if (response.status === 403) {
+        const accessReason = response.headers.get('X-Access-Reason') || 'unknown';
+        const agentSlug = response.headers.get('X-Agent-Slug') || 'агента';
+        let errorMessage = `⛔ Доступ к агенту "${agentSlug}" запрещён.`;
+        if (accessReason === 'role') {
+          errorMessage += ' Требуется PRO-подписка.';
+        } else if (accessReason === 'tier') {
+          errorMessage += ' Требуется более высокий уровень подписки.';
+        } else if (accessReason === 'inactive') {
+          errorMessage += ' Агент временно недоступен.';
+        }
+        uiRendererInstance.renderMessage(errorMessage, 'ai-msg');
+        return false;
+      }
+      
       throw new Error(`Ошибка ${response.status}: ${text.substring(0, 200)}`);
     }
 
@@ -127,13 +144,10 @@ let streamCallCounter = 0;
       }
 
       if (msgDiv && !isFirstChunk) {
-        // ✅ ИСПОЛЬЗУЕМ ПАТЧЕР для точечного обновления
         if (patcher) {
-          // Если есть ID, используем патчер
           if (generatedAiMsgId) {
             patcher.updateMessageText(generatedAiMsgId, accumulatedText);
           } else {
-            // Обновляем напрямую (первый чанк)
             if (typeof (window as any).marked !== 'undefined') {
               try {
                 let rawHTML = (window as any).marked.parse(accumulatedText);
@@ -161,7 +175,6 @@ let streamCallCounter = 0;
             }
           }
         } else {
-          // Fallback: старый метод
           if (typeof (window as any).marked !== 'undefined') {
             try {
               let rawHTML = (window as any).marked.parse(accumulatedText);
@@ -210,7 +223,6 @@ let streamCallCounter = 0;
 
       const safeFinalText = typeof accumulatedText === 'string' ? accumulatedText : String(accumulatedText);
 
-      // ✅ КНОПКИ ДЕЙСТВИЙ (data-атрибуты)
       const act = document.createElement('div');
       act.className = 'msg-actions';
       
@@ -281,7 +293,6 @@ let streamCallCounter = 0;
         container.scrollTop = container.scrollHeight;
       }
 
-      // ✅ Уведомляем через EventBus (с флагом, что это новое сообщение)
       eventBusInstance.emit('chat:message_added', {
         chatId: chatId,
         message: aiMessage
@@ -326,7 +337,6 @@ let streamCallCounter = 0;
 
       const safeFinalText = typeof disconnectNotice === 'string' ? disconnectNotice : String(disconnectNotice);
 
-      // ✅ data-атрибуты
       const act = document.createElement('div');
       act.className = 'msg-actions';
       
@@ -395,4 +405,4 @@ let streamCallCounter = 0;
   }
 };
 
-console.log('✅ ChatStream v4.1.0 загружен (с ChatPatcher)');
+console.log('✅ ChatStream v4.2.0 загружен (с поддержкой агентов)');
