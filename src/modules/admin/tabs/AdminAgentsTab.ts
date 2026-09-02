@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
-// Управление ИИ-агентами (конструктор)
-// Версия: 1.0.1 - исправлены импорты
+// Управление ИИ-агентами (вкладка в админ-панели)
+// Версия: 2.0.0 — ПОЛНАЯ ВЕРСИЯ
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -12,6 +12,10 @@ interface OpenRouterModelOption {
   id: string;
   name: string;
   context_length?: number;
+  pricing?: {
+    prompt: string;
+    completion: string;
+  };
 }
 
 export class AdminAgentsTab implements IAdminTab {
@@ -171,10 +175,6 @@ export class AdminAgentsTab implements IAdminTab {
     `;
   }
 
-  // ==========================================
-  // Действия
-  // ==========================================
-
   async toggleActive(id: string, state: boolean): Promise<void> {
     try {
       const res = await apiClient.patch(`/admin/agents/${id}`, { is_active: state });
@@ -198,10 +198,6 @@ export class AdminAgentsTab implements IAdminTab {
     if (!agent) return;
     await this.openAgentModal(agent);
   }
-
-  // ==========================================
-  // Модалка (универсальная)
-  // ==========================================
 
   private async openAgentModal(agent?: IAiAgent): Promise<void> {
     const isEdit = !!agent;
