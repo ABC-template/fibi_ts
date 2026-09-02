@@ -1,7 +1,7 @@
 // ============================================
 // src/core/navigation.ts
 // Нижняя навигация с иконками Lucide
-// Версия: 4.0.0 - добавлен QuestsModule
+// Версия: 4.1.0 — добавлен AgentsModule
 // ============================================
 
 export interface INavTab {
@@ -14,7 +14,7 @@ export class Navigation {
   private tabs: INavTab[] = [
     { id: 'dashboard', icon: 'home', label: 'Главная' },
     { id: 'organizer', icon: 'layout-dashboard', label: 'Органайзер' },
-    { id: 'chat-list', icon: 'message-square', label: 'Versatile AI' },
+    { id: 'chat-list', icon: 'message-square', label: 'Чат' },
     { id: 'agents', icon: 'bot', label: 'Агенты' },
     { id: 'games', icon: 'gamepad-2', label: 'Игры' },
     { id: 'quests', icon: 'trophy', label: 'Задания' },
@@ -24,7 +24,7 @@ export class Navigation {
   private _isSwitching: boolean = false;
 
   constructor() {
-    console.log('✅ Navigation v4.0.0 загружен');
+    console.log('✅ Navigation v4.1.0 загружен');
   }
 
   render(): void {
@@ -75,7 +75,6 @@ export class Navigation {
 
     this.setActive(tabId);
 
-    // Закрываем сайдбар мгновенно
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('drawer-overlay');
     if (drawer?.classList.contains('active')) {
@@ -136,4 +135,4 @@ export class Navigation {
 }
 
 export const navigation = new Navigation();
-console.log('✅ Navigation v4.0.0 загружен');
+console.log('✅ Navigation v4.1.0 загружен');
