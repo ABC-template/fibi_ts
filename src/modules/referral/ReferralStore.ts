@@ -6,7 +6,7 @@
 
 import { BaseStore } from '@/store/BaseStore';
 import { eventBus } from '@/core/event-bus';
-import type { UUID, ISODateString } from '@types';
+import type { UUID, ISODateString } from '@app-types';
 
 export interface IReferral {
   id: UUID;
