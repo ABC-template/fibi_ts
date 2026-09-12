@@ -1,13 +1,13 @@
 // ============================================
 // src/config/index.ts
 // Экспорт центрального конфига и всех типов
-// Версия: 3.0.0 - удалён achievements
+// Версия: 3.0.1 - замена @types → @app-types
 // ============================================
 
 // Экспорт конфига
 export * from './topics';
 
-// Реэкспорт всех типов из @types для удобного импорта
+// Реэкспорт всех типов из @app-types для удобного импорта
 export type {
   // Common
   TopicId,
@@ -75,6 +75,6 @@ export type {
   IExportRequest,
   IExportResponse,
   IUsageLimit,
-} from '@types';
+} from '@app-types';
 
-console.log('✅ Config v3.0.0 загружен');
+console.log('✅ Config v3.0.1 загружен');
