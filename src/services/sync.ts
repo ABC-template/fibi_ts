@@ -1,12 +1,12 @@
 // ============================================
 // src/services/sync.ts
 // Realtime синхронизация для PRO (с JWT)
-// Версия: 4.0.0 - добавлен pinned в Realtime
+// Версия: 4.0.1 - замена @types → @app-types
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
 import { chatStore } from '@/store/ChatStore';
-import type { IChat, IMessage, UUID } from '@types';
+import type { IChat, IMessage, UUID } from '@app-types';
 
 export class SyncService {
   private channel: any = null;
@@ -463,14 +463,13 @@ export class SyncService {
                 id: newData.id,
                 maxContext: newData.max_context || 15,
                 userRenamed: newData.user_renamed || false,
-                pinned: newData.pinned || false,                    // ✅ НОВОЕ
+                pinned: newData.pinned || false,
                 synced: true,
                 messages: []
               }
             );
             console.log(`📝 Добавлен новый чат ${newData.id}`);
           } else if (newData.pinned !== undefined) {
-            // Обновляем pinned, если изменилось
             found.chat.pinned = newData.pinned;
             chatStore.save();
           }
@@ -482,13 +481,12 @@ export class SyncService {
           chat.title = newData.title;
           chat.maxContext = newData.max_context;
           chat.userRenamed = newData.user_renamed;
-          chat.pinned = newData.pinned !== undefined ? newData.pinned : chat.pinned;  // ✅ НОВОЕ
+          chat.pinned = newData.pinned !== undefined ? newData.pinned : chat.pinned;
           chat.updated_at = newData.updated_at;
           chat.deleted_at = newData.deleted_at;
           chatStore.save();
           console.log(`📝 Обновлен чат ${newData.id}`);
           
-          // ✅ Если изменился pinned, обновляем UI
           if (newData.pinned !== undefined) {
             if ((window as any).renderChatsInDrawer) {
               (window as any).renderChatsInDrawer();
@@ -594,6 +592,5 @@ export class SyncService {
   }
 }
 
-// Создаем экземпляр
 export const syncService = new SyncService();
-console.log('✅ SyncService v4.0.0 загружен (pinned в Realtime)');
+console.log('✅ SyncService v4.0.1 загружен (pinned в Realtime)');
