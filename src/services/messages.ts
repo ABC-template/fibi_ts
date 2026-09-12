@@ -1,7 +1,7 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.1.0 - авто-удаление пустых чатов
+// Версия: 4.1.1 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
@@ -9,7 +9,7 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { chatService } from './chats';
 import { uiRenderer } from '@/modules/ui/renderer';
-import type { UUID, MessageType, IMessage } from '@types';
+import type { UUID, MessageType, IMessage } from '@app-types';
 
 export class MessageService {
   constructor() {}
@@ -259,6 +259,5 @@ export class MessageService {
   }
 }
 
-// Создаем экземпляр
 export const messageService = new MessageService();
-console.log('✅ MessageService v4.1.0 загружен (авто-удаление пустых чатов)');
+console.log('✅ MessageService v4.1.1 загружен (авто-удаление пустых чатов)');
