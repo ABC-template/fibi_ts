@@ -1,15 +1,15 @@
 // ============================================
-// src/config/topics.ts
-// Центральный конфиг всех тем, ассистентов и их настроек
-// Версия: 1.0.0
-// 
 // 🔧 Как добавить новую тему:
 // 1. Добавь объект в массив TOPICS
 // 2. Укажи id, label, icon, assistant, systemPrompt
 // 3. Всё остальное подхватится автоматически!
 // ============================================
+// src/config/topics.ts
+// Центральный конфиг всех тем, ассистентов и их настроек
+// Версия: 1.0.1 - замена @types → @app-types
+// ============================================
 
-import type { TopicId, AssistantTone, AssistantRole, FeatureFlags } from '@types';
+import type { TopicId, AssistantTone, AssistantRole, FeatureFlags } from '@app-types';
 
 // ==========================================
 // 1. ОПРЕДЕЛЕНИЯ ТИПОВ ДЛЯ КОНФИГА
@@ -408,4 +408,4 @@ export const welcomeTexts: Record<TopicId, string> = Object.fromEntries(
   TOPICS.map(t => [t.id, t.welcome])
 ) as Record<TopicId, string>;
 
-console.log('✅ Topics config v1.0.0 загружен');
+console.log('✅ Topics config v1.0.1 загружен');
