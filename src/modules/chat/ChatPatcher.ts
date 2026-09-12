@@ -1,11 +1,11 @@
 // ============================================
 // src/modules/chat/ChatPatcher.ts
 // Описание: Точечные обновления DOM для чата
-// Версия: 1.1.0 - с защитой от дублирования сообщений
+// Версия: 1.1.1 - замена @types → @app-types
 // ============================================
 
 import { uiRenderer } from '@/modules/ui/renderer';
-import type { IMessage, UUID } from '@types';
+import type { IMessage, UUID } from '@app-types';
 
 export class ChatPatcher {
   private container: HTMLElement;
