@@ -4,7 +4,7 @@
 // Версия: 1.2.0 - добавлен questsStore
 // ============================================
 
-import type { TopicId } from '@types';
+import type { TopicId } from '@app-types';
 import { chatStore } from '@/store/ChatStore';
 import { questsStore } from '@/store/QuestsStore';
 import { userStore } from '@/store/UserStore';
