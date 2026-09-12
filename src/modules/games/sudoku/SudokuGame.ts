@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/games/sudoku/SudokuGame.ts
 // Описание: Классическое Судоку
-// Версия: 4.2.0 - исправлен импорт
+// Версия: 4.2.1 - замена @types → @app-types
 // ============================================
 
 import './sudoku.css';
@@ -865,4 +865,4 @@ export class SudokuGame {
 }
 
 (window as any).SudokuGame = SudokuGame;
-console.log('✅ SudokuGame v4.2.0 загружен');
+console.log('✅ SudokuGame v4.2.1 загружен');
