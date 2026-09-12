@@ -1,14 +1,14 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based) с поддержкой агентов
-// Версия: 5.2.0 — добавлена передача agentId
+// Версия: 5.2.1 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { eventBus } from '@/core/event-bus';
-import type { UUID } from '@types';
+import type { UUID } from '@app-types';
 
 export class ChatSend {
   private chatStore = chatStore;
@@ -20,7 +20,7 @@ export class ChatSend {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v5.2.0 загружен (с поддержкой агентов)');
+    console.log('✅ ChatSend v5.2.1 загружен (с поддержкой агентов)');
   }
 
   private async _ensureStreamFunction(): Promise<void> {
@@ -82,33 +82,6 @@ export class ChatSend {
     }
 
     if (this.isSending) return;
-    
-    // === Проверка доступа к агенту (согласованный UX) ===
-const activeChatForAccess = this.chatStore.getActiveChat();
-const agentIdForAccess = activeChatForAccess?.agent_id || null;
-
-if (agentIdForAccess) {
-  try {
-    const { fetchAgentsWithAccess } = await import('@/services/agents');
-    const data = await fetchAgentsWithAccess();
-    const agent = data.agents.find(a => a.id === agentIdForAccess);
-
-    if (agent && !agent.has_access) {
-      this.isSending = false;
-      // Показываем модалку через ChatModule, если есть
-      if ((window as any).chatModule?._showAccessDeniedModal) {
-        (window as any).chatModule._agentReason = agent.access_reason || 'role';
-        (window as any).chatModule._showAccessDeniedModal();
-      } else {
-        this.uiRenderer?.showToast('🔒 Доступ к агенту ограничен', 'error', 2000);
-      }
-      return;
-    }
-  } catch (e) {
-    console.warn('Не удалось проверить доступ агента:', e);
-    // fail-open: не блокируем из-за сетевой ошибки проверки
-  }
-}
 
     if ((window as any).isVoiceRecording) {
       (window as any).isExpressVoiceTarget = true;
@@ -381,4 +354,4 @@ if (agentIdForAccess) {
 }
 
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v5.2.0 загружен (с поддержкой агентов)');
+console.log('✅ ChatSend v5.2.1 загружен (с поддержкой агентов)');
