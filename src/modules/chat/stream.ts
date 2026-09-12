@@ -1,14 +1,14 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.2.0 — добавлен параметр agentId
+// Версия: 4.2.1 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { eventBus } from '@/core/event-bus';
-import type { UUID, TopicId } from '@types';
+import type { UUID, TopicId } from '@app-types';
 
 let streamCallCounter = 0;
 
@@ -405,4 +405,4 @@ let streamCallCounter = 0;
   }
 };
 
-console.log('✅ ChatStream v4.2.0 загружен (с поддержкой агентов)');
+console.log('✅ ChatStream v4.2.1 загружен (с поддержкой агентов)');
