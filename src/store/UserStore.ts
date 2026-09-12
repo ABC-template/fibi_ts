@@ -5,7 +5,7 @@
 // ============================================
 
 import { BaseStore } from './BaseStore';
-import type { IUserStoreData, UserRole, IUserDevice } from '@types';
+import type { IUserStoreData, UserRole, IUserDevice } from '@app-types';
 
 export class UserStore extends BaseStore<IUserStoreData> {
   constructor() {
