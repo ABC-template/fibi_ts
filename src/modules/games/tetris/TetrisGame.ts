@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/games/tetris/TetrisGame.ts
 // Описание: Классический Тетрис
-// Версия: 5.2.0 - исправлен импорт
+// Версия: 5.2.1 - замена @types → @app-types
 // ============================================
 
 import './tetris.css';
@@ -117,7 +117,7 @@ export class TetrisGame {
     this.isPaused = false;
     this._isClearingLines = false;
     
-    console.log('🧩 Тетрис v5.2.0 инициализирован');
+    console.log('🧩 Тетрис v5.2.1 инициализирован');
   }
 
   private _subscribeToBalance(): void {
@@ -954,4 +954,4 @@ export class TetrisGame {
 }
 
 (window as any).TetrisGame = TetrisGame;
-console.log('✅ TetrisGame v5.2.0 загружен');
+console.log('✅ TetrisGame v5.2.1 загружен');
