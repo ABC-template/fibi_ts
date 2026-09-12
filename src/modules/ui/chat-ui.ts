@@ -1,13 +1,13 @@
 // ============================================
 // src/modules/ui/chat-ui.ts
 // Управление чатами (компактная версия)
-// Версия: 4.1.2 - REMOVED: cleanupAllEmptyChats (теперь в ChatStore)
+// Версия: 4.1.3 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
-import type { IChat, TopicId, UUID } from '@types';
+import type { IChat, TopicId, UUID } from '@app-types';
 
 export class ChatUI {
     private chatStore = chatStore;
@@ -17,7 +17,7 @@ export class ChatUI {
 
     constructor() {
         this._subscribeToEvents();
-        console.log('✅ ChatUI v4.1.2 загружен');
+        console.log('✅ ChatUI v4.1.3 загружен');
     }
 
     private _subscribeToEvents(): void {
@@ -72,8 +72,6 @@ export class ChatUI {
         this.chatStore.save();
         return true;
     }
-
-    // ❌ УДАЛЕНО: cleanupAllEmptyChats — теперь в ChatStore
 
     showChatInterface(): void {
         // Заглушка для совместимости
@@ -168,4 +166,4 @@ export const chatUI = new ChatUI();
     return chatStore.getActiveChat();
 };
 
-console.log('✅ ChatUI v4.1.2 загружен (удалена cleanupAllEmptyChats)');
+console.log('✅ ChatUI v4.1.3 загружен (удалена cleanupAllEmptyChats)');
