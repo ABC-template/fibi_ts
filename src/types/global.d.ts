@@ -4,7 +4,7 @@
 // Версия: 2.3.0 - добавлены questsStore и questsModule
 // ============================================
 
-import type { TopicId, TopicFilter, UUID } from '@types/index';
+import type { TopicId, TopicFilter, UUID } from '@app-types';
 
 declare global {
     interface Window {
