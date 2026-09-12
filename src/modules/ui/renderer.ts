@@ -1,13 +1,13 @@
 // ============================================
 // src/modules/ui/renderer.ts
 // Базовый рендеринг UI-элементов
-// Версия: 4.1.0 - FIXED: стиль welcome-msg по центру
+// Версия: 4.1.1 - замена @types → @app-types
 // ============================================
 import './ui.css';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
-import type { MessageType, UUID } from '@types';
+import type { MessageType, UUID } from '@app-types';
 
 export class UIRenderer {
   private chatStore = chatStore;
@@ -17,7 +17,7 @@ export class UIRenderer {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ UIRenderer v4.1.0 загружен (EventBus-based)');
+    console.log('✅ UIRenderer v4.1.1 загружен (EventBus-based)');
   }
 
   private _subscribeToEvents(): void {
@@ -283,14 +283,13 @@ export class UIRenderer {
   }
 
   // ==========================================
-  // ✅ ОБНОВЛЕНО: renderWelcome — стиль по центру
+  // ПРИВЕТСТВИЕ
   // ==========================================
 
   renderWelcome(text: string): void {
     const container = document.getElementById('chat-container');
     if (!container) return;
 
-    // Удаляем старое приветствие, если есть
     const oldWelcome = document.getElementById('welcome-message');
     if (oldWelcome) oldWelcome.remove();
 
@@ -298,7 +297,6 @@ export class UIRenderer {
     msgDiv.className = 'msg ai-msg welcome-msg';
     msgDiv.id = 'welcome-message';
     
-    // ✅ СТИЛИ ДЛЯ ПРИВЕТСТВИЯ ПО ЦЕНТРУ
     msgDiv.style.cssText = `
       display: flex;
       align-items: center;
@@ -400,4 +398,4 @@ export class UIRenderer {
 }
 
 export const uiRenderer = new UIRenderer();
-console.log('✅ UIRenderer v4.1.0 загружен (стиль welcome-msg по центру)');
+console.log('✅ UIRenderer v4.1.1 загружен (стиль welcome-msg по центру)');
