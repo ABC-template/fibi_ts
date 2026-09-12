@@ -1,7 +1,7 @@
 // ============================================
 // src/services/organizer.ts
 // API для органайзера (напоминания, трекеры)
-// Версия: 3.0.1 - FIXED TYPES
+// Версия: 3.0.2 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
@@ -13,7 +13,7 @@ import type {
   TopicId,
   UUID,
   ISODateString
-} from '@types';
+} from '@app-types';
 
 export class OrganizerService {
   constructor() {}
@@ -195,6 +195,5 @@ export class OrganizerService {
   }
 }
 
-// Создаем экземпляр
 export const organizerService = new OrganizerService();
-console.log('✅ OrganizerService v3.0.1 загружен');
+console.log('✅ OrganizerService v3.0.2 загружен');
