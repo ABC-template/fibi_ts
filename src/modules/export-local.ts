@@ -1,12 +1,12 @@
 // ============================================
 // src/modules/export-local.ts
 // Экспорт архива
-// Версия: 3.1.0 - добавлен pinned
+// Версия: 3.1.1 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
-import type { IChat, IExportArchive } from '@types';
+import type { IChat, IExportArchive } from '@app-types';
 
 /**
  * Экспорт локального архива (доступен всем)
@@ -34,7 +34,7 @@ import type { IChat, IExportArchive } from '@types';
       chatHistories: allChats,
       topicNames: (window as any).topicNames || {},
       exportDate: new Date().toISOString(),
-      appVersion: '3.1.0'
+      appVersion: '3.1.1'
     };
 
     const response = await fetch('/api/chats/export', {
@@ -220,4 +220,4 @@ import type { IChat, IExportArchive } from '@types';
   }
 };
 
-console.log('✅ ExportLocal v3.1.0 загружен (добавлен pinned)');
+console.log('✅ ExportLocal v3.1.1 загружен (добавлен pinned)');
