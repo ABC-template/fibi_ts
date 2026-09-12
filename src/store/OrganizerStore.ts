@@ -12,7 +12,7 @@ import type {
   ITracker,
   ITrackerLog,
   TopicId
-} from '@types';
+} from '@app-types';
 
 export class OrganizerStore extends BaseStore<IOrganizerStoreData> {
   constructor() {
