@@ -1,19 +1,19 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (с JWT и авто-рефрешем)
-// Версия: 5.1.0 - добавлен usedToday
+// Версия: 5.1.1 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
 import { userStore } from '@/store/UserStore';
 import { BaseStore } from '@/store/BaseStore';
-import type { IAuthCheckResponse } from '@types';
+import type { IAuthCheckResponse } from '@app-types';
 
 export interface IAuthResult {
   isMember: boolean;
   role: string;
   dailyLimit: number;
-  usedToday: number;                                // ✅ ДОБАВЛЕНО
+  usedToday: number;
   syncEnabled: boolean;
   syncToken: string | null;
   dataDeadline: string | null;
@@ -111,7 +111,7 @@ export class AuthService {
         data.role || 'trial',
         data.dailyLimit || 5,
         data.syncEnabled === true,
-        data.usedToday || 0                           // ✅ ДОБАВЛЕНО
+        data.usedToday || 0
       );
 
       if (data.userId) {
@@ -134,7 +134,7 @@ export class AuthService {
         isMember: data.isMember !== false,
         role: data.role || 'trial',
         dailyLimit: data.dailyLimit || 5,
-        usedToday: data.usedToday || 0,              // ✅ ДОБАВЛЕНО
+        usedToday: data.usedToday || 0,
         syncEnabled: data.syncEnabled === true,
         syncToken: newSyncToken || null,
         dataDeadline: data.dataDeadline || null,
@@ -318,6 +318,5 @@ export class AuthService {
   }
 }
 
-// Создаем экземпляр
 export const authService = new AuthService();
-console.log('✅ AuthService v5.1.0 загружен (добавлен usedToday)');
+console.log('✅ AuthService v5.1.1 загружен (добавлен usedToday)');
