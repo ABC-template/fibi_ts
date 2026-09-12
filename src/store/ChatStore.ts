@@ -17,7 +17,7 @@ import type {
   MessageType,
   UUID,
   ISODateString
-} from '@types';
+} from '@app-types';
 
 const DEFAULT_TOPICS: TopicId[] = ['code', 'creative', 'fast', 'kitchen', 'analytics'];
 const MAX_PINNED_CHATS = 10;
