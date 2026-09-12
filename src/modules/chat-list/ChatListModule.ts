@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat-list/ChatListModule.ts
 // Список чатов (стартовый экран раздела Versatile)
-// Версия: 5.1.0 - с использованием конфига
+// Версия: 5.1.1 - замена @types → @app-types
 // ============================================
 import './chat-list.css';
 import { chatStore } from '@/store/ChatStore';
@@ -38,7 +38,7 @@ export class ChatListModule {
 
     this._subscribeToDataEvents();
     this.isInitialized = true;
-    console.log('✅ ChatListModule v5.1.0 инициализирован');
+    console.log('✅ ChatListModule v5.1.1 инициализирован');
   }
 
   // ==========================================
@@ -85,7 +85,7 @@ export class ChatListModule {
   }
 
   // ==========================================
-  // ✅ ИСПРАВЛЕНО: РЕНДЕРИНГ (с использованием конфига)
+  // РЕНДЕРИНГ
   // ==========================================
 
   private _render(): void {
@@ -162,14 +162,13 @@ export class ChatListModule {
   }
 
   // ==========================================
-  // ✅ ИСПРАВЛЕНО: ТЕМЫ (из конфига)
+  // ТЕМЫ (из конфига)
   // ==========================================
 
   private _renderTopics(): void {
     const container = document.getElementById('chatlist-topics');
     if (!container) return;
 
-    // ✅ ИСПРАВЛЕНО: получаем темы из конфига
     const topics = getActiveTopics();
 
     container.innerHTML = '';
@@ -377,6 +376,5 @@ export class ChatListModule {
   }
 }
 
-// Экспортируем класс в глобальный объект
 (window as any).ChatListModule = ChatListModule;
-console.log('✅ ChatListModule v5.1.0 загружен');
+console.log('✅ ChatListModule v5.1.1 загружен');
