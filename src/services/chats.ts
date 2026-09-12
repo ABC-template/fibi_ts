@@ -1,13 +1,13 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.1.0 - добавлен pinChat
+// Версия: 3.1.1 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
-import type { IChat, IMessage, MessageType, TopicId, UUID } from '@types';
+import type { IChat, IMessage, MessageType, TopicId, UUID } from '@app-types';
 
 export class ChatService {
   constructor() {}
@@ -302,7 +302,7 @@ export class ChatService {
   }
 
   // ==========================================
-  // ✅ НОВОЕ: ЗАКРЕПЛЕНИЕ ЧАТА
+  // ЗАКРЕПЛЕНИЕ ЧАТА
   // ==========================================
 
   async pinChat(chatId: UUID, pinned: boolean): Promise<boolean> {
@@ -854,6 +854,5 @@ export class ChatService {
   }
 }
 
-// Создаем экземпляр
 export const chatService = new ChatService();
-console.log('✅ ChatService v3.1.0 загружен (добавлен pinChat)');
+console.log('✅ ChatService v3.1.1 загружен (добавлен pinChat)');
