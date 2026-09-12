@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/organizer/OrganizerModule.ts
 // Модуль органайзера с вкладками
-// Версия: 4.0.2 - FIXED TYPES
+// Версия: 4.0.3 - замена @types → @app-types
 // ============================================
 import './organizer.css';
 import { headerManager } from '@/core/header-manager';
@@ -9,7 +9,7 @@ import { organizerStore } from '@/store/OrganizerStore';
 import { organizerService } from '@/services/organizer';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
-import type { TopicId } from '@types';
+import type { TopicId } from '@app-types';
 
 export class OrganizerModule {
   private container: HTMLElement;
@@ -141,7 +141,7 @@ export class OrganizerModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ OrganizerModule v4.0.2 инициализирован');
+    console.log('✅ OrganizerModule v4.0.3 инициализирован');
   }
 
   // ==========================================
@@ -541,6 +541,5 @@ export class OrganizerModule {
   }
 }
 
-// Экспортируем класс в глобальный объект
 (window as any).OrganizerModule = OrganizerModule;
-console.log('✅ OrganizerModule v4.0.2 загружен');
+console.log('✅ OrganizerModule v4.0.3 загружен');
