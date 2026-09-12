@@ -13,7 +13,7 @@ import { modalManager } from '@/core/modal-manager';
 import { navigationState } from '@/core/navigation-state';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { profileUI } from '@/modules/ui/profile-ui';
-import type { TopicId, IChat } from '@types';
+import type { TopicId, IChat } from '@app-types';
 
 const MAX_PINNED_CHATS = 10;
 
