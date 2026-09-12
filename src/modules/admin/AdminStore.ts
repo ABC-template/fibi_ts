@@ -5,7 +5,7 @@
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
-import type { UUID, ISODateString } - } from '@app-types';
+import type { UUID, ISODateString } from '@app-types';
 
 export interface IAdminStats {
   total_users: number;
