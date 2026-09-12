@@ -1,13 +1,13 @@
 // ============================================
 // src/modules/trash.ts
 // Работа с корзиной (ТОЛЬКО ЧАТЫ)
-// Версия: 2.0.1 - FIXED TYPES
+// Версия: 2.0.2 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
-import type { UUID } from '@types';
+import type { UUID } from '@app-types';
 
 let _trashSubscriptions: Array<() => void> = [];
 
@@ -456,4 +456,4 @@ _subscribeTrashEvents();
 // Первоначальное обновление счетчика
 setTimeout(_updateTrashCountReactive, 1000);
 
-console.log('✅ Trash module v2.0.1 загружен (TypeScript)');
+console.log('✅ Trash module v2.0.2 загружен (TypeScript)');
