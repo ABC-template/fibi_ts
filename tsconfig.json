@@ -28,8 +28,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@types/*": ["types/*"],
-      "@types": ["types/index.ts"],
+      "@app-types/*": ["types/*"],
+      "@app-types": ["types/index.ts"],
       "@api/*": ["api/*"]
     }
   },
