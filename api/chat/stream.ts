@@ -1,7 +1,7 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 6.0.0 — интеграция агентов + биллинг
+// Версия: 6.1.0 — checkAgentAccess вынесен в _lib/agent-access
 // ============================================
 
 import {
@@ -25,6 +25,7 @@ import {
   estimateTokens,
 } from '../_lib/tokens-usage';
 import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
+import { checkAgentAccess } from '../_lib/agent-access';
 
 export const config = { runtime: 'edge' };
 
@@ -50,38 +51,6 @@ interface IAgent {
   allowed_roles: string[];
   min_pro_tier: string | null;
   is_active: boolean;
-}
-
-function checkAgentAccess(
-  agent: IAgent,
-  userRole: string,
-  userProTier: string | null
-): { hasAccess: boolean; reason: 'role' | 'tier' | 'inactive' | null } {
-  if (!agent.is_active) {
-    return { hasAccess: false, reason: 'inactive' };
-  }
-
-  const allowed = agent.allowed_roles || [];
-  if (!allowed.includes(userRole)) {
-    return { hasAccess: false, reason: 'role' };
-  }
-
-  if (userRole === 'pro' && agent.min_pro_tier) {
-    const tierOrder: Record<string, number> = {
-      basic: 1,
-      plus: 2,
-      ultra: 3,
-    };
-
-    const userTierLevel = tierOrder[userProTier || 'basic'] || 0;
-    const requiredLevel = tierOrder[agent.min_pro_tier] || 0;
-
-    if (userTierLevel < requiredLevel) {
-      return { hasAccess: false, reason: 'tier' };
-    }
-  }
-
-  return { hasAccess: true, reason: null };
 }
 
 async function getAgentById(
