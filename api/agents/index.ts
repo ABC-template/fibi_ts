@@ -1,49 +1,14 @@
 // ============================================
 // api/agents/index.ts
 // Описание: Список активных агентов для пользователей + флаг доступа
-// Версия: 1.0.1 — исправлены импорты
+// Версия: 1.0.2 — checkAgentAccess вынесен в _lib/agent-access
 // ============================================
 
 import { authenticate } from '../_lib/auth';
 import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
+import { checkAgentAccess } from '../_lib/agent-access';
 import type { IAiAgent, IAiAgentWithAccess } from '../../types/agents';
-
-/**
- * Проверяет, есть ли у пользователя доступ к агенту
- */
-function checkAgentAccess(
-  agent: IAiAgent,
-  userRole: string,
-  userProTier: string | null
-): { hasAccess: boolean; reason: 'role' | 'tier' | 'inactive' | null } {
-  if (!agent.is_active) {
-    return { hasAccess: false, reason: 'inactive' };
-  }
-
-  const allowed = agent.allowed_roles || [];
-  if (!allowed.includes(userRole)) {
-    return { hasAccess: false, reason: 'role' };
-  }
-
-  // Если роль pro и указан минимальный tier
-  if (userRole === 'pro' && agent.min_pro_tier) {
-    const tierOrder: Record<string, number> = {
-      basic: 1,
-      plus: 2,
-      ultra: 3,
-    };
-
-    const userTierLevel = tierOrder[userProTier || 'basic'] || 0;
-    const requiredLevel = tierOrder[agent.min_pro_tier] || 0;
-
-    if (userTierLevel < requiredLevel) {
-      return { hasAccess: false, reason: 'tier' };
-    }
-  }
-
-  return { hasAccess: true, reason: null };
-}
 
 export default async function handler(request: Request): Promise<Response> {
   const cors = handleCORS(request);
