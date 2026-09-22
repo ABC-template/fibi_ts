@@ -1,7 +1,7 @@
 // ============================================
 // api/agents/index.ts
 // Описание: Список активных агентов для пользователей + флаг доступа
-// Версия: 1.0.2 — checkAgentAccess вынесен в _lib/agent-access
+// Версия: 1.1.0 — checkAgentAccess вынесен в _lib/agent-access, добавлен edge runtime
 // ============================================
 
 import { authenticate } from '../_lib/auth';
@@ -9,6 +9,8 @@ import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { checkAgentAccess } from '../_lib/agent-access';
 import type { IAiAgent, IAiAgentWithAccess } from '../../types/agents';
+
+export const config = { runtime: 'edge' };
 
 export default async function handler(request: Request): Promise<Response> {
   const cors = handleCORS(request);
