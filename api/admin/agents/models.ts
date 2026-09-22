@@ -1,11 +1,13 @@
 // ============================================
 // api/admin/agents/models.ts
 // Описание: Получение списка моделей OpenRouter с фильтрацией по modality
-// Версия: 1.0.0
+// Версия: 1.1.0 — добавлен edge runtime
 // ============================================
 
 import { authenticate, isAdmin } from '../../_lib/auth';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+
+export const config = { runtime: 'edge' };
 
 export interface OpenRouterModel {
   id: string;
