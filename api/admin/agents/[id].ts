@@ -1,13 +1,15 @@
 // ============================================
 // api/admin/agents/[id].ts
 // Описание: Получение, обновление и деактивация конкретного агента
-// Версия: 1.0.0
+// Версия: 1.1.0 — добавлен edge runtime
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import type { IAiAgentInput } from '../../../types/agents';
+
+export const config = { runtime: 'edge' };
 
 export default async function handler(request: Request): Promise<Response> {
   const cors = handleCORS(request);
