@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.3.0 — добавлена вкладка Агенты
+// Версия: 7.4.0 — window.adminModule теперь проксирует к реальному
+//                  экземпляру (AdminModule._instance), а не к отдельному
+//                  «призрачному» инстансу, у которого никогда не вызывался init()
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -20,6 +22,13 @@ import { AdminTestingTab } from './tabs/AdminTestingTab';
 import { AdminAgentsTab } from './tabs/AdminAgentsTab';
 
 export class AdminModule {
+  // Экземпляр, который реально создал и проинициализировал module-loader.
+  // module-loader.ts после `new AdminModule(container)` и `await instance.init()`
+  // сохраняет его в `ModuleClass._instance` — это и есть единственный
+  // "живой" AdminModule на странице. window.adminModule ниже всегда
+  // обращается именно к нему, а не к отдельной копии.
+  static _instance: AdminModule | null = null;
+
   private container: HTMLElement;
   private tabs = new Map<string, IAdminTab>();
   private activeTabId = 'dashboard';
@@ -39,7 +48,6 @@ export class AdminModule {
           <div style="font-size:16px;font-weight:600">Доступ запрещён</div>
           <div style="font-size:13px;margin-top:4px">Только для создателя</div>
         </div>`;
-      this.isInitialized = true;
       return;
     }
 
@@ -57,7 +65,7 @@ export class AdminModule {
 
     await this.tabs.get(this.activeTabId)?.init();
     this.isInitialized = true;
-    console.log('✅ AdminModule v7.3.0 готов');
+    console.log('✅ AdminModule v7.4.0 готов');
   }
 
   private register(tab: IAdminTab): void {
@@ -216,68 +224,84 @@ export class AdminModule {
 // ==========================================
 // Привязка к window
 // ==========================================
-
-const adminModuleInstance = new AdminModule(document.createElement('div'));
+//
+// ВАЖНО: раньше здесь создавался отдельный `new AdminModule(...)` с
+// отсоединённым от DOM контейнером, чей init() никогда не вызывался —
+// его `tabs` оставался пустым навсегда, и любая кнопка в админке,
+// использующая window.adminModule.*, тихо проваливалась в ветку
+// "Метод ... не найден". Реальный, проинициализированный экземпляр
+// создаёт module-loader.ts через `new AdminModule(container)` и
+// `await instance.init()`, сохраняя его в `AdminModule._instance`.
+// Поэтому теперь window.adminModule на каждый вызов берёт именно этот
+// актуальный экземпляр, а не фиксированную ссылку, созданную заранее.
 
 (window as any).AdminModule = AdminModule;
 
+function getInstance(): AdminModule | null {
+  const instance = AdminModule._instance;
+  if (!instance) {
+    console.warn('[AdminModule] Экземпляр ещё не создан (админ-панель не была открыта)');
+  }
+  return instance;
+}
+
 (window as any).adminModule = {
   // Навигация
-  switchTab: (id: string) => adminModuleInstance.switchTab(id),
-  refreshTab: (id?: string) => adminModuleInstance.refreshTab(id),
-  renderCurrentTab: () => adminModuleInstance.renderCurrentTab(),
-  show: () => adminModuleInstance.show(),
-  hide: () => adminModuleInstance.hide(),
+  switchTab: (id: string) => getInstance()?.switchTab(id),
+  refreshTab: (id?: string) => getInstance()?.refreshTab(id),
+  renderCurrentTab: () => getInstance()?.renderCurrentTab(),
+  show: () => getInstance()?.show(),
+  hide: () => getInstance()?.hide(),
 
   // Limits
-  saveLimits: () => adminModuleInstance.proxy('limits', 'save'),
+  saveLimits: () => getInstance()?.proxy('limits', 'save'),
 
   // Settings
-  saveSettings: () => adminModuleInstance.proxy('settings', 'save'),
+  saveSettings: () => getInstance()?.proxy('settings', 'save'),
 
   // Quests
   setQuestFilter: (kind: 'type' | 'active', value: string) =>
-    adminModuleInstance.proxy('quests', 'setFilter', kind, value),
-  createQuest: () => adminModuleInstance.proxy('quests', 'create'),
-  editQuest: (id: string) => adminModuleInstance.proxy('quests', 'edit', id),
+    getInstance()?.proxy('quests', 'setFilter', kind, value),
+  createQuest: () => getInstance()?.proxy('quests', 'create'),
+  editQuest: (id: string) => getInstance()?.proxy('quests', 'edit', id),
   toggleQuest: (id: string, state: boolean) =>
-    adminModuleInstance.proxy('quests', 'toggleActive', id, state),
-  deleteQuest: (id: string) => adminModuleInstance.proxy('quests', 'remove', id),
+    getInstance()?.proxy('quests', 'toggleActive', id, state),
+  deleteQuest: (id: string) => getInstance()?.proxy('quests', 'remove', id),
 
   // Subscriptions
-  createTier: () => adminModuleInstance.proxy('subscriptions', 'create'),
-  editTier: (id: string) => adminModuleInstance.proxy('subscriptions', 'edit', id),
+  createTier: () => getInstance()?.proxy('subscriptions', 'create'),
+  editTier: (id: string) => getInstance()?.proxy('subscriptions', 'edit', id),
   toggleTier: (id: string, state: boolean) =>
-    adminModuleInstance.proxy('subscriptions', 'toggle', id, state),
-  deleteTier: (id: string) => adminModuleInstance.proxy('subscriptions', 'remove', id),
+    getInstance()?.proxy('subscriptions', 'toggle', id, state),
+  deleteTier: (id: string) => getInstance()?.proxy('subscriptions', 'remove', id),
 
   // Users
-  searchUsers: (query: string) => adminModuleInstance.proxy('users', 'loadData', query),
+  searchUsers: (query: string) => getInstance()?.proxy('users', 'loadData', query),
   changeRole: (userId: number, role: string) =>
-    adminModuleInstance.proxy('users', 'changeRole', userId, role),
+    getInstance()?.proxy('users', 'changeRole', userId, role),
   addCoinsToUser: (userId: number) =>
-    adminModuleInstance.proxy('users', 'addCoins', userId),
+    getInstance()?.proxy('users', 'addCoins', userId),
   addTokensToUser: (userId: number) =>
-    adminModuleInstance.proxy('users', 'addTokens', userId),
+    getInstance()?.proxy('users', 'addTokens', userId),
 
   // Audit
-  nextAuditPage: () => adminModuleInstance.proxy('audit', 'nextPage'),
-  prevAuditPage: () => adminModuleInstance.proxy('audit', 'prevPage'),
+  nextAuditPage: () => getInstance()?.proxy('audit', 'nextPage'),
+  prevAuditPage: () => getInstance()?.proxy('audit', 'prevPage'),
 
   // Security
   unblockUser: (userId: number) =>
-    adminModuleInstance.proxy('security', 'unblock', userId),
-  addToWhitelist: () => adminModuleInstance.proxy('security', 'addWhitelist'),
+    getInstance()?.proxy('security', 'unblock', userId),
+  addToWhitelist: () => getInstance()?.proxy('security', 'addWhitelist'),
   removeFromWhitelist: (userId: number) =>
-    adminModuleInstance.proxy('security', 'removeWhitelist', userId),
+    getInstance()?.proxy('security', 'removeWhitelist', userId),
 
   // Agents
   setAgentFilter: (kind: 'modality' | 'active', value: string) =>
-    adminModuleInstance.proxy('agents', 'setFilter', kind, value),
-  createAgent: () => adminModuleInstance.proxy('agents', 'create'),
-  editAgent: (id: string) => adminModuleInstance.proxy('agents', 'edit', id),
+    getInstance()?.proxy('agents', 'setFilter', kind, value),
+  createAgent: () => getInstance()?.proxy('agents', 'create'),
+  editAgent: (id: string) => getInstance()?.proxy('agents', 'edit', id),
   toggleAgent: (id: string, state: boolean) =>
-    adminModuleInstance.proxy('agents', 'toggleActive', id, state),
+    getInstance()?.proxy('agents', 'toggleActive', id, state),
 
   // Testing
   testAddCoins: async () => {
@@ -318,4 +342,4 @@ const adminModuleInstance = new AdminModule(document.createElement('div'));
   },
 };
 
-console.log('✅ AdminModule v7.3.0 загружен');
+console.log('✅ AdminModule v7.4.0 загружен');
