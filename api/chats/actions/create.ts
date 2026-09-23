@@ -1,7 +1,10 @@
 // ============================================
 // api/chats/actions/create.ts
 // Описание: Создание нового чата (с user_uuid, sync_token и agent_id)
-// Версия: 5.0.0 — добавлен agent_id
+// Версия: 5.1.0 — валидация topic_id пропускается для чатов с agent_id
+//                  (тема кастомного агента — это его slug, а не встроенный
+//                  topic из фиксированного списка; принадлежность к агенту
+//                  уже определяется полем agent_id)
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
@@ -53,7 +56,16 @@ async function createChat(
     const agentId = chatData.agent_id || null;
     const modality = chatData.modality || null;
 
-    validateTopic(topic);
+    // Фиксированный список тем (ALLOWED_TOPICS в validators.ts) — это
+    // встроенные темы приложения (code/creative/fast/kitchen/analytics).
+    // Чаты с кастомными агентами используют в качестве topic_id slug
+    // самого агента (например, "gen_img"), который в этот список не
+    // входит и не должен в него входить — принадлежность к агенту уже
+    // однозначно определяется полем agent_id. Поэтому валидируем topic
+    // по фиксированному списку только для чатов без агента.
+    if (!agentId) {
+      validateTopic(topic);
+    }
 
     const canSync = await supabaseFetch(
       `users?telegram_id=eq.${userId}&select=role,premium_until`,
@@ -219,7 +231,7 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Missing chat data', 400);
     }
 
-    if (chat.topic_id && !isValidTopic(chat.topic_id)) {
+    if (chat.topic_id && !chat.agent_id && !isValidTopic(chat.topic_id)) {
       return errorResponse(`Invalid topic: ${chat.topic_id}`, 400);
     }
 
