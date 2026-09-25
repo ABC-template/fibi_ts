@@ -4,7 +4,8 @@
 // Используется и в api/agents/index.ts (список агентов для фронта),
 // и в api/chat/stream.ts (финальная проверка перед запросом к ИИ),
 // чтобы обе точки не расходились в правилах доступа.
-// Версия: 1.0.0
+// Версия: 1.1.0 — роль-гейт tier-проверки исправлен с "pro" на "premium"
+//                  (реальная роль платных пользователей в этом проекте)
 // ============================================
 
 /**
@@ -42,8 +43,10 @@ export function checkAgentAccess(
     return { hasAccess: false, reason: 'role' };
   }
 
-  // Если роль pro и указан минимальный tier
-  if (userRole === 'pro' && agent.min_pro_tier) {
+  // Тарифный tier проверяем только для платных пользователей — реальная
+  // роль после покупки/активации подписки называется "premium"
+  // (api/subscription/purchase.ts, activate_trial), а не "pro".
+  if (userRole === 'premium' && agent.min_pro_tier) {
     const tierOrder: Record<string, number> = {
       basic: 1,
       plus: 2,
