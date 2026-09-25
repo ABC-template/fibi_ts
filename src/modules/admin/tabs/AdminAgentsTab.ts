@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 2.0.0 — ПОЛНАЯ ВЕРСИЯ
+// Версия: 2.1.0 — роль "pro" в форме доступа заменена на "premium": именно
+//                  эту роль реально получают пользователи при покупке/
+//                  активации подписки (api/subscription/purchase.ts,
+//                  activate_trial), роли "pro" в БД не присваивается никогда
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -234,7 +237,7 @@ export class AdminAgentsTab implements IAdminTab {
     const nameIt = agent?.name?.it || '';
     const descRu = agent?.description?.ru || '';
     const modality = agent?.modality || 'text';
-    const roles = agent?.allowed_roles || ['trial', 'pro', 'admin', 'creator'];
+    const roles = agent?.allowed_roles || ['trial', 'premium', 'admin', 'creator'];
 
     return `
       <div style="display:flex;flex-direction:column;gap:16px;max-height:65vh;overflow-y:auto;padding-right:4px">
@@ -308,7 +311,7 @@ export class AdminAgentsTab implements IAdminTab {
               <input type="checkbox" name="agent-role" value="trial" ${roles.includes('trial') ? 'checked' : ''}> trial
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" name="agent-role" value="pro" ${roles.includes('pro') ? 'checked' : ''}> pro
+              <input type="checkbox" name="agent-role" value="premium" ${roles.includes('premium') ? 'checked' : ''}> premium
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
               <input type="checkbox" name="agent-role" value="admin" ${roles.includes('admin') ? 'checked' : ''}> admin
@@ -317,7 +320,7 @@ export class AdminAgentsTab implements IAdminTab {
               <input type="checkbox" name="agent-role" value="creator" ${roles.includes('creator') ? 'checked' : ''}> creator
             </label>
           </div>
-          <div id="min-pro-tier-row" style="${roles.includes('pro') ? '' : 'display:none'}">
+          <div id="min-pro-tier-row" style="${roles.includes('premium') ? '' : 'display:none'}">
             <label style="font-size:12px;color:var(--app-text-tertiary)">Минимальный Pro-tier</label>
             <select id="agent-min-pro-tier"
               style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
@@ -353,7 +356,7 @@ export class AdminAgentsTab implements IAdminTab {
 
     document.querySelectorAll('input[name="agent-role"]').forEach(cb => {
       cb.addEventListener('change', () => {
-        const proChecked = (document.querySelector('input[name="agent-role"][value="pro"]') as HTMLInputElement)?.checked;
+        const proChecked = (document.querySelector('input[name="agent-role"][value="premium"]') as HTMLInputElement)?.checked;
         const row = document.getElementById('min-pro-tier-row');
         if (row) row.style.display = proChecked ? '' : 'none';
       });
