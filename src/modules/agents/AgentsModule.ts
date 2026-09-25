@@ -1,14 +1,16 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.1.2 — фикс пути типов
+// Версия: 1.1.3 — includes('pro') → includes('premium') (реальная роль
+//                  платных пользователей; исторически мёртвая ветка, но
+//                  поправлена для консистентности)
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { fetchAgentsWithAccess } from '@/services/agents';
-import type { IAiAgentWithAccess } from '@app-types/agents';
+import type { IAiAgentWithAccess } from '@/types/agents';
 
 export class AgentsModule {
   private container: HTMLElement;
@@ -86,7 +88,7 @@ export class AgentsModule {
       } else {
         if (agent.allowed_roles?.includes('trial')) {
           accessInfo = 'Доступ ограничен';
-        } else if (agent.allowed_roles?.includes('pro')) {
+        } else if (agent.allowed_roles?.includes('premium')) {
           accessInfo = 'Требуется PRO';
         } else {
           accessInfo = 'Доступ ограничен';
