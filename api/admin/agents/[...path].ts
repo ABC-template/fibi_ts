@@ -1,12 +1,11 @@
 // ============================================
 // api/admin/agents/[...path].ts
 // Описание: Получение, обновление и деактивация конкретного агента
-// Версия: 1.2.0 — переименован из [id].ts в [...path].ts: та же связка
-//                  (переименование + явный rewrite в vercel.json), что уже
-//                  проверена и работает для api/admin/quests/[...path].ts.
-//                  id как парсился вручную из url.pathname, так и парсится —
-//                  это не менялось, дело было не в параметрах, а в том, что
-//                  Vercel не находил файл-обработчик под именем [id].ts.
+// Версия: 1.3.0 — PATCH явно запрашивает Prefer: return=representation
+//                  (без него PostgREST возвращал 204 без тела, supabaseFetch
+//                  превращал это в {success:true}, и фронт полностью
+//                  затирал локальную запись агента этим пустым объектом —
+//                  id и остальные поля пропадали до перезагрузки страницы)
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
@@ -182,6 +181,7 @@ export default async function handler(request: Request): Promise<Response> {
         `ai_agents?id=eq.${agentId}`,
         {
           method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
           body: JSON.stringify(updates),
         },
         config
