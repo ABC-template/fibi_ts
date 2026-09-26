@@ -1,16 +1,17 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.1.3 — includes('pro') → includes('premium') (реальная роль
-//                  платных пользователей; исторически мёртвая ветка, но
-//                  поправлена для консистентности)
+// Версия: 1.1.4 — фикс пути импорта типов: types/ лежит в корне проекта,
+//                  а не в src/types/, поэтому '@/types/agents' не резолвился
+//                  (TS2307); заменено на '@app-types/agents' — тот же алиас,
+//                  что уже используется в остальных файлах проекта
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { fetchAgentsWithAccess } from '@/services/agents';
-import type { IAiAgentWithAccess } from '@/types/agents';
+import type { IAiAgentWithAccess } from '@app-types/agents';
 
 export class AgentsModule {
   private container: HTMLElement;
