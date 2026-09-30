@@ -1,7 +1,13 @@
 // ============================================
 // types/agents.ts
 // Типы для конструктора ИИ-агентов
-// Версия: 1.0.0
+// Версия: 1.1.0 — новая схема доступа (см. api/_lib/agent-access.ts v2.0.0):
+//                  access_reason больше не включает 'role', вместо неё —
+//                  'auth' (не авторизован). allowed_roles оставлен в
+//                  IAiAgent (колонка в БД ещё существует, NOT NULL), но
+//                  в IAiAgentInput стал необязательным — форма админки
+//                  больше его не заполняет, доступ определяется только
+//                  ролью (admin/creator) и min_pro_tier.
 // ============================================
 
 import { UUID, ISODateString } from './common';
@@ -27,6 +33,7 @@ export interface IAiAgent {
   system_prompt: string;
   markup_coefficient: number;
   min_charge: number;
+  /** @deprecated не используется в проверке доступа с v2.0.0 agent-access.ts */
   allowed_roles: string[];
   min_pro_tier: ProTier | null;
   owner_id: UUID | null;
@@ -40,7 +47,7 @@ export interface IAiAgent {
 /** Агент с информацией о доступе для текущего пользователя */
 export interface IAiAgentWithAccess extends IAiAgent {
   has_access: boolean;
-  access_reason?: 'role' | 'tier' | 'inactive' | null;
+  access_reason?: 'auth' | 'tier' | 'inactive' | null;
 }
 
 /** Данные для создания/обновления агента */
@@ -53,7 +60,8 @@ export interface IAiAgentInput {
   system_prompt: string;
   markup_coefficient?: number;
   min_charge?: number;
-  allowed_roles: string[];
+  /** @deprecated не используется — оставлен только для обратной совместимости */
+  allowed_roles?: string[];
   min_pro_tier?: ProTier | null;
   is_active?: boolean;
   is_system?: boolean;
