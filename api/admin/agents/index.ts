@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/agents/index.ts
 // Описание: Список агентов (GET) и создание нового агента (POST)
-// Версия: 1.1.0 — добавлен edge runtime
+// Версия: 1.2.0 — allowed_roles больше не обязателен (доступ теперь через
+//                  min_pro_tier, см. api/_lib/agent-access.ts v2.0.0)
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
@@ -71,9 +72,10 @@ export default async function handler(request: Request): Promise<Response> {
       if (!body.system_prompt?.trim()) {
         return errorResponse('System prompt is required', 400);
       }
-      if (!Array.isArray(body.allowed_roles) || body.allowed_roles.length === 0) {
-        return errorResponse('At least one role is required', 400);
-      }
+      // allowed_roles больше не используется в проверке доступа (см.
+      // api/_lib/agent-access.ts v2.0.0) — доступ теперь определяется
+      // ролью (admin/creator) и min_pro_tier. Колонка в БД осталась
+      // NOT NULL, поэтому шлём пустой массив, если фронт её не передал.
 
       // Только creator может создавать системных агентов
       const makeSystem = body.is_system === true;
@@ -90,7 +92,7 @@ export default async function handler(request: Request): Promise<Response> {
         system_prompt: body.system_prompt.trim(),
         markup_coefficient: Number(body.markup_coefficient) || 3.0,
         min_charge: Number(body.min_charge) ?? 50,
-        allowed_roles: body.allowed_roles,
+        allowed_roles: Array.isArray(body.allowed_roles) ? body.allowed_roles : [],
         min_pro_tier: body.min_pro_tier || null,
         is_active: body.is_active !== false,
         is_system: makeSystem,
