@@ -1,7 +1,9 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 6.1.0 — checkAgentAccess вынесен в _lib/agent-access
+// Версия: 6.2.0 — новая схема доступа к агентам (admin/creator без проверок,
+//                  иначе сравнение тарифов по sort_order из БД), см.
+//                  api/_lib/agent-access.ts
 // ============================================
 
 import {
@@ -25,7 +27,7 @@ import {
   estimateTokens,
 } from '../_lib/tokens-usage';
 import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
-import { checkAgentAccess } from '../_lib/agent-access';
+import { checkAgentAccess, buildTierOrder } from '../_lib/agent-access';
 
 export const config = { runtime: 'edge' };
 
@@ -267,11 +269,15 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
-    const userRes = await supabaseFetch(
-      `users?telegram_id=eq.${userId}&select=role,subscription_tier`,
-      { method: 'GET' },
-      config
-    );
+    const [userRes, tiers] = await Promise.all([
+      supabaseFetch(
+        `users?telegram_id=eq.${userId}&select=role,subscription_tier`,
+        { method: 'GET' },
+        config
+      ),
+      supabaseFetch('subscription_tiers?select=tier_key,sort_order', { method: 'GET' }, config),
+    ]);
+    const tierOrder = buildTierOrder(tiers || []);
 
     const userRole = (userRes && Array.isArray(userRes) && userRes.length > 0)
       ? userRes[0].role || 'trial'
@@ -280,7 +286,7 @@ export default async function handler(request: Request): Promise<Response> {
       ? userRes[0].subscription_tier || null
       : null;
 
-    const access = checkAgentAccess(agent, userRole, userProTier);
+    const access = checkAgentAccess(agent, userRole, userProTier, tierOrder);
 
     if (!access.hasAccess) {
       console.warn(`⚠️ [stream] Доступ запрещён: ${access.reason}`);
