@@ -1,10 +1,9 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.1.4 — фикс пути импорта типов: types/ лежит в корне проекта,
-//                  а не в src/types/, поэтому '@/types/agents' не резолвился
-//                  (TS2307); заменено на '@app-types/agents' — тот же алиас,
-//                  что уже используется в остальных файлах проекта
+// Версия: 1.1.5 — тексты причины отказа переведены под новую схему доступа
+//                  (auth/tier/inactive вместо allowed_roles), см.
+//                  api/_lib/agent-access.ts v2.0.0
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
@@ -82,18 +81,11 @@ export class AgentsModule {
       if (accessReason === 'inactive') {
         accessInfo = 'Временно недоступен';
       } else if (accessReason === 'tier') {
-        accessInfo = `Требуется: Pro (${agent.min_pro_tier})`;
-      } else if (accessReason === 'role') {
-        const roles = agent.allowed_roles?.filter(r => r !== 'trial') || [];
-        accessInfo = roles.length ? `Требуется: ${roles.join(', ')}` : 'Требуется PRO';
+        accessInfo = agent.min_pro_tier ? `Требуется тариф: ${agent.min_pro_tier}` : 'Требуется подписка';
+      } else if (accessReason === 'auth') {
+        accessInfo = 'Войдите, чтобы использовать';
       } else {
-        if (agent.allowed_roles?.includes('trial')) {
-          accessInfo = 'Доступ ограничен';
-        } else if (agent.allowed_roles?.includes('premium')) {
-          accessInfo = 'Требуется PRO';
-        } else {
-          accessInfo = 'Доступ ограничен';
-        }
+        accessInfo = 'Доступ ограничен';
       }
     }
 
@@ -211,11 +203,13 @@ export class AgentsModule {
     if (isInactive) {
       title = '⏳ Агент временно недоступен';
       description = 'Этот агент отключён администратором. Попробуйте позже.';
-    } else if (reason === 'role') {
-      const roles = agent.allowed_roles?.filter(r => r !== 'trial') || [];
-      description = `Требуется роль: ${roles.join(', ') || 'PRO'}`;
+    } else if (reason === 'auth') {
+      title = '🔒 Нужно войти';
+      description = 'Войдите в приложение, чтобы использовать этого агента.';
     } else if (reason === 'tier') {
-      description = `Требуется подписка: Pro (${agent.min_pro_tier})`;
+      description = agent.min_pro_tier
+        ? `Требуется подписка не ниже тарифа: ${agent.min_pro_tier}`
+        : 'Требуется подписка';
     }
 
     const content = `
