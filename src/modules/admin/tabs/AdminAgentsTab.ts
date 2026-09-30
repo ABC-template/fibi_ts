@@ -1,10 +1,12 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 2.1.0 — роль "pro" в форме доступа заменена на "premium": именно
-//                  эту роль реально получают пользователи при покупке/
-//                  активации подписки (api/subscription/purchase.ts,
-//                  activate_trial), роли "pro" в БД не присваивается никогда
+// Версия: 3.0.0 — форма доступа переведена на новую схему: вместо 4
+//                  чекбоксов ролей — один select "минимальный тариф"
+//                  (данные из /admin/economy/subscriptions, порядок по
+//                  sort_order). Admin/creator видят агента всегда — это
+//                  теперь решается в api/_lib/agent-access.ts, а не здесь.
+//                  allowed_roles в форме больше не собирается.
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -237,7 +239,6 @@ export class AdminAgentsTab implements IAdminTab {
     const nameIt = agent?.name?.it || '';
     const descRu = agent?.description?.ru || '';
     const modality = agent?.modality || 'text';
-    const roles = agent?.allowed_roles || ['trial', 'premium', 'admin', 'creator'];
 
     return `
       <div style="display:flex;flex-direction:column;gap:16px;max-height:65vh;overflow-y:auto;padding-right:4px">
@@ -306,29 +307,14 @@ export class AdminAgentsTab implements IAdminTab {
 
         <div>
           <div style="font-weight:600;font-size:13px;color:#d4af37;margin-bottom:8px">Доступ</div>
-          <div style="display:flex;flex-wrap:wrap;gap:12px 20px;margin-bottom:10px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" name="agent-role" value="trial" ${roles.includes('trial') ? 'checked' : ''}> trial
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" name="agent-role" value="premium" ${roles.includes('premium') ? 'checked' : ''}> premium
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" name="agent-role" value="admin" ${roles.includes('admin') ? 'checked' : ''}> admin
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" name="agent-role" value="creator" ${roles.includes('creator') ? 'checked' : ''}> creator
-            </label>
-          </div>
-          <div id="min-pro-tier-row" style="${roles.includes('premium') ? '' : 'display:none'}">
-            <label style="font-size:12px;color:var(--app-text-tertiary)">Минимальный Pro-tier</label>
-            <select id="agent-min-pro-tier"
-              style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
-              <option value="">Не требовать</option>
-              <option value="basic" ${agent?.min_pro_tier === 'basic' ? 'selected' : ''}>basic</option>
-              <option value="plus" ${agent?.min_pro_tier === 'plus' ? 'selected' : ''}>plus</option>
-              <option value="ultra" ${agent?.min_pro_tier === 'ultra' ? 'selected' : ''}>ultra</option>
-            </select>
+          <label style="font-size:12px;color:var(--app-text-tertiary)">Минимальный тариф</label>
+          <select id="agent-min-pro-tier"
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
+            <option value="">Загрузка...</option>
+          </select>
+          <div style="font-size:11px;color:var(--app-text-tertiary);margin-top:4px">
+            «Без ограничений» — доступен любому авторизованному пользователю (в т.ч. на trial).
+            Админ и создатель видят агента всегда, вне зависимости от этого выбора.
           </div>
         </div>
 
@@ -354,13 +340,7 @@ export class AdminAgentsTab implements IAdminTab {
       await this.loadModels(modalitySelect.value as AgentModality, agent?.model_id);
     });
 
-    document.querySelectorAll('input[name="agent-role"]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const proChecked = (document.querySelector('input[name="agent-role"][value="premium"]') as HTMLInputElement)?.checked;
-        const row = document.getElementById('min-pro-tier-row');
-        if (row) row.style.display = proChecked ? '' : 'none';
-      });
-    });
+    await this.loadTiers(agent?.min_pro_tier);
 
     if (!agent) {
       const nameRu = document.getElementById('agent-name-ru') as HTMLInputElement;
@@ -372,6 +352,27 @@ export class AdminAgentsTab implements IAdminTab {
     }
 
     await this.loadModels((agent?.modality || 'text') as AgentModality, agent?.model_id);
+  }
+
+  private async loadTiers(selectedTierKey?: string | null): Promise<void> {
+    const select = document.getElementById('agent-min-pro-tier') as HTMLSelectElement;
+    if (!select) return;
+    select.innerHTML = '<option value="">Загрузка...</option>';
+    select.disabled = true;
+    try {
+      const res = await apiClient.get('/admin/economy/subscriptions');
+      const tiers = (res.tiers || [])
+        .filter((t: any) => !t.is_trial)
+        .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      const options = tiers
+        .map((t: any) => `<option value="${t.tier_key}" ${t.tier_key === selectedTierKey ? 'selected' : ''}>${t.name || t.tier_key}</option>`)
+        .join('');
+      select.innerHTML = `<option value="">Без ограничений</option>${options}`;
+    } catch (e) {
+      select.innerHTML = '<option value="">Ошибка загрузки тарифов</option>';
+    } finally {
+      select.disabled = false;
+    }
   }
 
   private async loadModels(modality: AgentModality, selectedId?: string): Promise<void> {
@@ -404,15 +405,6 @@ export class AdminAgentsTab implements IAdminTab {
       return;
     }
 
-    const allowedRoles: string[] = [];
-    document.querySelectorAll('input[name="agent-role"]:checked').forEach(el => {
-      allowedRoles.push((el as HTMLInputElement).value);
-    });
-    if (allowedRoles.length === 0) {
-      alert('Выберите хотя бы одну роль');
-      return;
-    }
-
     const payload: IAiAgentInput = {
       slug,
       name: {
@@ -428,7 +420,6 @@ export class AdminAgentsTab implements IAdminTab {
       system_prompt: systemPrompt,
       markup_coefficient: Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value) || 3,
       min_charge: Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value) || 50,
-      allowed_roles: allowedRoles,
       min_pro_tier: (document.getElementById('agent-min-pro-tier') as HTMLSelectElement)?.value as ProTier || null,
       is_active: (document.getElementById('agent-is-active') as HTMLInputElement)?.checked,
       sort_order: Number((document.getElementById('agent-sort-order') as HTMLInputElement)?.value) || 100,
