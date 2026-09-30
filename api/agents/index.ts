@@ -1,13 +1,14 @@
 // ============================================
 // api/agents/index.ts
 // Описание: Список активных агентов для пользователей + флаг доступа
-// Версия: 1.1.0 — checkAgentAccess вынесен в _lib/agent-access, добавлен edge runtime
+// Версия: 1.2.0 — новая схема доступа: admin/creator без проверок, иначе
+//                  сравнение тарифов по sort_order из subscription_tiers
 // ============================================
 
 import { authenticate } from '../_lib/auth';
 import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
-import { checkAgentAccess } from '../_lib/agent-access';
+import { checkAgentAccess, buildTierOrder } from '../_lib/agent-access';
 import type { IAiAgent, IAiAgentWithAccess } from '../../types/agents';
 
 export const config = { runtime: 'edge' };
@@ -31,7 +32,11 @@ export default async function handler(request: Request): Promise<Response> {
     // Пока отдаём все активные (owner_id IS NULL)
     query += '&owner_id=is.null';
 
-    const agents: IAiAgent[] = await supabaseFetch(query, { method: 'GET' }, config) || [];
+    const [agents, tiers] = await Promise.all([
+      supabaseFetch(query, { method: 'GET' }, config) as Promise<IAiAgent[]>,
+      supabaseFetch('subscription_tiers?select=tier_key,sort_order', { method: 'GET' }, config),
+    ]);
+    const tierOrder = buildTierOrder(tiers || []);
 
     // Определяем роль и tier пользователя
     let userRole = 'guest';
@@ -51,8 +56,8 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // Добавляем флаг доступа
-    const agentsWithAccess: IAiAgentWithAccess[] = agents.map((agent) => {
-      const { hasAccess, reason } = checkAgentAccess(agent, userRole, userProTier);
+    const agentsWithAccess: IAiAgentWithAccess[] = (agents || []).map((agent) => {
+      const { hasAccess, reason } = checkAgentAccess(agent, userRole, userProTier, tierOrder);
       return {
         ...agent,
         has_access: hasAccess,
