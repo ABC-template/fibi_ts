@@ -1,12 +1,10 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.0.0 — форма доступа переведена на новую схему: вместо 4
-//                  чекбоксов ролей — один select "минимальный тариф"
-//                  (данные из /admin/economy/subscriptions, порядок по
-//                  sort_order). Admin/creator видят агента всегда — это
-//                  теперь решается в api/_lib/agent-access.ts, а не здесь.
-//                  allowed_roles в форме больше не собирается.
+// Версия: 3.1.0 — context_length выбранной модели (уже приходит от
+//                  OpenRouter в /admin/agents/models) теперь сохраняется
+//                  вместе с агентом — нужен для динамической проверки
+//                  размера прикреплённых файлов в api/chat/stream.ts
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -405,6 +403,8 @@ export class AdminAgentsTab implements IAdminTab {
       return;
     }
 
+    const selectedModel = this.availableModels.find(m => m.id === modelId);
+
     const payload: IAiAgentInput = {
       slug,
       name: {
@@ -417,6 +417,7 @@ export class AdminAgentsTab implements IAdminTab {
       },
       modality,
       model_id: modelId,
+      context_length: selectedModel?.context_length || null,
       system_prompt: systemPrompt,
       markup_coefficient: Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value) || 3,
       min_charge: Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value) || 50,
