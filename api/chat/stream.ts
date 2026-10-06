@@ -1,9 +1,10 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 6.2.0 — новая схема доступа к агентам (admin/creator без проверок,
-//                  иначе сравнение тарифов по sort_order из БД), см.
-//                  api/_lib/agent-access.ts
+// Версия: 6.3.0 — загрузка файлов v1 (attachedFile): только для создателя,
+//                  жёсткий потолок + динамическая проверка по context_length
+//                  агента, содержимое уходит только в этот запрос
+//                  (дописывается в systemPrompt), никуда не персистится
 // ============================================
 
 import {
@@ -38,6 +39,7 @@ interface IStreamRequestBody {
   currentTopic?: string;
   userLang?: string;
   attachedImage?: string | null;
+  attachedFile?: { name: string; content: string } | null;
   agentId?: string | null;
 }
 
@@ -53,7 +55,14 @@ interface IAgent {
   allowed_roles: string[];
   min_pro_tier: string | null;
   is_active: boolean;
+  context_length: number | null;
 }
+
+// Загрузка файлов (repomix-дампы и т.п.) — v1, только для создателя.
+// Содержимое НЕ сохраняется нигде — попадает только в этот один запрос
+// к модели (через systemPrompt ниже), в историю чата не персистится.
+const MAX_ATTACHED_FILE_CHARS = 3_000_000; // ~3 МБ текста — жёсткий потолок
+const RESPONSE_TOKEN_RESERVE = 4000; // запас под ответ модели
 
 async function getAgentById(
   agentId: string,
@@ -224,6 +233,7 @@ export default async function handler(request: Request): Promise<Response> {
       currentTopic,
       userLang,
       attachedImage,
+      attachedFile,
       agentId,
     } = body;
 
@@ -232,6 +242,7 @@ export default async function handler(request: Request): Promise<Response> {
       agentId,
       currentTopic,
       hasImage: !!attachedImage,
+      hasFile: !!attachedFile,
       historyLength: historyMessages.length,
     });
 
@@ -321,12 +332,53 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
+    let attachedFileBlock = '';
+    if (attachedFile?.content) {
+      if (userId !== MY_TELEGRAM_ID) {
+        return errorResponse(
+          '📎 Загрузка файлов пока доступна только создателю приложения',
+          403
+        );
+      }
+
+      if (attachedFile.content.length > MAX_ATTACHED_FILE_CHARS) {
+        return errorResponse(
+          `Файл слишком большой (${Math.round(attachedFile.content.length / 1024)} КБ). Максимум ${Math.round(MAX_ATTACHED_FILE_CHARS / 1024)} КБ текста.`,
+          413
+        );
+      }
+
+      // Динамическая проверка: хватит ли окна контекста модели на
+      // системный промпт + историю + файл + запас под ответ.
+      // context_length может быть не заполнен для старых агентов —
+      // в этом случае пропускаем динамическую проверку, остаётся
+      // только жёсткий потолок выше.
+      if (agent.context_length) {
+        const usedTokens =
+          estimateTokens(
+            historyMessages.map(m => ({ role: 'user', content: m.text || '' })),
+            agent.system_prompt || ''
+          ) + RESPONSE_TOKEN_RESERVE;
+        const fileTokens = estimateTokens([{ role: 'user', content: attachedFile.content }]);
+
+        if (usedTokens + fileTokens > agent.context_length) {
+          const available = Math.max(0, agent.context_length - usedTokens);
+          return errorResponse(
+            `Файл слишком большой для этого агента: нужно ~${fileTokens} токенов, доступно ~${available} (окно контекста модели — ${agent.context_length}, часть уже занята историей чата).`,
+            413
+          );
+        }
+      }
+
+      attachedFileBlock = `\n\n[Прикреплённый пользователем файл: ${attachedFile.name}]\n---\n${attachedFile.content}\n---`;
+    }
+
     const keysPool = getRotatedKeysPool();
     if (keysPool.length === 0) {
       return errorResponse('Серверные API ключи ROUTER_KEY не настроены в Vercel.', 500);
     }
 
-    const systemPrompt = agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision);
+    const systemPrompt = (agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision)) + attachedFileBlock;
     const messages = buildMessages(systemPrompt, historyMessages, attachedImage || undefined);
 
     const model = agent.model_id || 'openai/gpt-4o';
