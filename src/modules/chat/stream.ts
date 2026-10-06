@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.2.1 - замена @types → @app-types
+// Версия: 4.3.0 — передача attachedFile в /api/chat/stream; починена
+//                  устаревшая причина отказа 'role' (теперь auth/tier/
+//                  inactive, хвост от редизайна доступа к агентам);
+//                  добавлена обработка 413 (файл слишком большой)
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -18,7 +21,8 @@ let streamCallCounter = 0;
   userLang: string,
   attachedImage: string | null,
   chatId: UUID,
-  agentId: string | null = null
+  agentId: string | null = null,
+  attachedFile: { name: string; content: string } | null = null
 ): Promise<boolean> {
   const callId = ++streamCallCounter;
   console.log(`🔴 [СТРИМ #${callId}] ===== НАЧАЛО =====`);
@@ -66,6 +70,7 @@ let streamCallCounter = 0;
       currentTopic: topic || chatStoreInstance.currentTopic,
       userLang: userLang || 'ru',
       attachedImage: attachedImage || null,
+      attachedFile: attachedFile || null,
       agentId: agentId,
     };
 
@@ -93,17 +98,22 @@ let streamCallCounter = 0;
         const accessReason = response.headers.get('X-Access-Reason') || 'unknown';
         const agentSlug = response.headers.get('X-Agent-Slug') || 'агента';
         let errorMessage = `⛔ Доступ к агенту "${agentSlug}" запрещён.`;
-        if (accessReason === 'role') {
-          errorMessage += ' Требуется PRO-подписка.';
-        } else if (accessReason === 'tier') {
+        if (accessReason === 'tier') {
           errorMessage += ' Требуется более высокий уровень подписки.';
         } else if (accessReason === 'inactive') {
           errorMessage += ' Агент временно недоступен.';
+        } else if (accessReason === 'auth') {
+          errorMessage += ' Войдите в приложение.';
         }
         uiRendererInstance.renderMessage(errorMessage, 'ai-msg');
         return false;
       }
-      
+
+      if (response.status === 413) {
+        uiRendererInstance.renderMessage(`⚠️ ${text}`, 'ai-msg');
+        return false;
+      }
+
       throw new Error(`Ошибка ${response.status}: ${text.substring(0, 200)}`);
     }
 
