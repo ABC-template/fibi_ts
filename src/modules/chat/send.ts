@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based) с поддержкой агентов
-// Версия: 5.2.1 - замена @types → @app-types
+// Версия: 5.3.0 — прикрепление текстового файла (attach-file.ts), по тому
+//                  же образцу, что и изображение: короткая пометка в text,
+//                  содержимое уходит отдельным параметром в streamAiResponse
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -20,7 +22,7 @@ export class ChatSend {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v5.2.1 загружен (с поддержкой агентов)');
+    console.log('✅ ChatSend v5.3.0 загружен (с поддержкой агентов)');
   }
 
   private async _ensureStreamFunction(): Promise<void> {
@@ -116,6 +118,15 @@ export class ChatSend {
       text = `📸 [Прикреплено изображение]\n${text}`;
     }
 
+    const attachedFileName = (window as any).currentAttachedFileName || null;
+    const attachedFileText = (window as any).currentAttachedFileText || null;
+    const fileToAttach = attachedFileName && attachedFileText
+      ? { name: attachedFileName, content: attachedFileText }
+      : null;
+    if (fileToAttach) {
+      text = `📎 [Прикреплён файл: ${fileToAttach.name}]\n${text}`;
+    }
+
     let activeChat = this.chatStore.getActiveChat();
     
     if (!activeChat) {
@@ -181,7 +192,8 @@ export class ChatSend {
         userLang,
         mediaToAttach,
         chatId,
-        agentId
+        agentId,
+        fileToAttach
       );
     } catch (error) {
       this.uiRenderer.hideSkeleton();
@@ -193,6 +205,9 @@ export class ChatSend {
     } finally {
       if ((window as any).clearImageAttachment) {
         (window as any).clearImageAttachment();
+      }
+      if ((window as any).clearFileAttachment) {
+        (window as any).clearFileAttachment();
       }
       this.isSending = false;
       input.disabled = false;
@@ -354,4 +369,4 @@ export class ChatSend {
 }
 
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v5.2.1 загружен (с поддержкой агентов)');
+console.log('✅ ChatSend v5.3.0 загружен (с поддержкой агентов)');
