@@ -1,11 +1,8 @@
 // ============================================
 // api/admin/agents/[...path].ts
 // Описание: Получение, обновление и деактивация конкретного агента
-// Версия: 1.3.0 — PATCH явно запрашивает Prefer: return=representation
-//                  (без него PostgREST возвращал 204 без тела, supabaseFetch
-//                  превращал это в {success:true}, и фронт полностью
-//                  затирал локальную запись агента этим пустым объектом —
-//                  id и остальные поля пропадали до перезагрузки страницы)
+// Версия: 1.4.0 — PATCH принимает и обновляет context_length модели
+//                  (нужен для динамической проверки размера файлов)
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
@@ -128,6 +125,10 @@ export default async function handler(request: Request): Promise<Response> {
           return errorResponse('Model is required', 400);
         }
         updates.model_id = body.model_id.trim();
+      }
+
+      if (body.context_length !== undefined) {
+        updates.context_length = body.context_length || null;
       }
 
       if (body.system_prompt !== undefined) {
