@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 8.11.1 — исправлен импорт типов
+// Версия: 8.12.0 — добавлена кнопка прикрепления текстового файла
+//                  (.file-btn → attach-file.ts, по образцу .media-btn)
 // ============================================
 import './chat.css';
 import { chatStore } from '@/store/ChatStore';
@@ -109,6 +110,28 @@ export class ChatModule {
     }
   }
 
+  private async _ensureFileFunction(): Promise<void> {
+    if (typeof (window as any).triggerFileSelector === 'function') {
+      return;
+    }
+
+    console.log('📦 Динамическая загрузка attach-file.ts...');
+
+    try {
+      await import('./attach-file');
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      if (typeof (window as any).triggerFileSelector !== 'function') {
+        throw new Error('triggerFileSelector не определена после импорта');
+      }
+
+      console.log('✅ attach-file.ts успешно загружен динамически');
+    } catch (err) {
+      console.error('❌ Ошибка загрузки attach-file.ts:', err);
+    }
+  }
+
   private _setupDelegation(): void {
     if (this._delegationHandler) {
       this.container.removeEventListener('click', this._delegationHandler);
@@ -134,6 +157,16 @@ export class ChatModule {
         await this._ensureMediaFunction();
         if ((window as any).triggerMediaSelector) {
           (window as any).triggerMediaSelector();
+        }
+        return;
+      }
+
+      const fileBtn = target.closest('.file-btn') as HTMLElement;
+      if (fileBtn) {
+        console.log('📄 Делегирование: нажата кнопка файла');
+        await this._ensureFileFunction();
+        if ((window as any).triggerFileSelector) {
+          (window as any).triggerFileSelector();
         }
         return;
       }
@@ -708,6 +741,21 @@ export class ChatModule {
                 cursor: pointer;
               ">
                 <i data-lucide="paperclip" style="width:20px;height:20px;"></i>
+              </button>
+              <button class="footer-action-btn file-btn" style="
+                display: inline-flex;
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                align-items: center;
+                justify-content: center;
+                padding: 0;
+                border: none;
+                background: var(--app-bg-tertiary);
+                color: var(--app-text-secondary);
+                cursor: pointer;
+              ">
+                <i data-lucide="file-text" style="width:20px;height:20px;"></i>
               </button>
             </div>
             <div class="footer-btn-group right-group" style="
