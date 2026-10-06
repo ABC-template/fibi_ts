@@ -1,8 +1,8 @@
 // ============================================
 // api/admin/agents/index.ts
 // Описание: Список агентов (GET) и создание нового агента (POST)
-// Версия: 1.2.0 — allowed_roles больше не обязателен (доступ теперь через
-//                  min_pro_tier, см. api/_lib/agent-access.ts v2.0.0)
+// Версия: 1.3.0 — принимаем и сохраняем context_length модели (нужен для
+//                  динамической проверки размера файлов в chat/stream.ts)
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
@@ -89,6 +89,7 @@ export default async function handler(request: Request): Promise<Response> {
         description: body.description || null,
         modality: body.modality,
         model_id: body.model_id.trim(),
+        context_length: body.context_length || null,
         system_prompt: body.system_prompt.trim(),
         markup_coefficient: Number(body.markup_coefficient) || 3.0,
         min_charge: Number(body.min_charge) ?? 50,
