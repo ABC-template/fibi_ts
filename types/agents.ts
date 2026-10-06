@@ -1,13 +1,9 @@
 // ============================================
 // types/agents.ts
 // Типы для конструктора ИИ-агентов
-// Версия: 1.1.0 — новая схема доступа (см. api/_lib/agent-access.ts v2.0.0):
-//                  access_reason больше не включает 'role', вместо неё —
-//                  'auth' (не авторизован). allowed_roles оставлен в
-//                  IAiAgent (колонка в БД ещё существует, NOT NULL), но
-//                  в IAiAgentInput стал необязательным — форма админки
-//                  больше его не заполняет, доступ определяется только
-//                  ролью (admin/creator) и min_pro_tier.
+// Версия: 1.2.0 — добавлено поле context_length (окно контекста модели от
+//                  OpenRouter) — нужно для динамической проверки размера
+//                  прикреплённых файлов в api/chat/stream.ts
 // ============================================
 
 import { UUID, ISODateString } from './common';
@@ -30,6 +26,10 @@ export interface IAiAgent {
   description?: IAgentName | null;
   modality: AgentModality;
   model_id: string;
+  /** Окно контекста модели в токенах (от OpenRouter), используется для
+   *  динамической проверки размера прикреплённых файлов. Может быть
+   *  null у агентов, созданных до появления этого поля. */
+  context_length: number | null;
   system_prompt: string;
   markup_coefficient: number;
   min_charge: number;
@@ -57,6 +57,7 @@ export interface IAiAgentInput {
   description?: IAgentName | null;
   modality: AgentModality;
   model_id: string;
+  context_length?: number | null;
   system_prompt: string;
   markup_coefficient?: number;
   min_charge?: number;
