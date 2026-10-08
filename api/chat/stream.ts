@@ -176,57 +176,6 @@ async function spendTokens(
       error: (err as Error).message,
     };
   }
-}> {
-  try {
-    const result = await supabaseRPC(
-      'spend_abstract_tokens',
-      {
-        p_user_id: userId,
-        p_amount: amount,
-      },
-      config
-    );
-
-    if (!result || typeof result !== 'object') {
-      return {
-        success: false,
-        bonusUsed: 0,
-        permanentUsed: 0,
-        remainingBonus: 0,
-        remainingPermanent: 0,
-        error: 'Failed to spend tokens',
-      };
-    }
-
-    if (result.success === false) {
-      return {
-        success: false,
-        bonusUsed: 0,
-        permanentUsed: 0,
-        remainingBonus: 0,
-        remainingPermanent: 0,
-        error: result.error || 'Failed to spend tokens',
-      };
-    }
-
-    return {
-      success: true,
-      bonusUsed: result.bonus_used || 0,
-      permanentUsed: result.permanent_used || 0,
-      remainingBonus: result.remaining_bonus || 0,
-      remainingPermanent: result.remaining_permanent || 0,
-    };
-  } catch (err) {
-    console.error('Failed to spend tokens:', err);
-    return {
-      success: false,
-      bonusUsed: 0,
-      permanentUsed: 0,
-      remainingBonus: 0,
-      remainingPermanent: 0,
-      error: (err as Error).message,
-    };
-  }
 }
 
 async function logAgentUsage(
