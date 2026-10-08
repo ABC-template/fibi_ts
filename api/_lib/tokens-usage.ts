@@ -77,7 +77,7 @@ export async function logOpenRouterUsage(
  * Грубая оценка токенов (для pre-check контекста)
  */
 export function estimateTokens(
-  messages: Array<{ role?: string; content?: string }>,
+  messages: Array<{ role?: string; content?: string | any[] }>,
   systemPrompt: string = ''
 ): number {
   let chars = systemPrompt.length;
