@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyStore.ts
 // Хранилище для UI (кеш балансов)
-// Версия: 3.0.2 - миграция старых данных + защита
+// Версия: 4.0.0 — spent_today/daily_limit/bypass | old: 3.0.2 - миграция старых данных + защита
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -149,6 +149,9 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
         this._data.coins.total_spent = result.coins?.total_spent || 0;
         this._data.tokens.bonus = result.tokens?.bonus || 0;
         this._data.tokens.permanent = result.tokens?.permanent || 0;
+        this._data.tokens.spent_today = result.tokens?.spent_today ?? 0;
+        this._data.tokens.daily_limit = result.tokens?.daily_limit ?? 0;
+        this._data.tokens.bypass = result.tokens?.bypass === true;
         this._data.lastUpdated = new Date().toISOString();
         this.save();
         
@@ -201,7 +204,14 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     }
   }
 
-  getTokenBalances(): { bonus: number; permanent: number; total: number } {
+  getTokenBalances(): {
+    bonus: number;
+    permanent: number;
+    total: number;
+    spent_today: number;
+    daily_limit: number;
+    bypass: boolean;
+  } {
     try {
       const bonus = this._data?.tokens?.bonus ?? 0;
       const permanent = this._data?.tokens?.permanent ?? 0;
@@ -209,10 +219,20 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
         bonus,
         permanent,
         total: bonus + permanent,
+        spent_today: this._data?.tokens?.spent_today ?? 0,
+        daily_limit: this._data?.tokens?.daily_limit ?? 0,
+        bypass: this._data?.tokens?.bypass === true,
       };
     } catch (err) {
       console.warn('⚠️ [getTokenBalances] Ошибка, возвращаем 0');
-      return { bonus: 0, permanent: 0, total: 0 };
+      return {
+        bonus: 0,
+        permanent: 0,
+        total: 0,
+        spent_today: 0,
+        daily_limit: 0,
+        bypass: false,
+      };
     }
   }
 
@@ -270,13 +290,32 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     }
   }
 
-  updateTokenBalances(bonus: number, permanent: number): void {
+  updateTokenBalances(
+    bonus: number,
+    permanent: number,
+    extra?: {
+      spent_today?: number;
+      daily_limit?: number;
+      bypass?: boolean;
+    }
+  ): void {
     try {
       if (!this._data.tokens) {
         this._data.tokens = { bonus: 0, permanent: 0 };
       }
       this._data.tokens.bonus = bonus;
       this._data.tokens.permanent = permanent;
+      if (extra) {
+        if (extra.spent_today !== undefined) {
+          this._data.tokens.spent_today = extra.spent_today;
+        }
+        if (extra.daily_limit !== undefined) {
+          this._data.tokens.daily_limit = extra.daily_limit;
+        }
+        if (extra.bypass !== undefined) {
+          this._data.tokens.bypass = extra.bypass;
+        }
+      }
       this._data.lastUpdated = new Date().toISOString();
       this.save();
     } catch (err) {
