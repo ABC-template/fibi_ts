@@ -451,7 +451,9 @@ export class ChatModule {
 
     const tokens = this.economyStore.getTokenBalances();
     const isBlocked = !this._agentAccess;
-    
+    const role = (this as any).userStore?.role || (window as any).userStore?.role || 'trial';
+    const isBypass = role === 'admin' || role === 'creator';
+
     if (isBlocked) {
       indicator.innerHTML = `
         <span class="token-badge blocked" style="
@@ -470,6 +472,17 @@ export class ChatModule {
       `;
       indicator.style.display = 'flex';
       indicator.style.justifyContent = 'center';
+      return;
+    }
+
+    if (isBypass) {
+      indicator.innerHTML = `
+        <span class="token-badge total" title="Безлимит">
+          ⚡ ∞
+        </span>
+      `;
+      indicator.style.display = 'flex';
+      indicator.style.justifyContent = 'flex-end';
       return;
     }
 
