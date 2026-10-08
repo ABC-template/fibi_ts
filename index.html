@@ -46,189 +46,27 @@
 
         /* Сплеш показываем сразу */
         #splash-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100dvh;
-            background: #000000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 99999;
-            transition: opacity 0.6s ease, transform 0.6s ease;
-            will-change: opacity, transform;
-        }
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  transition: opacity 0.35s ease;
+}
+#splash-screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-owl {
+  width: 96px;
+  height: 96px;
+  opacity: 0.85;
+}
 
-        .splash-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            padding: 32px;
-            max-width: 320px;
-            width: 100%;
-            text-align: center;
-            animation: splashFadeIn 0.8s ease;
-        }
-
-        .splash-logo-wrapper {
-            position: relative;
-            width: 100px;
-            height: 100px;
-            margin-bottom: 4px;
-        }
-
-        .splash-logo {
-            width: 100%;
-            height: 100%;
-            animation: logoPulse 2.5s ease-in-out infinite;
-        }
-
-        .splash-ring {
-            position: absolute;
-            top: -8px;
-            left: -8px;
-            width: 116px;
-            height: 116px;
-            border-radius: 50%;
-            border: 2px solid transparent;
-            border-top-color: #D4AF37;
-            border-right-color: #C5A059;
-            animation: ringSpin 3s linear infinite;
-            opacity: 0.6;
-        }
-
-        .splash-title {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #D4AF37 0%, #C5A059 50%, #A88830 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            letter-spacing: 2px;
-            margin-top: -4px;
-        }
-
-        .splash-subtitle {
-            font-size: 13px;
-            color: #A89880;
-            font-weight: 400;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            margin-top: -6px;
-        }
-
-        .splash-status-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-            margin-top: 8px;
-            width: 100%;
-        }
-
-        .splash-loader {
-            width: 32px;
-            height: 32px;
-            border: 3px solid rgba(212, 175, 55, 0.15);
-            border-top-color: #D4AF37;
-            border-radius: 50%;
-            animation: spin 0.8s cubic-bezier(0.6, 0, 0.4, 1) infinite;
-        }
-
-        .splash-status {
-            font-size: 14px;
-            color: #E8E0D0;
-            font-weight: 400;
-            margin: 0;
-            min-height: 24px;
-            transition: opacity 0.3s ease;
-        }
-
-        .splash-progress-wrapper {
-            width: 100%;
-            max-width: 240px;
-            height: 3px;
-            background: rgba(255, 255, 255, 0.06);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 4px;
-        }
-
-        .splash-progress-bar {
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(135deg, #D4AF37 0%, #C5A059 50%, #A88830 100%);
-            border-radius: 4px;
-            transition: width 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            will-change: width;
-        }
-
-        .splash-version {
-            font-size: 11px;
-            color: #A89880;
-            opacity: 0.4;
-            margin-top: 4px;
-            font-weight: 400;
-            letter-spacing: 0.5px;
-        }
-
-        @keyframes splashFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-
-        @keyframes logoPulse {
-            0%, 100% {
-                transform: scale(1);
-                opacity: 1;
-            }
-            50% {
-                transform: scale(1.04);
-                opacity: 0.9;
-            }
-        }
-
-        @keyframes ringSpin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        @keyframes splashFadeOut {
-            from {
-                opacity: 1;
-                transform: scale(1);
-            }
-            to {
-                opacity: 0;
-                transform: scale(0.95);
-            }
-        }
-
-        #splash-screen.hidden {
-            opacity: 0;
-            transform: scale(1.02);
-            pointer-events: none;
-        }
-
-        #splash-screen.hidden .splash-container {
-            animation: splashFadeOut 0.5s ease forwards;
-        }
     </style>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- ==========================================
@@ -259,7 +97,6 @@
          ВНЕШНИЕ СТИЛИ (загружаются асинхронно)
     ========================================== -->
     <link rel="stylesheet" href="/src/core/core.css" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="/src/ui/splash.css" media="print" onload="this.media='all'">
     <!-- ==========================================
          ВНЕШНИЕ БИБЛИОТЕКИ
     ========================================== -->
@@ -275,30 +112,30 @@
 <!-- ==========================================
      ✅ СПЛЕШ-ЭКРАН (встроен в HTML, появляется мгновенно)
 ========================================== -->
+<!-- SPLASH: простая серая сова -->
 <div id="splash-screen">
-    <div class="splash-container">
-        <div class="splash-logo-wrapper">
-            <svg class="splash-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50" cy="50" r="45" stroke="#D4AF37" stroke-width="2" opacity="0.3"/>
-                <text x="50" y="62" text-anchor="middle" font-size="36" font-weight="700" font-family="system-ui" fill="#D4AF37">F</text>
-            </svg>
-            <div class="splash-ring"></div>
-        </div>
-
-        <div class="splash-title">FIBI</div>
-        <div class="splash-subtitle">Versatile AI Assistant</div>
-
-        <div class="splash-status-wrapper">
-            <div class="splash-loader"></div>
-            <p class="splash-status" id="splash-status-text">🔮 Инициализация...</p>
-        </div>
-
-        <div class="splash-progress-wrapper">
-            <div class="splash-progress-bar" id="splash-progress-bar"></div>
-        </div>
-
-        <div class="splash-version">v8.0.0</div>
-    </div>
+  <svg class="splash-owl" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <!-- тело -->
+    <ellipse cx="60" cy="68" rx="38" ry="36" fill="#6B6B6B"/>
+    <!-- голова -->
+    <circle cx="60" cy="42" r="28" fill="#7A7A7A"/>
+    <!-- ушки -->
+    <path d="M38 28 L32 12 L48 24 Z" fill="#7A7A7A"/>
+    <path d="M82 28 L88 12 L72 24 Z" fill="#7A7A7A"/>
+    <!-- глаза -->
+    <circle cx="48" cy="40" r="12" fill="#4A4A4A"/>
+    <circle cx="72" cy="40" r="12" fill="#4A4A4A"/>
+    <circle cx="48" cy="40" r="5" fill="#2A2A2A"/>
+    <circle cx="72" cy="40" r="5" fill="#2A2A2A"/>
+    <!-- блики -->
+    <circle cx="45" cy="37" r="2" fill="#9A9A9A"/>
+    <circle cx="69" cy="37" r="2" fill="#9A9A9A"/>
+    <!-- клюв -->
+    <path d="M60 46 L54 54 L66 54 Z" fill="#5A5A5A"/>
+    <!-- крылья намёк -->
+    <ellipse cx="28" cy="70" rx="10" ry="22" fill="#5A5A5A" opacity="0.7"/>
+    <ellipse cx="92" cy="70" rx="10" ry="22" fill="#5A5A5A" opacity="0.7"/>
+  </svg>
 </div>
 
 <!-- ==========================================
