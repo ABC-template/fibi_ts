@@ -1,7 +1,7 @@
 // ============================================
 // api/auth/check.ts
 // Описание: Проверка подписки и авторизации (с JWT)
-// Версия: 5.0.0 — выдача токенов по лимитам из БД
+// Версия: 6.0.0 — тарифы + daily bonus (сброс) + без ежедневных permanent
 // ============================================
 
 import {
@@ -55,7 +55,7 @@ export default async function handler(request: Request): Promise<Response> {
     const isNewUser = authResult.isNew;
 
     // ==========================================
-    // 2. ПОЛУЧАЕМ sync_token
+    // 2. SYNC TOKEN
     // ==========================================
     const dbSyncToken = await getSyncToken(telegramId, config);
     const clientSyncToken = request.headers.get('x-sync-token') || null;
@@ -72,11 +72,10 @@ export default async function handler(request: Request): Promise<Response> {
     } else {
       finalSyncToken = dbSyncToken;
       tokenChanged = false;
-      console.log(`✅ [auth/check] sync_token совпадает: ${finalSyncToken?.substring(0, 8)}...`);
     }
 
     // ==========================================
-    // 3. ПОЛУЧАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
+    // 3. ПОЛЬЗОВАТЕЛЬ В public.users
     // ==========================================
     let dbUser: any = null;
     let role = 'trial';
@@ -97,9 +96,8 @@ export default async function handler(request: Request): Promise<Response> {
         subscriptionTier = dbUser.subscription_tier || null;
         premiumUntil = dbUser.premium_until || null;
         trialUsed = dbUser.trial_used || false;
-        console.log(`✅ Пользователь ${telegramId} найден в БД, роль: ${role}`);
+        console.log(`✅ Пользователь ${telegramId} найден, роль: ${role}`);
       } else {
-        // Создаем пользователя в public.users
         console.log(`🆕 Создаём пользователя ${telegramId} в public.users`);
         await supabaseFetch(
           'users',
@@ -113,13 +111,12 @@ export default async function handler(request: Request): Promise<Response> {
               user_lang: user?.language_code || 'ru',
               sync_token: crypto.randomUUID(),
               trial_used: false,
-            })
+            }),
           },
           config
         );
         dbUser = { role: 'trial', trial_used: false };
         role = 'trial';
-        console.log(`✅ Пользователь ${telegramId} создан`);
       }
     } catch (err) {
       console.error('Error checking/creating user:', (err as Error).message);
@@ -128,115 +125,76 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 4. ПОЛУЧАЕМ ЛИМИТЫ ДЛЯ РОЛИ/ПОДПИСКИ
+    // 4. ЛИМИТЫ ИЗ ТАРИФА
     // ==========================================
     let limits: any = {
-      role_key: 'trial',
-      role_name: 'Trial',
+      tier_key: 'trial',
       bonus_tokens_per_day: 5,
-      permanent_tokens_on_subscribe: 0,
-      openrouter_limit: 5000,
+      permanent_tokens: 0,
+      daily_spend_limit: 5,
+      bypass: false,
     };
 
     try {
       const limitsResult = await supabaseRPC(
-        'get_user_limits',
+        'get_user_tier_limits',
         { p_user_id: telegramId },
         config
       );
 
-      if (limitsResult && typeof limitsResult === 'object') {
-        limits = limitsResult;
-        console.log(`📊 [auth/check] Лимиты для ${role}:`, limits);
+      if (limitsResult && limitsResult.success !== false) {
+        limits = {
+          tier_key: limitsResult.tier_key || 'trial',
+          name: limitsResult.name || null,
+          bonus_tokens_per_day: limitsResult.bonus_tokens_per_day ?? 5,
+          permanent_tokens: limitsResult.permanent_tokens ?? 0,
+          daily_spend_limit: limitsResult.daily_spend_limit ?? 0,
+          bypass: limitsResult.bypass === true,
+        };
+        console.log(`📊 [auth/check] Лимиты тарифа:`, limits);
       }
     } catch (err) {
-      console.warn('⚠️ [auth/check] Не удалось получить лимиты, используем дефолтные:', err);
+      console.warn('⚠️ [auth/check] Не удалось получить лимиты тарифа:', err);
     }
 
     // ==========================================
-    // 5. ✅ НАЧИСЛЯЕМ ТОКЕНЫ (если не начислялись сегодня)
+    // 5. ЕЖЕДНЕВНЫЙ БОНУС (сброс старого + выдача нового)
     // ==========================================
-    const today = new Date().toISOString().slice(0, 10);
-    const lastBonusDate = dbUser?.last_bonus_tokens_date || null;
-
     let bonusAdded = 0;
-    let permanentAdded = 0;
 
-    if (lastBonusDate !== today) {
-      console.log(`🎁 [auth/check] Начисляем токены пользователю ${telegramId}`);
+    // Creator/Admin — не трогаем бонусы
+    if (!limits.bypass && !['admin', 'creator'].includes(role)) {
+      const amount = limits.bonus_tokens_per_day || 0;
 
-      // 5.1 Бонусные токены
-      if (limits.bonus_tokens_per_day > 0) {
+      if (amount > 0) {
         try {
           const bonusResult = await supabaseRPC(
             'add_bonus_tokens',
             {
               p_user_id: telegramId,
-              p_amount: limits.bonus_tokens_per_day,
+              p_amount: amount,
             },
             config
           );
 
           if (bonusResult?.success) {
-            bonusAdded = limits.bonus_tokens_per_day;
-            console.log(`✅ [auth/check] Начислено ${bonusAdded} бонусных токенов`);
+            bonusAdded = bonusResult.added || amount;
+            console.log(
+              `✅ [auth/check] Бонус: +${bonusAdded} (сброшено старых: ${bonusResult.reset_old || 0})`
+            );
+          } else if (bonusResult?.error === 'Already claimed today') {
+            console.log(`ℹ️ [auth/check] Бонус уже получен сегодня`);
           } else {
-            console.warn(`⚠️ [auth/check] Не удалось начислить бонусные токены:`, bonusResult);
+            console.warn(`⚠️ [auth/check] Бонус не начислен:`, bonusResult);
           }
         } catch (err) {
-          console.error('❌ [auth/check] Ошибка начисления бонусных токенов:', err);
+          console.error('❌ [auth/check] Ошибка начисления бонуса:', err);
         }
       }
-
-      // 5.2 Постоянные токены (если есть подписка с токенами)
-      if (limits.permanent_tokens_on_subscribe > 0) {
-        try {
-          const permanentResult = await supabaseRPC(
-            'add_permanent_tokens',
-            {
-              p_user_id: telegramId,
-              p_amount: limits.permanent_tokens_on_subscribe,
-              p_source: 'subscription_daily',
-            },
-            config
-          );
-
-          if (permanentResult?.success) {
-            permanentAdded = limits.permanent_tokens_on_subscribe;
-            console.log(`✅ [auth/check] Начислено ${permanentAdded} постоянных токенов`);
-          } else {
-            console.warn(`⚠️ [auth/check] Не удалось начислить постоянные токены:`, permanentResult);
-          }
-        } catch (err) {
-          console.error('❌ [auth/check] Ошибка начисления постоянных токенов:', err);
-        }
-      }
-
-      // 5.3 Обновляем дату последнего начисления
-      if (bonusAdded > 0 || permanentAdded > 0) {
-        try {
-          await supabaseFetch(
-            `users?telegram_id=eq.${telegramId}`,
-            {
-              method: 'PATCH',
-              body: JSON.stringify({
-                last_bonus_tokens_date: today,
-                updated_at: new Date().toISOString(),
-              }),
-            },
-            config
-          );
-          console.log(`✅ [auth/check] Дата последнего начисления обновлена: ${today}`);
-        } catch (err) {
-          console.error('❌ [auth/check] Ошибка обновления даты:', err);
-        }
-      }
-    } else {
-      console.log(`ℹ️ [auth/check] Токены уже начислены сегодня (${today})`);
     }
 
     // ==========================================
-    // 6. ПОЛУЧАЕМ ТЕКУЩИЕ БАЛАНСЫ
+    // 6. ТЕКУЩИЕ БАЛАНСЫ
     // ==========================================
     let tokenBalance = { bonus: 0, permanent: 0 };
     try {
@@ -251,10 +209,12 @@ export default async function handler(request: Request): Promise<Response> {
           bonus: balanceResult.tokens?.bonus || 0,
           permanent: balanceResult.tokens?.permanent || 0,
         };
-        console.log(`💰 [auth/check] Текущий баланс токенов: ${tokenBalance.bonus} бонусных, ${tokenBalance.permanent} постоянных`);
+        console.log(
+          `💰 [auth/check] Баланс: ${tokenBalance.bonus} бонус + ${tokenBalance.permanent} permanent`
+        );
       }
     } catch (err) {
-      console.warn('⚠️ [auth/check] Не удалось получить баланс токенов:', err);
+      console.warn('⚠️ [auth/check] Не удалось получить баланс:', err);
     }
 
     // ==========================================
@@ -274,7 +234,6 @@ export default async function handler(request: Request): Promise<Response> {
           if (data.ok) {
             const status = data.result.status;
             isMember = ['member', 'administrator', 'creator', 'owner'].includes(status);
-            console.log(`📢 [auth/check] Канал: ${isMember ? 'подписан' : 'не подписан'}`);
           }
         } catch (err) {
           console.error('Error checking channel membership:', (err as Error).message);
@@ -283,13 +242,13 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 8. ФОРМИРОВАНИЕ ОТВЕТА
+    // 8. ОТВЕТ
     // ==========================================
     const responseData = {
       isMember: isMember || role !== 'guest',
       role,
       dailyLimit: limits.bonus_tokens_per_day || 5,
-      usedToday: 0, // Больше не используется, оставляем для совместимости
+      usedToday: 0,
       syncEnabled: ['admin', 'creator', 'premium'].includes(role),
       syncToken: finalSyncToken,
       userId: telegramId,
@@ -306,25 +265,26 @@ export default async function handler(request: Request): Promise<Response> {
         claude: true,
         grok: true,
       },
-      // ✅ НОВЫЕ ПОЛЯ ДЛЯ ТОКЕНОВ
       tokens: {
         bonus: tokenBalance.bonus,
         permanent: tokenBalance.permanent,
         total: tokenBalance.bonus + tokenBalance.permanent,
       },
       limits: {
-        role_key: limits.role_key,
-        role_name: limits.role_name,
+        tier_key: limits.tier_key,
         bonus_tokens_per_day: limits.bonus_tokens_per_day,
-        permanent_tokens_on_subscribe: limits.permanent_tokens_on_subscribe,
-        openrouter_limit: limits.openrouter_limit,
+        permanent_tokens: limits.permanent_tokens,
+        daily_spend_limit: limits.daily_spend_limit,
+        bypass: limits.bypass === true,
       },
       today_bonus_added: bonusAdded,
-      today_permanent_added: permanentAdded,
+      subscription_tier: subscriptionTier,
+      premium_until: premiumUntil,
+      trial_used: trialUsed,
     };
 
     return jsonResponse(responseData, 200, {
-      'Authorization': `Bearer ${jwtToken}`,
+      Authorization: `Bearer ${jwtToken}`,
     });
   } catch (err) {
     console.error('Check auth error:', (err as Error).message);
