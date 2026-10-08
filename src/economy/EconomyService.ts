@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 4.0.0 - добавлены все методы для совместимости
+// Версия: 5.0.0 — spent_today / daily_limit / bypass - добавлены все методы для совместимости
 // ============================================
 
 import { apiClient } from '@/services/api';
@@ -24,6 +24,11 @@ export interface IBalanceResult {
   tokens: {
     bonus: number;
     permanent: number;
+    total?: number;
+    spent_today?: number;
+    daily_limit?: number;
+    bypass?: boolean;
+    tier_key?: string;
   };
   is_locked: boolean;
 }
@@ -66,8 +71,11 @@ export class EconomyService {
   async getFullBalance(userId: number): Promise<IBalanceResult> {
     try {
       const result = await apiClient.get('/economy/balance');
-      
+
       if (result.success) {
+        const bonus = result.tokens?.bonus || 0;
+        const permanent = result.tokens?.permanent || 0;
+
         return {
           success: true,
           coins: {
@@ -76,8 +84,13 @@ export class EconomyService {
             total_spent: result.coins?.total_spent || 0,
           },
           tokens: {
-            bonus: result.tokens?.bonus || 0,
-            permanent: result.tokens?.permanent || 0,
+            bonus,
+            permanent,
+            total: result.tokens?.total ?? bonus + permanent,
+            spent_today: result.tokens?.spent_today ?? 0,
+            daily_limit: result.tokens?.daily_limit ?? 0,
+            bypass: result.tokens?.bypass === true,
+            tier_key: result.tokens?.tier_key || 'trial',
           },
           is_locked: result.is_locked || false,
         };
@@ -86,7 +99,7 @@ export class EconomyService {
       return {
         success: false,
         coins: { balance: 0, total_earned: 0, total_spent: 0 },
-        tokens: { bonus: 0, permanent: 0 },
+        tokens: { bonus: 0, permanent: 0, total: 0, spent_today: 0, daily_limit: 0 },
         is_locked: false,
       };
     } catch (err) {
@@ -94,7 +107,7 @@ export class EconomyService {
       return {
         success: false,
         coins: { balance: 0, total_earned: 0, total_spent: 0 },
-        tokens: { bonus: 0, permanent: 0 },
+        tokens: { bonus: 0, permanent: 0, total: 0, spent_today: 0, daily_limit: 0 },
         is_locked: false,
       };
     }
