@@ -42,6 +42,11 @@ export class AdminSubscriptionsTab implements IAdminTab {
     this.loadData();
   }
 
+  private rerender(): void {
+    const content = document.getElementById('admin-tab-content');
+    if (content) content.innerHTML = this.render();
+  }
+
   render(): string {
     if (this.loading && this.tiers.length === 0) {
       return `<div style="padding:40px;text-align:center;color:var(--app-text-tertiary)">⏳ Загрузка тарифов...</div>`;
@@ -132,7 +137,6 @@ export class AdminSubscriptionsTab implements IAdminTab {
     `;
   }
 
-  /** Собрать значения из инпутов в this.tiers */
   collectFromDOM(): void {
     const inputs = document.querySelectorAll('#admin-tab-content input[data-idx]');
     inputs.forEach((el: any) => {
@@ -203,11 +207,118 @@ export class AdminSubscriptionsTab implements IAdminTab {
       }
       alert('Все тарифы сохранены');
       await this.loadData();
+      this.rerender();
     } catch (e) {
       console.error(e);
       alert('Ошибка сохранения');
     } finally {
       this.saving = false;
+    }
+  }
+
+  async create(): Promise<void> {
+    const name = prompt('Название тарифа (RU):');
+    if (!name) return;
+
+    const nameEn = prompt('Название (EN):', name) || name;
+    const tierKey = prompt('tier_key (латиница):', name.toLowerCase().replace(/\s+/g, '_')) || '';
+    if (!tierKey) return;
+
+    const days = parseInt(prompt('Дней:', '30') || '30', 10);
+    const price = parseInt(prompt('Цена в Stars:', '100') || '100', 10);
+    const bonus = parseInt(prompt('Бонус / день:', '10') || '10', 10);
+    const permanent = parseInt(prompt('Постоянные токены при покупке:', '100') || '100', 10);
+    const dailyLimit = parseInt(prompt('Лимит трат / сутки (0 = без лимита):', '300') || '300', 10);
+
+    try {
+      const res = await apiClient.post('/admin/economy/subscriptions', {
+        name,
+        name_en: nameEn,
+        tier_key: tierKey,
+        days,
+        price_stars: price,
+        bonus_tokens_per_day: bonus,
+        permanent_tokens: permanent,
+        daily_spend_limit: dailyLimit,
+        is_active: true,
+        is_trial: false,
+        is_one_time: false,
+        sort_order: this.tiers.length,
+      });
+
+      if (res.success) {
+        alert('Тариф создан');
+        await this.loadData();
+        this.rerender();
+      } else {
+        alert(res.error || 'Ошибка создания');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка создания тарифа');
+    }
+  }
+
+  async edit(id: string): Promise<void> {
+    const t = this.tiers.find(x => x.id === id);
+    if (!t) return;
+
+    const price = prompt('Цена (Stars):', String(t.price_stars ?? 0));
+    if (price === null) return;
+    const bonus = prompt('Бонус / день:', String(t.bonus_tokens_per_day ?? 0));
+    if (bonus === null) return;
+    const permanent = prompt('Постоянные токены:', String(t.permanent_tokens ?? 0));
+    if (permanent === null) return;
+    const dailyLimit = prompt('Лимит / сутки (0 = ∞):', String(t.daily_spend_limit ?? 0));
+    if (dailyLimit === null) return;
+
+    try {
+      const res = await apiClient.put('/admin/economy/subscriptions', {
+        id,
+        price_stars: parseInt(price, 10) || 0,
+        bonus_tokens_per_day: parseInt(bonus, 10) || 0,
+        permanent_tokens: parseInt(permanent, 10) || 0,
+        daily_spend_limit: parseInt(dailyLimit, 10) || 0,
+      });
+
+      if (res.success) {
+        alert('Сохранено');
+        await this.loadData();
+        this.rerender();
+      } else {
+        alert(res.error || 'Ошибка');
+      }
+    } catch (e) {
+      alert('Ошибка обновления');
+    }
+  }
+
+  async toggle(id: string, state: boolean): Promise<void> {
+    try {
+      const res = await apiClient.put('/admin/economy/subscriptions', {
+        id,
+        is_active: state,
+      });
+      if (res.success) {
+        const t = this.tiers.find(x => x.id === id);
+        if (t) t.is_active = state;
+        this.rerender();
+      }
+    } catch (e) {
+      alert('Ошибка');
+    }
+  }
+
+  async remove(id: string): Promise<void> {
+    if (!confirm('Удалить тариф?')) return;
+    try {
+      const res = await apiClient.delete(`/admin/economy/subscriptions?id=${id}`);
+      if (res.success) {
+        this.tiers = this.tiers.filter(t => t.id !== id);
+        this.rerender();
+      }
+    } catch (e) {
+      alert('Ошибка удаления');
     }
   }
 
