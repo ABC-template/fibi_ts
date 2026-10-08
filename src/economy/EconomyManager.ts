@@ -1,7 +1,7 @@
 // ============================================
 // src/economy/EconomyManager.ts
 // Упрощённый менеджер — только связь с API и обновление Store
-// Версия: 3.0.1 - исправлен total
+// Версия: 3.1.0 — spent_today/daily_limit/bypass - исправлен total
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
@@ -26,7 +26,7 @@ export class EconomyManager {
     if (this.initialized) return;
     this.subscribeToEvents();
     this.initialized = true;
-    console.log('✅ EconomyManager v3.0.1 инициализирован');
+    console.log('✅ EconomyManager v3.1.0 инициализирован');
   }
 
   private subscribeToEvents(): void {
@@ -53,7 +53,15 @@ export class EconomyManager {
       const result = await economyService.getFullBalance(this.userId);
       if (result.success) {
         economyStore.updateCoinBalance(result.coins.balance);
-        economyStore.updateTokenBalances(result.tokens.bonus, result.tokens.permanent);
+        economyStore.updateTokenBalances(
+          result.tokens.bonus,
+          result.tokens.permanent,
+          {
+            spent_today: result.tokens.spent_today,
+            daily_limit: result.tokens.daily_limit,
+            bypass: result.tokens.bypass,
+          }
+        );
         const tokenTotal = (result.tokens?.bonus || 0) + (result.tokens?.permanent || 0);
         console.log(`💰 Балансы загружены: ${result.coins.balance} 🪙, ${tokenTotal} ⚡`);
       }
