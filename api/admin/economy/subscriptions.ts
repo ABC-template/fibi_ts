@@ -1,7 +1,7 @@
 // ============================================
 // api/admin/economy/subscriptions.ts
-// Управление тарифами подписки (админ)
-// Версия: 1.0.0
+// Управление тарифами (подписки + лимиты токенов)
+// Версия: 2.0.0 — bonus_tokens_per_day + daily_spend_limit
 // ============================================
 
 import {
@@ -22,7 +22,6 @@ export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
-  // Только для создателя
   const auth = await authenticate(request);
   if (auth.error || auth.userId !== CREATOR_ID) {
     return errorResponse('Доступ запрещён', 403);
@@ -30,7 +29,7 @@ export default async function handler(request: Request): Promise<Response> {
 
   const config = getSupabaseConfig('service');
 
-  // GET — получить все тарифы
+  // GET — все тарифы
   if (request.method === 'GET') {
     try {
       const result = await supabaseFetch(
@@ -49,14 +48,14 @@ export default async function handler(request: Request): Promise<Response> {
     }
   }
 
-  // POST — создать новый тариф
+  // POST — создать тариф
   if (request.method === 'POST') {
     try {
       const body = await request.json();
 
       const required = ['tier_key', 'name', 'name_en', 'days', 'price_stars'];
       for (const field of required) {
-        if (!body[field]) {
+        if (body[field] === undefined || body[field] === null || body[field] === '') {
           return errorResponse(`Missing required field: ${field}`, 400);
         }
       }
@@ -69,18 +68,20 @@ export default async function handler(request: Request): Promise<Response> {
             tier_key: body.tier_key,
             name: body.name,
             name_en: body.name_en,
-            days: body.days,
-            price_stars: body.price_stars,
-            permanent_tokens: body.permanent_tokens || 0,
-            is_active: body.is_active !== undefined ? body.is_active : true,
-            is_trial: body.is_trial || false,
-            is_one_time: body.is_one_time || false,
+            days: Number(body.days) || 0,
+            price_stars: Number(body.price_stars) || 0,
+            permanent_tokens: Number(body.permanent_tokens) || 0,
+            bonus_tokens_per_day: Number(body.bonus_tokens_per_day) || 0,
+            daily_spend_limit: Number(body.daily_spend_limit) || 0,
+            is_active: body.is_active !== undefined ? !!body.is_active : true,
+            is_trial: !!body.is_trial,
+            is_one_time: !!body.is_one_time,
             description: body.description || null,
-            sort_order: body.sort_order || 0,
+            sort_order: Number(body.sort_order) || 0,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }),
-          headers: { 'Prefer': 'return=representation' },
+          headers: { Prefer: 'return=representation' },
         },
         config
       );
@@ -105,24 +106,29 @@ export default async function handler(request: Request): Promise<Response> {
         return errorResponse('Missing tier id', 400);
       }
 
+      const update: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (body.name !== undefined) update.name = body.name;
+      if (body.name_en !== undefined) update.name_en = body.name_en;
+      if (body.days !== undefined) update.days = Number(body.days) || 0;
+      if (body.price_stars !== undefined) update.price_stars = Number(body.price_stars) || 0;
+      if (body.permanent_tokens !== undefined) update.permanent_tokens = Number(body.permanent_tokens) || 0;
+      if (body.bonus_tokens_per_day !== undefined) update.bonus_tokens_per_day = Number(body.bonus_tokens_per_day) || 0;
+      if (body.daily_spend_limit !== undefined) update.daily_spend_limit = Number(body.daily_spend_limit) || 0;
+      if (body.is_active !== undefined) update.is_active = !!body.is_active;
+      if (body.is_trial !== undefined) update.is_trial = !!body.is_trial;
+      if (body.is_one_time !== undefined) update.is_one_time = !!body.is_one_time;
+      if (body.description !== undefined) update.description = body.description;
+      if (body.sort_order !== undefined) update.sort_order = Number(body.sort_order) || 0;
+
       const result = await supabaseFetch(
         `subscription_tiers?id=eq.${id}`,
         {
           method: 'PATCH',
-          body: JSON.stringify({
-            name: body.name,
-            name_en: body.name_en,
-            days: body.days,
-            price_stars: body.price_stars,
-            permanent_tokens: body.permanent_tokens,
-            is_active: body.is_active,
-            is_trial: body.is_trial,
-            is_one_time: body.is_one_time,
-            description: body.description,
-            sort_order: body.sort_order,
-            updated_at: new Date().toISOString(),
-          }),
-          headers: { 'Prefer': 'return=representation' },
+          body: JSON.stringify(update),
+          headers: { Prefer: 'return=representation' },
         },
         config
       );
@@ -155,7 +161,7 @@ export default async function handler(request: Request): Promise<Response> {
 
       return jsonResponse({
         success: true,
-        message: 'Тариф удален',
+        message: 'Тариф удалён',
       });
     } catch (err) {
       console.error('[admin/economy/subscriptions] DELETE error:', err);
