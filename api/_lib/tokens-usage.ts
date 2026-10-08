@@ -1,97 +1,41 @@
 // ============================================
 // api/_lib/tokens-usage.ts
-// Учёт использования OpenRouter (статистика)
-// Версия: 2.0.0 — убран тарифный openrouter_limit
+// Оценка токенов + лог OpenRouter (лимит OR — no-op)
+// Версия: 2.0.0
 // ============================================
 
-import { getSupabaseConfig, supabaseFetch } from './supabase-client';
+import { getSupabaseConfig, supabaseRPC, supabaseFetch } from './supabase-client';
 
 /**
- * Получить использованные токены OpenRouter за сегодня (для статистики)
- */
-export async function getTodayTokenUsage(
-  userId: number,
-  config: any = null
-): Promise<number> {
-  try {
-    const cfg = config || getSupabaseConfig('service');
-    const today = new Date().toISOString().slice(0, 10);
-
-    const result = await supabaseFetch(
-      `openrouter_usage?user_id=eq.${userId}&created_at=gte.${today}&select=total_tokens`,
-      { method: 'GET' },
-      cfg
-    );
-
-    if (!result || !Array.isArray(result)) {
-      return 0;
-    }
-
-    return result.reduce((sum: number, row: any) => sum + (row.total_tokens || 0), 0);
-  } catch (err) {
-    console.error('Failed to get today token usage:', err);
-    return 0;
-  }
-}
-
-/**
- * Сохранить использование токенов OpenRouter
- */
-export async function logOpenRouterUsage(
-  userId: number,
-  data: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-    model: string;
-    topic?: string;
-    user_lang?: string;
-  },
-  config: any = null
-): Promise<void> {
-  try {
-    const cfg = config || getSupabaseConfig('service');
-
-    await supabaseFetch(
-      'openrouter_usage',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: userId,
-          prompt_tokens: data.prompt_tokens || 0,
-          completion_tokens: data.completion_tokens || 0,
-          total_tokens: data.total_tokens || 0,
-          model: data.model || 'unknown',
-          topic: data.topic || null,
-          user_lang: data.user_lang || null,
-        }),
-      },
-      cfg
-    );
-  } catch (err) {
-    console.error('Failed to log OpenRouter usage:', err);
-  }
-}
-
-/**
- * Грубая оценка токенов (для pre-check контекста)
+ * Оценка токенов по тексту сообщений (в т.ч. vision content[])
  */
 export function estimateTokens(
   messages: Array<{ role?: string; content?: string | any[] }>,
   systemPrompt: string = ''
 ): number {
-  let chars = systemPrompt.length;
-  for (const m of messages) {
-    chars += (m.content || '').length;
+  let totalChars = systemPrompt.length;
+
+  for (const msg of messages || []) {
+    if (typeof msg.content === 'string') {
+      totalChars += msg.content.length;
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part?.type === 'text' && part.text) {
+          totalChars += String(part.text).length;
+        }
+      }
+    }
   }
-  // ~4 символа ≈ 1 токен
-  return Math.ceil(chars / 4);
+
+  const hasCyrillic = /[а-яА-Я]/.test(systemPrompt + JSON.stringify(messages || []));
+  const charsPerToken = hasCyrillic ? 2.5 : 4;
+  return Math.ceil(totalChars / charsPerToken) + 50;
 }
 
 /**
- * Раньше здесь был checkOpenRouterLimit.
- * Теперь дневной лимит живёт в check_token_availability (daily_spend_limit).
- * Функция оставлена как no-op для совместимости со stream.ts
+ * Дневной лимит OpenRouter больше не ограничивает —
+ * экономика идёт через abstract tokens + daily_spend_limit тарифа.
+ * Функция оставлена для совместимости со stream.ts.
  */
 export async function checkOpenRouterLimit(
   _userId: number,
@@ -106,18 +50,65 @@ export async function checkOpenRouterLimit(
 }> {
   return {
     allowed: true,
-    remaining: 9999999,
-    limit: 9999999,
+    remaining: 999999999,
+    limit: 0,
     used: 0,
   };
 }
 
-/**
- * Раньше брали лимит из economy_config — больше не используется.
- */
 export async function getDailyTokenLimit(
   _userId: number,
   _config: any = null
 ): Promise<number> {
-  return 9999999;
+  return 0; // 0 = без лимита OpenRouter
+}
+
+export async function getTodayTokenUsage(
+  userId: number,
+  config: any = null
+): Promise<number> {
+  try {
+    const cfg = config || getSupabaseConfig('service');
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await supabaseFetch(
+      `openrouter_usage?user_id=eq.${userId}&date=eq.${today}&select=tokens_used`,
+      { method: 'GET' },
+      cfg
+    );
+    if (Array.isArray(result) && result.length > 0) {
+      return result.reduce((s: number, r: any) => s + (r.tokens_used || 0), 0);
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function logOpenRouterUsage(
+  userId: number,
+  tokensUsed: number,
+  model: string,
+  config: any = null
+): Promise<void> {
+  try {
+    const cfg = config || getSupabaseConfig('service');
+    const today = new Date().toISOString().slice(0, 10);
+
+    await supabaseFetch(
+      'openrouter_usage',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          date: today,
+          tokens_used: tokensUsed,
+          model,
+          created_at: new Date().toISOString(),
+        }),
+      },
+      cfg
+    );
+  } catch (err) {
+    console.warn('logOpenRouterUsage:', err);
+  }
 }
