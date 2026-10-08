@@ -1,14 +1,11 @@
 // ============================================
 // api/_lib/tokens.ts
-// Утилиты для работы с токенами (внутренними)
-// Версия: 2.0.0 — новая модель: bonus first, daily_spend_limit, creator bypass
+// Проверка и списание внутренних токенов
+// Версия: 2.0.0 — daily_limit + bypass + bonus first
 // ============================================
 
 import { getSupabaseConfig, supabaseRPC } from './supabase-client';
 
-/**
- * Проверить доступность токенов для запроса
- */
 export async function checkTokenAvailability(
   userId: number,
   needed: number = 1,
@@ -20,19 +17,16 @@ export async function checkTokenAvailability(
   total: number;
   spent_today?: number;
   daily_limit?: number;
-  reason?: 'no_tokens' | 'insufficient_total' | 'daily_limit' | 'user_not_found';
-  needed?: number;
   bypass?: boolean;
+  reason?: string;
+  needed?: number;
 }> {
   try {
     const cfg = config || getSupabaseConfig('service');
 
     const result = await supabaseRPC(
       'check_token_availability',
-      {
-        p_user_id: userId,
-        p_needed: needed,
-      },
+      { p_user_id: userId, p_needed: needed },
       cfg
     );
 
@@ -43,46 +37,48 @@ export async function checkTokenAvailability(
         permanent: 0,
         total: 0,
         reason: 'no_tokens',
+        needed,
       };
     }
 
     return {
-      available: result.available === true,
+      available: result.available === true || result.bypass === true,
       bonus: result.bonus || 0,
       permanent: result.permanent || 0,
-      total: result.total || 0,
-      spent_today: result.spent_today || 0,
-      daily_limit: result.daily_limit || 0,
-      reason: result.reason,
-      needed: result.needed,
+      total: result.total ?? (result.bonus || 0) + (result.permanent || 0),
+      spent_today: result.spent_today ?? 0,
+      daily_limit: result.daily_limit ?? 0,
       bypass: result.bypass === true,
+      reason: result.reason,
+      needed: result.needed ?? needed,
     };
   } catch (err) {
     console.error('Failed to check token availability:', err);
+    // fail-closed для обычных, но не роняем весь stream неясной ошибкой сети
     return {
       available: false,
       bonus: 0,
       permanent: 0,
       total: 0,
       reason: 'no_tokens',
+      needed,
     };
   }
 }
 
-/**
- * Списать токены (bonus → permanent)
- */
 export async function spendAbstractTokens(
   userId: number,
   amount: number,
+  source: string = 'chat',
+  description: string | null = null,
   config: any = null
 ): Promise<{
   success: boolean;
-  bonusUsed: number;
-  permanentUsed: number;
-  remainingBonus: number;
-  remainingPermanent: number;
-  charged?: number;
+  bonus_after?: number;
+  permanent_after?: number;
+  used_bonus?: number;
+  used_permanent?: number;
+  spent_today?: number;
   bypass?: boolean;
   error?: string;
 }> {
@@ -94,145 +90,77 @@ export async function spendAbstractTokens(
       {
         p_user_id: userId,
         p_amount: amount,
+        p_source: source,
+        p_description: description,
       },
       cfg
     );
 
     if (!result || typeof result !== 'object') {
-      return {
-        success: false,
-        bonusUsed: 0,
-        permanentUsed: 0,
-        remainingBonus: 0,
-        remainingPermanent: 0,
-        error: 'Failed to spend tokens',
-      };
+      return { success: false, error: 'Failed to spend tokens' };
     }
 
     if (result.success === false) {
       return {
         success: false,
-        bonusUsed: 0,
-        permanentUsed: 0,
-        remainingBonus: 0,
-        remainingPermanent: 0,
         error: result.error || 'Failed to spend tokens',
+        spent_today: result.spent_today,
       };
     }
 
     return {
       success: true,
-      bonusUsed: result.bonus_used || 0,
-      permanentUsed: result.permanent_used || 0,
-      remainingBonus: result.remaining_bonus || 0,
-      remainingPermanent: result.remaining_permanent || 0,
-      charged: result.charged || 0,
       bypass: result.bypass === true,
+      bonus_after: result.bonus_after,
+      permanent_after: result.permanent_after,
+      used_bonus: result.used_bonus,
+      used_permanent: result.used_permanent,
+      spent_today: result.spent_today,
     };
   } catch (err) {
-    console.error('Failed to spend abstract tokens:', err);
-    return {
-      success: false,
-      bonusUsed: 0,
-      permanentUsed: 0,
-      remainingBonus: 0,
-      remainingPermanent: 0,
-      error: (err as Error).message,
-    };
+    console.error('Failed to spend tokens:', err);
+    return { success: false, error: (err as Error).message };
   }
 }
 
-/**
- * Начислить дневной бонус (сброс старого + выдача нового)
- */
+/** @deprecated используйте spendAbstractTokens */
+export async function spendTokenForRequest(
+  userId: number,
+  config: any = null
+) {
+  return spendAbstractTokens(userId, 1, 'chat', 'Запрос к агенту', config);
+}
+
 export async function addBonusTokens(
   userId: number,
   amount: number,
   config: any = null
-): Promise<{
-  success: boolean;
-  new_bonus?: number;
-  added?: number;
-  reset_old?: number;
-  error?: string;
-}> {
+): Promise<{ success: boolean; new_bonus?: number; error?: string }> {
   try {
     const cfg = config || getSupabaseConfig('service');
-
     const result = await supabaseRPC(
       'add_bonus_tokens',
-      {
-        p_user_id: userId,
-        p_amount: amount,
-      },
+      { p_user_id: userId, p_amount: amount },
       cfg
     );
-
-    if (!result || typeof result !== 'object') {
-      return { success: false, error: 'Invalid response' };
+    if (!result || result.success === false) {
+      return { success: false, error: result?.error || 'Failed' };
     }
-
-    if (result.success === false) {
-      return {
-        success: false,
-        error: result.error || 'Failed',
-        new_bonus: result.bonus,
-      };
-    }
-
-    return {
-      success: true,
-      new_bonus: result.new_bonus,
-      added: result.added,
-      reset_old: result.reset_old,
-    };
+    return { success: true, new_bonus: result.new_bonus };
   } catch (err) {
-    console.error('Failed to add bonus tokens:', err);
-    return {
-      success: false,
-      error: (err as Error).message,
-    };
+    return { success: false, error: (err as Error).message };
   }
 }
 
-/**
- * Получить лимиты тарифа пользователя
- */
 export async function getUserTierLimits(
   userId: number,
   config: any = null
-): Promise<{
-  success: boolean;
-  tier_key?: string;
-  bonus_tokens_per_day?: number;
-  permanent_tokens?: number;
-  daily_spend_limit?: number;
-  bypass?: boolean;
-  error?: string;
-}> {
+): Promise<any> {
   try {
     const cfg = config || getSupabaseConfig('service');
-    const result = await supabaseRPC(
-      'get_user_tier_limits',
-      { p_user_id: userId },
-      cfg
-    );
-
-    if (!result || typeof result !== 'object') {
-      return { success: false, error: 'Invalid response' };
-    }
-
-    return result;
+    return await supabaseRPC('get_user_tier_limits', { p_user_id: userId }, cfg);
   } catch (err) {
-    console.error('Failed to get user tier limits:', err);
-    return {
-      success: false,
-      error: (err as Error).message,
-    };
+    console.error('getUserTierLimits:', err);
+    return { success: false, error: (err as Error).message };
   }
 }
-
-// Алиас для обратной совместимости
-export const spendTokenForRequest = async (userId: number, config: any = null) => {
-  return spendAbstractTokens(userId, 1, config);
-};
