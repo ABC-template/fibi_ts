@@ -1,7 +1,7 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 6.3.0 — загрузка файлов v1 (attachedFile): только для создателя,
+// Версия: 3.0.0 — daily_limit messages + spend RPC v2
 //                  жёсткий потолок + динамическая проверка по context_length
 //                  агента, содержимое уходит только в этот запрос
 //                  (дописывается в systemPrompt), никуда не персистится
@@ -20,10 +20,9 @@ import { getModelConfig, getRotatedKeysPool } from '../chats/index';
 import { buildSystemPrompt, buildMessages } from '../chat/prompts';
 import {
   checkTokenAvailability,
-  // spendTokenForRequest больше не обязателен — используем spendTokens локально
 } from '../_lib/tokens';
 import {
-  checkOpenRouterLimit,   // теперь no-op, можно оставить
+  checkOpenRouterLimit,
   logOpenRouterUsage,
   estimateTokens,
 } from '../_lib/tokens-usage';
@@ -118,7 +117,65 @@ async function spendTokens(
   permanentUsed: number;
   remainingBonus: number;
   remainingPermanent: number;
+  spent_today?: number;
+  bypass?: boolean;
   error?: string;
+}> {
+  try {
+    const result = await supabaseRPC(
+      'spend_abstract_tokens',
+      {
+        p_user_id: userId,
+        p_amount: amount,
+        p_source: 'chat',
+        p_description: 'Запрос к агенту',
+      },
+      config
+    );
+
+    if (!result || typeof result !== 'object') {
+      return {
+        success: false,
+        bonusUsed: 0,
+        permanentUsed: 0,
+        remainingBonus: 0,
+        remainingPermanent: 0,
+        error: 'Failed to spend tokens',
+      };
+    }
+
+    if (result.success === false) {
+      return {
+        success: false,
+        bonusUsed: 0,
+        permanentUsed: 0,
+        remainingBonus: 0,
+        remainingPermanent: 0,
+        spent_today: result.spent_today,
+        error: result.error || 'Failed to spend tokens',
+      };
+    }
+
+    return {
+      success: true,
+      bypass: result.bypass === true,
+      bonusUsed: result.used_bonus || 0,
+      permanentUsed: result.used_permanent || 0,
+      remainingBonus: result.bonus_after ?? 0,
+      remainingPermanent: result.permanent_after ?? 0,
+      spent_today: result.spent_today,
+    };
+  } catch (err) {
+    console.error('Failed to spend tokens:', err);
+    return {
+      success: false,
+      bonusUsed: 0,
+      permanentUsed: 0,
+      remainingBonus: 0,
+      remainingPermanent: 0,
+      error: (err as Error).message,
+    };
+  }
 }> {
   try {
     const result = await supabaseRPC(
@@ -408,23 +465,23 @@ export default async function handler(request: Request): Promise<Response> {
           `⏳ Дневной лимит тарифа исчерпан.\n` +
           `Использовано сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡\n` +
           `Завтра лимит обновится. Постоянный баланс сохранился.`;
-      } else if (tokenCheck.reason === 'no_tokens' || tokenCheck.total === 0) {
+      } else if (tokenCheck.total === 0 || tokenCheck.reason === 'no_tokens') {
         userMessage =
           `⚠️ Недостаточно токенов.\n` +
           `Доступно: 0 ⚡\n` +
-          `Получите бонусные токены завтра или пополните баланс.`;
+          `Бонус обновится завтра или пополните баланс.`;
       } else {
         userMessage =
           `⚠️ Недостаточно токенов для агента «${agent.name?.ru || agent.slug}».\n` +
           `Требуется минимум: ${agent.min_charge} ⚡\n` +
-          `Доступно: ${tokenCheck.total} ⚡ ` +
-          `(${tokenCheck.bonus} бонусных + ${tokenCheck.permanent} постоянных)`;
+          `Доступно: ${tokenCheck.total} ⚡ (${tokenCheck.bonus} бонусных + ${tokenCheck.permanent} постоянных)`;
       }
 
       return errorResponse(userMessage, 429, {
         'X-Token-Bonus': String(tokenCheck.bonus || 0),
         'X-Token-Permanent': String(tokenCheck.permanent || 0),
         'X-Token-Total': String(tokenCheck.total || 0),
+        'X-Token-Needed': String(agent.min_charge),
         'X-Token-Reason': tokenCheck.reason || 'insufficient',
         'X-Daily-Spent': String(tokenCheck.spent_today || 0),
         'X-Daily-Limit': String(tokenCheck.daily_limit || 0),
