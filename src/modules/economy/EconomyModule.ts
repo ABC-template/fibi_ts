@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.0.1 — исправлен subscription_tier
+// Версия: 2.1.0 — ∞ + daily limit progress — исправлен subscription_tier
 // ============================================
 
 import './economy.css';
@@ -56,7 +56,7 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v2.0.1 инициализирован');
+    console.log('✅ EconomyModule v2.1.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -215,29 +215,64 @@ export class EconomyModule {
   private _renderTokensTab(): string {
     const tokens = this.economyStore.getTokenBalances();
     const transactions = this.economyStore.getTransactions('tokens');
+    const role = this.userStore.role || 'trial';
+    const isBypass = role === 'admin' || role === 'creator' || tokens.bypass === true;
+
+    const spentToday = tokens.spent_today ?? 0;
+    const dailyLimit = tokens.daily_limit ?? 0;
+
+    const totalDisplay = isBypass ? '∞' : String(tokens.total);
+    const bonusDisplay = isBypass ? '∞' : String(tokens.bonus);
+    const permanentDisplay = isBypass ? '∞' : String(tokens.permanent);
+
+    let dailyBlock = '';
+    if (!isBypass && dailyLimit > 0) {
+      const pct = Math.min(100, Math.round((spentToday / dailyLimit) * 100));
+      dailyBlock = `
+        <div class="daily-limit-card" style="
+          margin: 12px 0;
+          padding: 12px 14px;
+          border-radius: 12px;
+          background: var(--app-bg-tertiary, rgba(255,255,255,0.04));
+          border: 1px solid var(--app-border-color-light);
+        ">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;color:var(--app-text-secondary)">
+            <span>📅 Лимит на сегодня</span>
+            <span>${spentToday} / ${dailyLimit} ⚡</span>
+          </div>
+          <div style="height:6px;border-radius:4px;background:rgba(255,255,255,0.08);overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#D4AF37,#C5A059);border-radius:4px;transition:width 0.3s"></div>
+          </div>
+        </div>
+      `;
+    }
 
     return `
-      <!-- Баланс -->
       <div class="economy-balance-card">
         <div class="label">Ваши токены</div>
-        <div class="balance">${tokens.total} ⚡</div>
+        <div class="balance">${totalDisplay} ⚡</div>
+        ${isBypass ? '<div class="hint" style="margin-top:6px;opacity:0.7">Безлимит (creator/admin)</div>' : ''}
       </div>
 
-      <!-- Детализация -->
       <div class="token-breakdown">
         <div class="token-item">
-          <div class="value bonus">${tokens.bonus}</div>
+          <div class="value bonus">${bonusDisplay}</div>
           <div class="label">🎁 Бонусные</div>
-          ${tokens.bonus > 0 ? '<div class="hint">сгорят завтра</div>' : '<div class="hint">бонусных токенов нет</div>'}
+          ${isBypass
+            ? '<div class="hint">не списываются</div>'
+            : (tokens.bonus > 0
+                ? '<div class="hint">сгорят завтра</div>'
+                : '<div class="hint">бонусных токенов нет</div>')}
         </div>
         <div class="token-item">
-          <div class="value permanent">${tokens.permanent}</div>
+          <div class="value permanent">${permanentDisplay}</div>
           <div class="label">💎 Постоянные</div>
-          <div class="hint">не сгорают</div>
+          <div class="hint">${isBypass ? 'не списываются' : 'не сгорают'}</div>
         </div>
       </div>
 
-      <!-- История -->
+      ${dailyBlock}
+
       <div class="economy-history">
         <div class="title">
           📜 История транзакций
@@ -657,4 +692,4 @@ export class EconomyModule {
   (window as any).economyModule
 );
 
-console.log('✅ EconomyModule v2.0.1 загружен');
+console.log('✅ EconomyModule v2.1.0 загружен');
