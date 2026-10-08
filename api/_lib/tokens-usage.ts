@@ -1,10 +1,10 @@
 // ============================================
 // api/_lib/tokens-usage.ts
 // Оценка токенов + лог OpenRouter (лимит OR — no-op)
-// Версия: 2.0.0
+// Версия: 2.1.0 — совместимый logOpenRouterUsage
 // ============================================
 
-import { getSupabaseConfig, supabaseRPC, supabaseFetch } from './supabase-client';
+import { getSupabaseConfig, supabaseFetch } from './supabase-client';
 
 /**
  * Оценка токенов по тексту сообщений (в т.ч. vision content[])
@@ -33,9 +33,8 @@ export function estimateTokens(
 }
 
 /**
- * Дневной лимит OpenRouter больше не ограничивает —
- * экономика идёт через abstract tokens + daily_spend_limit тарифа.
- * Функция оставлена для совместимости со stream.ts.
+ * Дневной лимит OpenRouter больше не ограничивает запросы.
+ * Экономика — abstract tokens + daily_spend_limit тарифа.
  */
 export async function checkOpenRouterLimit(
   _userId: number,
@@ -60,7 +59,7 @@ export async function getDailyTokenLimit(
   _userId: number,
   _config: any = null
 ): Promise<number> {
-  return 0; // 0 = без лимита OpenRouter
+  return 0;
 }
 
 export async function getTodayTokenUsage(
@@ -69,14 +68,16 @@ export async function getTodayTokenUsage(
 ): Promise<number> {
   try {
     const cfg = config || getSupabaseConfig('service');
-    const today = new Date().toISOString().slice(0, 10);
     const result = await supabaseFetch(
-      `openrouter_usage?user_id=eq.${userId}&date=eq.${today}&select=tokens_used`,
+      `openrouter_usage?user_id=eq.${userId}&select=total_tokens&order=created_at.desc&limit=50`,
       { method: 'GET' },
       cfg
     );
     if (Array.isArray(result) && result.length > 0) {
-      return result.reduce((s: number, r: any) => s + (r.tokens_used || 0), 0);
+      const today = new Date().toISOString().slice(0, 10);
+      return result
+        .filter((r: any) => (r.created_at || '').startsWith(today))
+        .reduce((s: number, r: any) => s + (r.total_tokens || 0), 0);
     }
     return 0;
   } catch {
@@ -84,15 +85,23 @@ export async function getTodayTokenUsage(
   }
 }
 
+/**
+ * Лог usage OpenRouter — сигнатура как в stream.ts
+ */
 export async function logOpenRouterUsage(
   userId: number,
-  tokensUsed: number,
-  model: string,
+  data: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    model: string;
+    topic?: string;
+    user_lang?: string;
+  },
   config: any = null
-): Promise<void> {
+): Promise<boolean> {
   try {
     const cfg = config || getSupabaseConfig('service');
-    const today = new Date().toISOString().slice(0, 10);
 
     await supabaseFetch(
       'openrouter_usage',
@@ -100,15 +109,20 @@ export async function logOpenRouterUsage(
         method: 'POST',
         body: JSON.stringify({
           user_id: userId,
-          date: today,
-          tokens_used: tokensUsed,
-          model,
-          created_at: new Date().toISOString(),
+          prompt_tokens: data.prompt_tokens,
+          completion_tokens: data.completion_tokens,
+          total_tokens: data.total_tokens,
+          model: data.model,
+          topic: data.topic || null,
+          user_lang: data.user_lang || null,
         }),
       },
       cfg
     );
+
+    return true;
   } catch (err) {
-    console.warn('logOpenRouterUsage:', err);
+    console.error('Failed to log OpenRouter usage:', err);
+    return false;
   }
 }
