@@ -20,10 +20,10 @@ import { getModelConfig, getRotatedKeysPool } from '../chats/index';
 import { buildSystemPrompt, buildMessages } from '../chat/prompts';
 import {
   checkTokenAvailability,
-  spendTokenForRequest,
+  // spendTokenForRequest больше не обязателен — используем spendTokens локально
 } from '../_lib/tokens';
 import {
-  checkOpenRouterLimit,
+  checkOpenRouterLimit,   // теперь no-op, можно оставить
   logOpenRouterUsage,
   estimateTokens,
 } from '../_lib/tokens-usage';
@@ -401,15 +401,33 @@ export default async function handler(request: Request): Promise<Response> {
     const tokenCheck = await checkTokenAvailability(userId, agent.min_charge, config);
 
     if (!tokenCheck.available) {
-      let userMessage = `⚠️ Недостаточно токенов для использования агента "${agent.name?.ru || agent.slug}".\n`;
-      userMessage += `Требуется минимум: ${agent.min_charge} ⚡\n`;
-      userMessage += `Доступно: ${tokenCheck.total} ⚡ (${tokenCheck.bonus} бонусных, ${tokenCheck.permanent} постоянных)`;
+      let userMessage = '';
+
+      if (tokenCheck.reason === 'daily_limit') {
+        userMessage =
+          `⏳ Дневной лимит тарифа исчерпан.\n` +
+          `Использовано сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡\n` +
+          `Завтра лимит обновится. Постоянный баланс сохранился.`;
+      } else if (tokenCheck.reason === 'no_tokens' || tokenCheck.total === 0) {
+        userMessage =
+          `⚠️ Недостаточно токенов.\n` +
+          `Доступно: 0 ⚡\n` +
+          `Получите бонусные токены завтра или пополните баланс.`;
+      } else {
+        userMessage =
+          `⚠️ Недостаточно токенов для агента «${agent.name?.ru || agent.slug}».\n` +
+          `Требуется минимум: ${agent.min_charge} ⚡\n` +
+          `Доступно: ${tokenCheck.total} ⚡ ` +
+          `(${tokenCheck.bonus} бонусных + ${tokenCheck.permanent} постоянных)`;
+      }
 
       return errorResponse(userMessage, 429, {
         'X-Token-Bonus': String(tokenCheck.bonus || 0),
         'X-Token-Permanent': String(tokenCheck.permanent || 0),
         'X-Token-Total': String(tokenCheck.total || 0),
-        'X-Token-Needed': String(agent.min_charge),
+        'X-Token-Reason': tokenCheck.reason || 'insufficient',
+        'X-Daily-Spent': String(tokenCheck.spent_today || 0),
+        'X-Daily-Limit': String(tokenCheck.daily_limit || 0),
       });
     }
 
