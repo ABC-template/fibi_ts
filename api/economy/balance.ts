@@ -1,12 +1,11 @@
 // ============================================
 // api/economy/balance.ts
-// Получение балансов (коины + токены + дневной лимит)
+// Балансы + дневной лимит тарифа
 // Версия: 3.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -34,7 +33,6 @@ export default async function handler(request: Request): Promise<Response> {
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
 
-    // Балансы
     const result = await supabaseRPC(
       'get_user_balances',
       { p_user_id: userId },
@@ -49,7 +47,6 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(result.error || 'Failed to get balances', 400);
     }
 
-    // Лимиты тарифа + spent_today
     let spentToday = 0;
     let dailyLimit = 0;
     let bypass = false;
@@ -65,10 +62,7 @@ export default async function handler(request: Request): Promise<Response> {
       if (userRes && Array.isArray(userRes) && userRes.length > 0) {
         const u = userRes[0];
         const role = u.role || 'trial';
-
-        if (role === 'admin' || role === 'creator') {
-          bypass = true;
-        }
+        if (role === 'admin' || role === 'creator') bypass = true;
 
         const today = new Date().toISOString().slice(0, 10);
         if (u.last_spend_date === today) {
@@ -80,7 +74,6 @@ export default async function handler(request: Request): Promise<Response> {
           { p_user_id: userId },
           config
         );
-
         if (tierRes && tierRes.success !== false) {
           tierKey = tierRes.tier_key || 'trial';
           dailyLimit = tierRes.daily_spend_limit || 0;
@@ -88,7 +81,7 @@ export default async function handler(request: Request): Promise<Response> {
         }
       }
     } catch (e) {
-      console.warn('[economy/balance] limits fetch warning:', e);
+      console.warn('[economy/balance] limits:', e);
     }
 
     const bonus = result.tokens?.bonus || 0;
