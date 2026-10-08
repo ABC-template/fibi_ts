@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.4.0 — window.adminModule теперь проксирует к реальному
+// Версия: 7.5.0 — saveTierRow / saveAllTiers для тарифов — window.adminModule теперь проксирует к реальному
 //                  экземпляру (AdminModule._instance), а не к отдельному
 //                  «призрачному» инстансу, у которого никогда не вызывался init()
 // ============================================
@@ -268,12 +268,14 @@ function getInstance(): AdminModule | null {
     getInstance()?.proxy('quests', 'toggleActive', id, state),
   deleteQuest: (id: string) => getInstance()?.proxy('quests', 'remove', id),
 
-  // Subscriptions
+  // Subscriptions / Тарифы
   createTier: () => getInstance()?.proxy('subscriptions', 'create'),
   editTier: (id: string) => getInstance()?.proxy('subscriptions', 'edit', id),
   toggleTier: (id: string, state: boolean) =>
     getInstance()?.proxy('subscriptions', 'toggle', id, state),
   deleteTier: (id: string) => getInstance()?.proxy('subscriptions', 'remove', id),
+  saveTierRow: (idx: number) => getInstance()?.proxy('subscriptions', 'saveRow', idx),
+  saveAllTiers: () => getInstance()?.proxy('subscriptions', 'saveAll'),
 
   // Users
   searchUsers: (query: string) => getInstance()?.proxy('users', 'loadData', query),
@@ -342,4 +344,4 @@ function getInstance(): AdminModule | null {
   },
 };
 
-console.log('✅ AdminModule v7.4.0 загружен');
+console.log('✅ AdminModule v7.5.0 загружен');
