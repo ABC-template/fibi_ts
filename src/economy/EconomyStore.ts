@@ -17,6 +17,9 @@ interface IEconomyStoreData {
   tokens: {
     bonus: number;
     permanent: number;
+    spent_today?: number;
+    daily_limit?: number;
+    bypass?: boolean;
   };
   lastUpdated: string | null;
   transactions: {
@@ -57,7 +60,7 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     // ✅ Проверяем структуру tokens
     if (!this._data.tokens || typeof this._data.tokens !== 'object') {
       console.log('🔄 [EconomyStore] Восстанавливаем tokens');
-      this._data.tokens = { bonus: 0, permanent: 0 };
+      this._data.tokens = { bonus: 0, permanent: 0, spent_today: 0, daily_limit: 0, bypass: false };
       this.save();
     }
 
@@ -74,6 +77,9 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     if (this._data.coins.total_spent === undefined) this._data.coins.total_spent = 0;
     if (this._data.tokens.bonus === undefined) this._data.tokens.bonus = 0;
     if (this._data.tokens.permanent === undefined) this._data.tokens.permanent = 0;
+    if (this._data.tokens.spent_today === undefined) this._data.tokens.spent_today = 0;
+    if (this._data.tokens.daily_limit === undefined) this._data.tokens.daily_limit = 0;
+    if (this._data.tokens.bypass === undefined) this._data.tokens.bypass = false;
 
     this.subscribeToEvents();
     console.log('✅ EconomyStore v3.0.2 инициализирован', this._data);
@@ -89,6 +95,9 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
       tokens: {
         bonus: 0,
         permanent: 0,
+        spent_today: 0,
+        daily_limit: 0,
+        bypass: false,
       },
       lastUpdated: null,
       transactions: {
@@ -301,7 +310,7 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
   ): void {
     try {
       if (!this._data.tokens) {
-        this._data.tokens = { bonus: 0, permanent: 0 };
+        this._data.tokens = { bonus: 0, permanent: 0, spent_today: 0, daily_limit: 0, bypass: false };
       }
       this._data.tokens.bonus = bonus;
       this._data.tokens.permanent = permanent;
