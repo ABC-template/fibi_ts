@@ -1,7 +1,7 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.0.2 — today_bonus_added в модалке стрика
+// Версия: 13.1.0 — без progress-splash, hideSplash only; tokens from auth
 // ============================================
 
 import './config';
@@ -16,7 +16,7 @@ import { themeManager } from './theme-manager';
 import { eventBus } from './event-bus';
 
 // ✅ UI
-import { initSplash, updateSplashProgress, hideSplash } from '@/ui/splash';
+import { hideSplash } from '@/ui/splash';
 import { initDrawer, renderChatsInDrawer, updateDrawerTrashCount, setupDrawerEventListeners, updateThemeLabel } from '@/ui/drawer';
 import { updateCoinsDisplay, updateDrawerUserInfo, updateDrawerRole, setupHeaderSubscriptions } from '@/ui/header';
 import { initExportButtons } from '@/ui/modals';
@@ -383,9 +383,6 @@ function updateAllBalanceDisplays(): void {
 async function initApp(): Promise<void> {
     console.log('🔧 Начало инициализации приложения...');
 
-    initSplash();
-    updateSplashProgress(0, '🔮 Инициализация...');
-
     if (!isTelegramWebApp()) {
         console.log('🚫 Приложение открыто вне Telegram → показываем заглушку');
         showTelegramRequiredScreen();
@@ -396,29 +393,23 @@ async function initApp(): Promise<void> {
     setupTelegramWebApp();
 
     // ✅ ШАГ 1
-    updateSplashProgress(10, '📦 Регистрация модулей...');
     registerModules();
 
     // ✅ ШАГ 2
-    updateSplashProgress(20, '🔗 Привязка UI...');
     bindUIToWindow();
 
     // ✅ ШАГ 3
-    updateSplashProgress(25, '🌐 Настройка глобальных функций...');
     setupGlobalFunctions();
 
     // ✅ ШАГ 4
-    updateSplashProgress(30, '📡 Настройка событий...');
     setupEventSubscriptions();
 
     // ✅ ШАГ 5
-    updateSplashProgress(35, '📐 Настройка отступов...');
     setTelegramInsets();
     setTimeout(setTelegramInsets, 150);
     setTimeout(setTelegramInsets, 450);
 
     // ✅ ШАГ 6
-    updateSplashProgress(40, '📂 Инициализация сайдбара...');
     initDrawer();
     updateDrawerUserInfo();
     setupDrawerEventListeners();
@@ -433,7 +424,6 @@ async function initApp(): Promise<void> {
     }
 
     // ✅ ШАГ 8
-    updateSplashProgress(50, '💾 Загрузка данных...');
     chatStore.load();
     userStore.load();
     organizerStore.load();
@@ -477,11 +467,9 @@ async function initApp(): Promise<void> {
     }
 
     // ✅ ШАГ 10: АУТЕНТИФИКАЦИЯ
-    updateSplashProgress(60, '🔐 Авторизация...');
     if (authService) {
         try {
             const result = await authService.checkSubscription();
-            updateSplashProgress(70, '🔐 Проверка подписки...');
 
             // ✅ Берём и текущий баланс, и сколько начислили сегодня
             const tokenInfo = (result as any).tokens || { bonus: 0, permanent: 0 };
@@ -490,7 +478,6 @@ async function initApp(): Promise<void> {
             const needFullReload = authService.needFullReload(result.syncToken);
 
             updateDrawerRole(result.role);
-            updateSplashProgress(75, '📂 Загрузка чатов...');
 
             if (needFullReload) {
                 console.log('🔄 [initApp] sync_token не совпадает → полная перезапись');
@@ -503,7 +490,6 @@ async function initApp(): Promise<void> {
                 console.log('✅ [initApp] sync_token совпадает → используем кеш');
             }
 
-            updateSplashProgress(85, '🎨 Обновление интерфейса...');
             renderChatsInDrawer();
             updateDrawerUserInfo();
             updateCoinsDisplay();
@@ -630,13 +616,29 @@ async function initApp(): Promise<void> {
                     await economyStore.loadBalances();
                     await economyStore.loadConfig();
                     console.log('💰 Балансы и конфиг загружены в EconomyStore');
+
+                    // Токены/лимиты из /auth/check (бонус уже мог начислиться)
+                    const tokens = (result as any).tokens;
+                    const limits = (result as any).limits;
+                    if (tokens) {
+                        economyStore.updateTokenBalances(
+                            tokens.bonus || 0,
+                            tokens.permanent || 0,
+                            {
+                                spent_today: tokens.spent_today ?? 0,
+                                daily_limit: limits?.daily_spend_limit ?? 0,
+                                bypass: limits?.bypass === true ||
+                                    result.role === 'admin' ||
+                                    result.role === 'creator',
+                            }
+                        );
+                    }
                 }
                 console.log('✅ Экономическое ядро инициализировано');
             } catch (err) {
                 console.warn('⚠️ Не удалось инициализировать экономическое ядро:', err);
             }
 
-            updateSplashProgress(95, '🎬 Завершение...');
         } catch (err) {
             console.error('Ошибка проверки подписки:', err);
         }
@@ -657,7 +659,6 @@ async function initApp(): Promise<void> {
     }
 
     // ✅ ШАГ 12
-    updateSplashProgress(98, '🚀 Загрузка интерфейса...');
     if (moduleLoader) {
         await moduleLoader.load('chat-list', {}, { silent: true });
     }
@@ -693,7 +694,6 @@ async function initApp(): Promise<void> {
     updateThemeLabel(currentTheme);
 
     // ✅ ФИНАЛ
-    updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
         console.log('✅ Приложение v13.0.1 успешно загружено');
@@ -828,4 +828,4 @@ setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
 
-console.log('✅ app.ts v13.0.2 полностью загружен');
+console.log('✅ app.ts v13.1.0 полностью загружен');
