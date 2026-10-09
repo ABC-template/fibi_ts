@@ -157,7 +157,7 @@ export class AgentsModule {
       return;
     }
 
-    // Всегда новый чат (старые — из сайдбара / избранного)
+    // Всегда новый чат (старые — сайдбар / избранное)
     const chat = this.chatStore.createTempChat(agent.slug as any);
     if (chat) {
       chat.agent_id = agentId;
