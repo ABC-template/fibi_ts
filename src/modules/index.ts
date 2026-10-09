@@ -9,7 +9,6 @@ export * from './ui';
 
 // Основные модули
 export * from './dashboard/DashboardModule';
-export * from './chat-list/ChatListModule';
 export * from './chat/ChatModule';
 export * from './organizer/OrganizerModule';
 export * from './profile/ProfileModule';
