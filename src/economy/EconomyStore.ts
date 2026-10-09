@@ -166,6 +166,14 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
         
         this._emitChange('economy:coins:loaded', this._data.coins);
         this._emitChange('economy:tokens:loaded', this._data.tokens);
+        this._emitChange('economy:tokens:updated', {
+          bonus: this._data.tokens.bonus,
+          permanent: this._data.tokens.permanent,
+          total: this._data.tokens.bonus + this._data.tokens.permanent,
+          spent_today: this._data.tokens.spent_today,
+          daily_limit: this._data.tokens.daily_limit,
+          bypass: this._data.tokens.bypass,
+        });
         console.log(`💰 Балансы загружены: ${this._data.coins.balance} 🪙, ${this._data.tokens.bonus + this._data.tokens.permanent} ⚡`);
       }
     } catch (err) {
