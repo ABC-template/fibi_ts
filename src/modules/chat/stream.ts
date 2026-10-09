@@ -283,9 +283,6 @@ let streamCallCounter = 0;
       targetChat.messages.push(aiMessage);
       chatStoreInstance.save();
 
-      if (userStoreInstance && !userStoreInstance.hasUnlimited()) {
-        userStoreInstance.incrementUsage();
-      }
 
       if (userStoreInstance && userStoreInstance.canSync() && targetChat.id) {
         console.log(`☁️ [СТРИМ #${callId}] ОТПРАВКА НА СЕРВЕР (PRO)`);
@@ -397,9 +394,6 @@ let streamCallCounter = 0;
         targetChat.messages.push(aiMessage);
         chatStoreInstance.save();
 
-        if (userStoreInstance && !userStoreInstance.hasUnlimited()) {
-          userStoreInstance.incrementUsage();
-        }
 
         eventBusInstance.emit('chat:message_added', {
           chatId: chatId,
