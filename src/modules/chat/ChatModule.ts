@@ -448,51 +448,33 @@ export class ChatModule {
 
     const tokens = this.economyStore.getTokenBalances();
     const isBlocked = !this._agentAccess;
-    
+
     if (isBlocked) {
       indicator.innerHTML = `
         <span class="token-badge blocked" style="
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 2px 12px;
-          border-radius: 12px;
-          background: rgba(231, 76, 60, 0.12);
-          color: #e74c3c;
-          font-weight: 600;
-          font-size: 12px;
-        ">
-          🔒 Доступ ограничен
-        </span>
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 2px 12px; border-radius: 12px;
+          background: rgba(231, 76, 60, 0.12); color: #e74c3c;
+          font-weight: 600; font-size: 12px;
+        ">🔒 Доступ ограничен</span>
       `;
       indicator.style.display = 'flex';
       indicator.style.justifyContent = 'center';
       return;
     }
 
-    if (tokens.total > 0) {
-      indicator.innerHTML = `
-        <span class="token-badge" title="Бонусные токены">
-          🎁 ${tokens.bonus}
-        </span>
-        <span class="token-badge" title="Постоянные токены">
-          💎 ${tokens.permanent}
-        </span>
-        <span class="token-badge total" title="Всего токенов">
-          ⚡ ${tokens.total}
-        </span>
-      `;
-      indicator.style.display = 'flex';
-      indicator.style.justifyContent = 'flex-end';
-    } else {
-      indicator.innerHTML = `
-        <span class="token-badge empty" title="Нет токенов">
-          ⚡ 0
-        </span>
-      `;
-      indicator.style.display = 'flex';
-      indicator.style.justifyContent = 'flex-end';
-    }
+    // Только общий баланс «Энергия» (детали — в разделе Экономика)
+    const total = tokens.total ?? 0;
+    indicator.innerHTML = `
+      <span class="token-badge total" title="Энергия (бонус + постоянные)" style="
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 2px 12px; border-radius: 12px;
+        background: rgba(212, 175, 55, 0.12); color: var(--app-text-primary);
+        font-weight: 600; font-size: 12px;
+      ">⚡ Энергия ${total}</span>
+    `;
+    indicator.style.display = 'flex';
+    indicator.style.justifyContent = 'flex-end';
   }
 
   async show(params: Record<string, any> = {}): Promise<void> {
