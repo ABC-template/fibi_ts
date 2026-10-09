@@ -41,7 +41,7 @@ export class NavigationState {
 
   constructor() {
     this._subscribe();
-    console.log('✅ NavigationState v7.3.1 инициализирован');
+    console.log('✅ NavigationState v8.0.0 инициализирован');
   }
 
   private get moduleLoader(): any {
@@ -164,10 +164,10 @@ export class NavigationState {
         if (prev) {
           this.navigate(prev.module, prev.params, { replace: true });
         } else {
-          this.navigate('chat-list', {}, { replace: true });
+          this.navigate('agents', {}, { replace: true });
         }
       } else {
-        this.navigate('chat-list', {}, { replace: true });
+        this.navigate('agents', {}, { replace: true });
       }
       return;
     }
@@ -318,7 +318,7 @@ export class NavigationState {
       console.log('📱 Закрываем капсулу перед выходом в список чатов');
       inputManager.collapseInputArea();
     }
-    this.navigate('chat-list', {}, { replace: true });
+    this.navigate('agents', {}, { replace: true });
   }
 
   // ==========================================
@@ -506,4 +506,4 @@ export class NavigationState {
 }
 
 export const navigationState = new NavigationState();
-console.log('✅ NavigationState v7.3.1 загружен (FIXED: проверка темы чата)');
+console.log('✅ NavigationState v8.0.0 загружен (FIXED: проверка темы чата)');
