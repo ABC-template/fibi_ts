@@ -166,7 +166,7 @@ export class ProfileUI {
   }
 
   private _openChatFromFavorite(chatId: UUID, topic: TopicId, msgId: UUID): void {
-    console.log(`⭐ [favorite] Открываем чат из избранного: ${chatId}`);
+    console.log(`⭐ [favorite] Открываем чат из избранного: ${chatId}, msg: ${msgId}`);
 
     this.modalManager.forceClose();
 
@@ -189,23 +189,14 @@ export class ProfileUI {
       (this.navigationState as any)._updateBackButton();
     }
 
+    // messageId уходит в ChatModule → скролл ПОСЛЕ renderAll (не здесь)
     if (this.navigationState) {
-      this.navigationState.openChat(chatId, topic);
+      this.navigationState.openChat(chatId, topic, msgId);
     } else {
-      this.eventBus.emit('navigation:open_chat', { chatId, topic });
+      this.eventBus.emit('navigation:open_chat', { chatId, topic, messageId: msgId });
     }
-
-    setTimeout(() => {
-      const target = document.getElementById(`msg-block-${msgId}`);
-      const container = document.getElementById('chat-container');
-      if (container && target) {
-        container.scrollTo({ top: Math.max(0, target.offsetTop - 80), behavior: 'smooth' });
-        target.style.transition = 'background 0.5s';
-        target.style.background = 'rgba(212,175,55,0.15)';
-        setTimeout(() => (target.style.background = ''), 1500);
-      }
-    }, 500);
   }
+
 
   private async _unfavorite(chatId: UUID, msgId: UUID): Promise<void> {
     if ((window as any).messageService) {
