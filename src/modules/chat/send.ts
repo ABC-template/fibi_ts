@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based) с поддержкой агентов
-// Версия: 5.3.0 — прикрепление текстового файла (attach-file.ts), по тому
+// Версия: 6.0.0 — без request-quota — прикрепление текстового файла (attach-file.ts), по тому
 //                  же образцу, что и изображение: короткая пометка в text,
 //                  содержимое уходит отдельным параметром в streamAiResponse
 // ============================================
@@ -22,7 +22,7 @@ export class ChatSend {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v5.3.0 загружен (с поддержкой агентов)');
+    console.log('✅ ChatSend v6.0.0 загружен (с поддержкой агентов)');
   }
 
   private async _ensureStreamFunction(): Promise<void> {
@@ -100,12 +100,6 @@ export class ChatSend {
     let text = input.value.trim();
     if (!text) return;
 
-    if (!this.userStore.hasUnlimited() && !this.userStore.hasRemainingQuota()) {
-      if ((window as any).tg?.showAlert) {
-        (window as any).tg.showAlert('Ежедневный лимит запросов исчерпан!');
-      }
-      return;
-    }
 
     this.isSending = true;
     input.disabled = true;
@@ -369,4 +363,4 @@ export class ChatSend {
 }
 
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v5.3.0 загружен (с поддержкой агентов)');
+console.log('✅ ChatSend v6.0.0 загружен (с поддержкой агентов)');
