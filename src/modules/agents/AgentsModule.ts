@@ -157,20 +157,7 @@ export class AgentsModule {
       return;
     }
 
-    let existingChat = this.chatStore
-      .getAllChats('all')
-      .find(c => c.agent_id === agentId && !c.deleted_at);
-
-    if (existingChat) {
-      console.log(`📂 [AgentsModule] Найден существующий чат: ${existingChat.id}`);
-      this.eventBus.emit('navigation:open_chat', {
-        chatId: existingChat.id,
-        topic: agent.slug,
-      });
-      this.hide();
-      return;
-    }
-
+    // Всегда новый чат (старые — из сайдбара / избранного)
     const chat = this.chatStore.createTempChat(agent.slug as any);
     if (chat) {
       chat.agent_id = agentId;
