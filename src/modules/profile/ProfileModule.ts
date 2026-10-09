@@ -453,7 +453,8 @@ export class ProfileModule {
       coinsEl.textContent = String(this.questsStore.getBalance() || 0);
     }
 
-    this._updateLimits(this.userStore.usedToday || 0, this.userStore.dailyLimit || 0);
+    // request-quota удалён — лимиты токенов в Economy
+    // this._updateLimits(0, 0);
   }
 
   private _updateRole(role: string): void {
