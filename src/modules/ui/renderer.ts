@@ -32,12 +32,12 @@ export class UIRenderer {
     this._subscriptions.push(unsubTokens);
 
     const unsubUsage = this.eventBus.on('user:usage_incremented', (data) => {
-      this._updateLimitDisplay({ used: data.used, limit: this.userStore.dailyLimit });
+      this._updateLimitDisplay({ used: data.used, limit: data.limit ?? 0 });
     }, this);
     this._subscriptions.push(unsubUsage);
 
     const unsubRole = this.eventBus.on('user:role_changed', (data) => {
-      this._updateLimitDisplay({ used: this.userStore.usedToday, limit: data.dailyLimit });
+      this._updateLimitDisplay({ used: data.used ?? 0, limit: data.limit ?? data.dailyLimit ?? 0 });
     }, this);
     this._subscriptions.push(unsubRole);
 
@@ -62,8 +62,18 @@ export class UIRenderer {
   }
 
   private _updateLimitDisplay(data: { used: number; limit: number }): void {
-    const total = data.limit || this.userStore.dailyLimit || 0;
-    const used = data.used || this.userStore.usedToday || 0;
+    // Старый лимит «запросов в сутки» удалён. Скрываем UI, если остался в DOM.
+    const limitInfo = document.getElementById('limit-info');
+    if (limitInfo) {
+      limitInfo.style.display = 'none';
+    }
+    const barEl = document.getElementById('profile-limit-bar');
+    if (barEl) {
+      (barEl as HTMLElement).style.display = 'none';
+    }
+    return;
+    const total = data.limit || 0;
+    const used = data.used || 0;
     const percent = total > 0 ? Math.min((used / total) * 100, 100) : 0;
 
     const barEl = document.getElementById('profile-limit-bar');
