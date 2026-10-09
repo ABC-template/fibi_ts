@@ -309,9 +309,11 @@ export class NavigationState {
   // ==========================================
 
   goToChatList(): void {
-    // Закрываем капсулу если открыта
+    this.goToAgents();
+  }
+
+  goToAgents(): void {
     if (inputManager.isExpanded()) {
-      console.log('📱 Закрываем капсулу перед выходом в список чатов');
       inputManager.collapseInputArea();
     }
     this.navigate('agents', {}, { replace: true });
