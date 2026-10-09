@@ -306,6 +306,15 @@ let streamCallCounter = 0;
       });
 
       console.log(`🟢 [СТРИМ #${callId}] ФИНАЛИЗАЦИЯ ЗАВЕРШЕНА`);
+
+      // Обновить энергию в шапке чата без перехода в Экономику
+      try {
+        const { economyStore } = await import('@/economy/EconomyStore');
+        await economyStore.loadBalances();
+        eventBusInstance.emit('economy:tokens:updated', economyStore.getTokenBalances());
+      } catch (e) {
+        console.warn('⚠️ [СТРИМ] Не удалось обновить баланс токенов:', e);
+      }
     } else {
       console.warn(`⚠️ [СТРИМ #${callId}] Пустой ответ`);
       uiRendererInstance.hideSkeleton();
