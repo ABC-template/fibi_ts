@@ -9,7 +9,6 @@ import { navigationState } from './navigation-state';
 
 // Импортируем все модули для регистрации
 import { DashboardModule } from '@/modules/dashboard/DashboardModule';
-import { ChatListModule } from '@/modules/chat-list/ChatListModule';
 import { ChatModule } from '@/modules/chat/ChatModule';
 import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
 import { ProfileModule } from '@/modules/profile/ProfileModule';
@@ -52,7 +51,6 @@ export class ModuleLoader {
     // Основные модули
     this.register('dashboard', DashboardModule);
     this.register('organizer', OrganizerModule);
-    this.register('chat-list', ChatListModule);
     this.register('chat', ChatModule);
     this.register('games', GamesModule);
     this.register('quests', QuestsModule);
@@ -225,7 +223,7 @@ export class ModuleLoader {
       this.navigationState.back();
     } else {
       if (this._currentModule === 'chat') {
-        this.load('chat-list');
+        this.load('agents');
       } else {
         this.load('dashboard');
       }
