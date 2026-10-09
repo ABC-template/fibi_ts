@@ -61,35 +61,12 @@ export class UIRenderer {
     if (tokensEl) tokensEl.textContent = String(tokens || 0);
   }
 
-  private _updateLimitDisplay(data: { used: number; limit: number }): void {
-    // Старый лимит «запросов в сутки» удалён. Скрываем UI, если остался в DOM.
+  private _updateLimitDisplay(_data: { used: number; limit: number }): void {
+    // Старый лимит «запросов в сутки» удалён — скрываем UI, если остался в DOM.
     const limitInfo = document.getElementById('limit-info');
-    if (limitInfo) {
-      limitInfo.style.display = 'none';
-    }
+    if (limitInfo) limitInfo.style.display = 'none';
     const barEl = document.getElementById('profile-limit-bar');
-    if (barEl) {
-      (barEl as HTMLElement).style.display = 'none';
-    }
-    return;
-    const total = data.limit || 0;
-    const used = data.used || 0;
-    const percent = total > 0 ? Math.min((used / total) * 100, 100) : 0;
-
-    const barEl = document.getElementById('profile-limit-bar');
-    if (barEl) {
-      barEl.style.width = total >= 9999 ? '100%' : `${percent}%`;
-    }
-
-    const limitInfo = document.getElementById('limit-info');
-    if (limitInfo) {
-      const limitLabel = (window as any).getLangString ? (window as any).getLangString('limit') : 'Лимит';
-      if (total >= 9999) {
-        limitInfo.innerText = `${limitLabel}: ∞`;
-      } else {
-        limitInfo.innerText = `${limitLabel}: ${used}/${total}`;
-      }
-    }
+    if (barEl) (barEl as HTMLElement).style.display = 'none';
   }
 
   // ==========================================
