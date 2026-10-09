@@ -138,6 +138,12 @@ export const chatUI = new ChatUI();
     if (!found || found.chat.deleted_at) return;
     const confirmMsg = (window as any).getLangString ? (window as any).getLangString('confirm_del_chat') : 'Удалить чат в корзину?';
     const action = async () => {
+        const chatMod = (window as any).chatModule;
+        const wasCurrentOpen =
+            chatMod &&
+            chatMod._isShowing &&
+            String(chatMod._chatId) === String(chatId);
+
         if (!chatStore.deleteChat(chatId)) {
             if ((window as any).tg?.showAlert) (window as any).tg.showAlert('Не удалось удалить чат');
             return;
@@ -148,11 +154,14 @@ export const chatUI = new ChatUI();
         (window as any).chatUI?._updateLists();
         if ((window as any).updateTrashCount) setTimeout((window as any).updateTrashCount, 300);
         if ((window as any).uiRenderer) (window as any).uiRenderer.showToast('🗑️ Чат отправлен в корзину', 'info', 1500);
-        const active = chatStore.getActiveChat();
-        if (!active || !chatStore.hasRealMessages(active)) {
-            if ((window as any).moduleLoader) {
-                (window as any).moduleLoader.load('chat-list');
-            }
+
+        if (wasCurrentOpen) {
+            console.log('🚪 Удалён открытый чат → переход к Агентам');
+            try { chatMod.hide?.(); } catch (_) {}
+            const nav = (window as any).navigationState;
+            if (nav?.goToAgents) nav.goToAgents();
+            else if (nav?.navigate) nav.navigate('agents', {}, { replace: true });
+            else if ((window as any).moduleLoader) (window as any).moduleLoader.load('agents');
         }
     };
     if ((window as any).tg?.showConfirm) {
