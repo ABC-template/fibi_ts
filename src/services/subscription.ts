@@ -72,7 +72,7 @@ export class SubscriptionService {
         // Обновляем пользователя в сторе
         if (userStore) {
           userStore.markTrialUsed();
-          userStore.setRole('premium', 100, true);
+          userStore.setRole('premium', true);
         }
         return {
           success: true,
@@ -104,7 +104,7 @@ export class SubscriptionService {
       if (response.success) {
         // Обновляем пользователя в сторе
         if (userStore) {
-          userStore.setRole('premium', 100, true);
+          userStore.setRole('premium', true);
         }
         return {
           success: true,
