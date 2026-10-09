@@ -404,16 +404,26 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
-    const tokenCheck = await checkTokenAvailability(userId, agent.min_charge, config);
+    // Оценка списания заранее (не только min_charge)
+    const minCharge = Math.max(1, Number(agent.min_charge) || 1);
+    const markup = Number(agent.markup_coefficient);
+    const safeMarkup = Number.isFinite(markup) && markup > 0 ? markup : 1;
+    const estimatedCharge = Math.max(
+      Math.ceil(estimatedTokens * safeMarkup),
+      minCharge
+    );
+    console.log(`💰 [stream] Оценка charge: ~${estimatedTokens} × ${safeMarkup} → max(..., ${minCharge}) = ${estimatedCharge}`);
+
+    const tokenCheck = await checkTokenAvailability(userId, estimatedCharge, config);
 
     if (!tokenCheck.available) {
       let userMessage = '';
 
       if (tokenCheck.reason === 'daily_limit') {
         userMessage =
-          `⏳ Дневной лимит тарифа исчерпан.\n` +
-          `Использовано сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡\n` +
-          `Завтра лимит обновится. Постоянный баланс сохранился.`;
+          `⏳ Дневной лимит тарифа: не хватает на этот запрос.\n` +
+          `Сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡.\n` +
+          `Нужно ~${estimatedCharge} ⚡. Завтра лимит обновится.`;
       } else if (tokenCheck.total === 0 || tokenCheck.reason === 'no_tokens') {
         userMessage =
           `⚠️ Недостаточно токенов.\n` +
@@ -430,7 +440,7 @@ export default async function handler(request: Request): Promise<Response> {
         'X-Token-Bonus': String(tokenCheck.bonus || 0),
         'X-Token-Permanent': String(tokenCheck.permanent || 0),
         'X-Token-Total': String(tokenCheck.total || 0),
-        'X-Token-Needed': String(agent.min_charge),
+        'X-Token-Needed': String(estimatedCharge),
         'X-Token-Reason': tokenCheck.reason || 'insufficient',
         'X-Daily-Spent': String(tokenCheck.spent_today || 0),
         'X-Daily-Limit': String(tokenCheck.daily_limit || 0),
@@ -529,19 +539,24 @@ export default async function handler(request: Request): Promise<Response> {
 
                 const actualTokens = totalTokens > 0 ? totalTokens : estimatedTokens;
                 const charge = Math.max(
-                  Math.ceil(actualTokens * agent.markup_coefficient),
-                  agent.min_charge
+                  Math.ceil(actualTokens * safeMarkup),
+                  minCharge
                 );
 
-                console.log(`💰 [stream] Расчёт charge: ${actualTokens} × ${agent.markup_coefficient} = ${Math.ceil(actualTokens * agent.markup_coefficient)} → max(..., ${agent.min_charge}) = ${charge}`);
+                console.log(`💰 [stream] Расчёт charge: ${actualTokens} × ${safeMarkup} → max(..., ${minCharge}) = ${charge}`);
 
-                const spendResult = await spendTokens(userId, charge, config);
-
-                if (spendResult.success) {
-                  console.log(`✅ [stream] Списан ${charge} токенов: bonus=${spendResult.bonusUsed}, permanent=${spendResult.permanentUsed}`);
-                  console.log(`📊 [stream] Осталось: bonus=${spendResult.remainingBonus}, permanent=${spendResult.remainingPermanent}`);
+                if (!Number.isFinite(charge) || charge <= 0) {
+                  console.warn('⚠️ [stream] charge невалиден, skip spend', { charge, actualTokens });
                 } else {
-                  console.warn(`⚠️ [stream] Не удалось списать токены: ${spendResult.error}`);
+                  const spendResult = await spendTokens(userId, charge, config);
+
+                  if (spendResult.success) {
+                    console.log(`✅ [stream] Списан ${charge} токенов: bonus=${spendResult.bonusUsed}, permanent=${spendResult.permanentUsed}`);
+                    console.log(`📊 [stream] Осталось: bonus=${spendResult.remainingBonus}, permanent=${spendResult.remainingPermanent}`);
+                  } else {
+                    console.warn(`⚠️ [stream] Не удалось списать токены: ${spendResult.error}`);
+                    // Ответ уже отдан; клиенту в headers если возможно
+                  }
                 }
 
                 if (totalTokens > 0) {
