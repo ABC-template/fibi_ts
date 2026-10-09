@@ -1,7 +1,7 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 8.12.0 — добавлена кнопка прикрепления текстового файла
+// Версия: 9.0.0 — единый open_chat через NavigationState — добавлена кнопка прикрепления текстового файла
 //                  (.file-btn → attach-file.ts, по образцу .media-btn)
 // ============================================
 import './chat.css';
@@ -261,12 +261,8 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubRename);
 
-    const unsubOpen = this.eventBus.on('navigation:open_chat', (data) => {
-      if (data.chatId && this._isShowing) {
-        this.update(data);
-      }
-    }, this);
-    this._subscriptions.push(unsubOpen);
+    // navigation:open_chat обрабатывает ТОЛЬКО NavigationState → navigate → show().
+    // Здесь не слушаем, иначе двойная renderAll.
 
     const unsubTokens = this.eventBus.on('economy:tokens:updated', () => {
       if (this._isShowing) {
@@ -451,9 +447,7 @@ export class ChatModule {
 
     const tokens = this.economyStore.getTokenBalances();
     const isBlocked = !this._agentAccess;
-    const role = (this as any).userStore?.role || (window as any).userStore?.role || 'trial';
-    const isBypass = role === 'admin' || role === 'creator';
-
+    
     if (isBlocked) {
       indicator.innerHTML = `
         <span class="token-badge blocked" style="
@@ -472,17 +466,6 @@ export class ChatModule {
       `;
       indicator.style.display = 'flex';
       indicator.style.justifyContent = 'center';
-      return;
-    }
-
-    if (isBypass) {
-      indicator.innerHTML = `
-        <span class="token-badge total" title="Безлимит">
-          ⚡ ∞
-        </span>
-      `;
-      indicator.style.display = 'flex';
-      indicator.style.justifyContent = 'flex-end';
       return;
     }
 
@@ -548,8 +531,9 @@ export class ChatModule {
     }
 
     const actualTopic = found.chat.topic || topic || this.chatStore.currentTopic;
+    const sameChat = this._isShowing && this._chatId === chatId;
 
-    console.log(`📂 _openChat: ${chatId}, topic: ${actualTopic} (из чата)`);
+    console.log(`📂 _openChat: ${chatId}, topic: ${actualTopic}, same=${sameChat}`);
 
     this._chatId = chatId;
     this._topic = actualTopic;
@@ -557,7 +541,6 @@ export class ChatModule {
 
     if (this._topic) {
       this.chatStore.currentTopic = this._topic;
-      console.log(`🔄 currentTopic установлен в: ${this._topic}`);
     }
 
     if (!this._rendered) {
@@ -574,15 +557,24 @@ export class ChatModule {
       (window as any).navigation.hide();
     }
 
+    this._isShowing = true;
+    this.chatStore.setActiveChat(actualTopic, this._chatId);
+
+    // Уже этот чат — без полной перерисовки сообщений
+    if (sameChat) {
+      this._updateHeader();
+      this._updateTokenIndicator();
+      this._updateSendButton();
+      console.log(`✅ Чат ${this._chatId} уже на экране — skip renderAll`);
+      return;
+    }
+
     this._checkAgentAccess().then(() => {
       this._updateHeader();
       this._loadMessages();
       this._updateTokenIndicator();
       this._updateSendButton();
     });
-
-    this._isShowing = true;
-    this.chatStore.setActiveChat(actualTopic, this._chatId);
 
     console.log(`✅ Чат ${this._chatId} открыт (topic: ${actualTopic}, agent: ${this._agentId})`);
   }
@@ -599,14 +591,7 @@ export class ChatModule {
       console.log(`🔄 Переключение с ${this._chatId} на ${chatId}`);
       this._openChat(chatId, topic);
     } else {
-      if (this._patcher) {
-        const found = this.chatStore.findChatById(chatId);
-        if (found) {
-          this._patcher.renderAll(found.chat.messages || []);
-        }
-      } else {
-        this._loadMessages();
-      }
+      // Тот же чат — без renderAll (единый путь через show/_openChat)
       this._updateHeader();
       this._updateTokenIndicator();
       this._updateSendButton();
