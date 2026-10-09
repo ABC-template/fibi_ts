@@ -1,7 +1,7 @@
 // ============================================
 // api/chat/whisper.ts
 // Описание: Распознавание голоса через Whisper
-// Версия: 3.3.0 - ДОБАВЛЕНА ПРОВЕРКА ЛИМИТА И ИНКРЕМЕНТ
+// Версия: 4.0.0 — без request-quota
 // ============================================
 
 import {
@@ -10,8 +10,6 @@ import {
   jsonResponse,
   errorResponse,
   validateAudioSize,
-  checkUsageLimit,
-  incrementUsage,
   getSupabaseConfig
 } from '../_lib/index';
 
@@ -53,16 +51,6 @@ export default async function handler(request: Request): Promise<Response> {
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
 
-    // ==========================================
-    // ✅ ПРОВЕРКА ЛИМИТА ПЕРЕД ОБРАБОТКОЙ АУДИО
-    // ==========================================
-    const limitCheck = await checkUsageLimit(userId, config);
-    if (!limitCheck.allowed) {
-      return errorResponse(
-        `Ежедневный лимит запросов исчерпан (${limitCheck.used}/${limitCheck.limit})`,
-        429
-      );
-    }
 
     // Получаем аудиоданные
     const arrayBuffer = await request.arrayBuffer();
@@ -124,10 +112,6 @@ export default async function handler(request: Request): Promise<Response> {
           throw new Error(data.error?.message || JSON.stringify(data.error) || response.statusText);
         }
 
-        // ==========================================
-        // ✅ ИНКРЕМЕНТИРУЕМ ТОЛЬКО ПОСЛЕ УСПЕШНОГО ОТВЕТА
-        // ==========================================
-        await incrementUsage(userId, config);
 
         return jsonResponse({
           text: data.text || ''
