@@ -457,6 +457,13 @@ export function deleteChatFromDrawer(chatId: string): void {
     const confirmMsg = window.getLangString ? window.getLangString('confirm_del_chat') : 'Удалить чат в корзину?';
 
     const action = (): void => {
+        // Если удаляем открытый сейчас чат — после удаления уйдём к агентам
+        const chatMod = (window as any).chatModule;
+        const wasCurrentOpen =
+            chatMod &&
+            chatMod._isShowing &&
+            String(chatMod._chatId) === String(chatId);
+
         chatStore.deleteChat(chatId);
         if (userStore.canSync() && window.chatService) {
             window.chatService.deleteChat(chatId).catch(err => {
@@ -469,6 +476,21 @@ export function deleteChatFromDrawer(chatId: string): void {
         }
         if (uiRenderer) {
             uiRenderer.showToast('🗑️ Чат отправлен в корзину', 'info', 1500);
+        }
+
+        if (wasCurrentOpen) {
+            console.log('🚪 Удалён открытый чат → переход к Агентам');
+            if (typeof chatMod.hide === 'function') {
+                try { chatMod.hide(); } catch (_) {}
+            }
+            const nav = (window as any).navigationState;
+            if (nav && typeof nav.goToAgents === 'function') {
+                nav.goToAgents();
+            } else if (nav && typeof nav.navigate === 'function') {
+                nav.navigate('agents', {}, { replace: true });
+            } else if ((window as any).moduleLoader) {
+                (window as any).moduleLoader.load('agents');
+            }
         }
     };
 
