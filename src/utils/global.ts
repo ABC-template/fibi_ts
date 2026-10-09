@@ -133,9 +133,8 @@ export function setupGlobalFunctions(): void {
                     updateDrawerCoins();
                     updateCoinsDisplay();
 
-                    if (window.chatListModule) {
-                        window.chatListModule.show();
-                    }
+                    // ChatList удалён
+                    
 
                     if (profileUI && typeof profileUI.renderHistoryChatsList === 'function') {
                         profileUI.renderHistoryChatsList((window as any).profileUI?.currentFilter || 'all');
@@ -190,13 +189,13 @@ export function setupGlobalFunctions(): void {
     };
 
     window.goToChatList = function(): void {
-        console.log('📂 [goToChatList] Возврат в ChatListModule');
+        console.log('📂 [goToChatList] → agents (ChatList удалён)');
         if (eventBus) {
             eventBus.emit('navigation:go_back');
         } else if (navigationState) {
             navigationState.goToChatList();
         } else if (moduleLoader) {
-            moduleLoader.load('chat-list');
+            moduleLoader.load('agents');
         }
     };
 
