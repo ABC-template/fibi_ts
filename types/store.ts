@@ -25,8 +25,6 @@ export interface IChatStoreData {
 export interface IUserStoreData {
   userId: number | null;
   role: UserRole;
-  dailyLimit: number;
-  usedToday: number;
   syncEnabled: boolean;
   deviceFingerprint: string | null;
   signedFingerprint: string | null;
