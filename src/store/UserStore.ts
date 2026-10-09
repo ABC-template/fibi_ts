@@ -1,7 +1,7 @@
 // ============================================
 // src/store/UserStore.ts
 // Пользователь, настройки, лимиты, устройство
-// Версия: 5.0.0 - добавлены premium_until и trialUsed
+// Версия: 6.0.0 — без usedToday/dailyLimit
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -16,8 +16,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
       this._data = {
         userId: null,
         role: 'trial',
-        dailyLimit: 5,
-        usedToday: 0,
         syncEnabled: false,
         deviceFingerprint: null,
         signedFingerprint: null,
@@ -60,7 +58,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
         this._data.lastName = user.last_name || '';
         this._data.languageCode = user.language_code || 'ru';
         this._data.photoUrl = user.photo_url || null;
-        this._data.usedToday = 0;
         this.save();
         this._emitChange('user:changed', { 
           userId: currentUserId, 
@@ -119,13 +116,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return this._data.role || 'trial';
   }
 
-  get dailyLimit(): number {
-    return this._data.dailyLimit || 5;
-  }
-
-  get usedToday(): number {
-    return this._data.usedToday || 0;
-  }
 
   get syncEnabled(): boolean {
     return this._data.syncEnabled || false;
@@ -164,44 +154,20 @@ export class UserStore extends BaseStore<IUserStoreData> {
   // СЕТТЕРЫ
   // ==========================================
 
-  setRole(role: UserRole, dailyLimit: number, syncEnabled: boolean, usedToday: number = 0): void {
+  setRole(role: UserRole, syncEnabled: boolean): void {
     const oldRole = this._data.role;
-    const oldUsedToday = this._data.usedToday;
-    
     this._data.role = role;
-    this._data.dailyLimit = dailyLimit;
     this._data.syncEnabled = syncEnabled;
-    this._data.usedToday = usedToday;
     this.save();
-    
-    console.log(`👤 [UserStore] Роль обновлена: ${oldRole} → ${role}, usedToday: ${oldUsedToday} → ${usedToday}`);
-    
-    this._emitChange('user:role_changed', { 
-      oldRole, 
-      newRole: role, 
-      dailyLimit, 
+    console.log(`👤 [UserStore] Роль обновлена: ${oldRole} → ${role}`);
+    this._emitChange('user:role_changed', {
+      oldRole,
+      newRole: role,
       syncEnabled,
-      usedToday
     });
   }
 
-  incrementUsage(): number {
-    this._data.usedToday = (this._data.usedToday || 0) + 1;
-    this.save();
-    
-    this._emitChange('user:usage_incremented', { 
-      used: this._data.usedToday, 
-      limit: this.dailyLimit 
-    });
-    
-    return this._data.usedToday;
-  }
 
-  resetDailyUsage(): void {
-    this._data.usedToday = 0;
-    this.save();
-    this._emitChange('user:usage_reset', {});
-  }
 
   setDeviceFingerprint(fingerprint: string, signed: string, deviceType: string = 'web', platform: string = 'web'): void {
     this._data.deviceFingerprint = fingerprint;
@@ -235,23 +201,12 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return ['admin', 'creator'].includes(this.role);
   }
 
-  hasUnlimited(): boolean {
-    return this.dailyLimit >= 9999;
-  }
 
   canSync(): boolean {
     return this.syncEnabled === true && this.isPro();
   }
 
-  hasRemainingQuota(): boolean {
-    if (this.hasUnlimited()) return true;
-    return this.usedToday < this.dailyLimit;
-  }
 
-  getRemainingQuota(): number {
-    if (this.hasUnlimited()) return Infinity;
-    return Math.max(0, this.dailyLimit - this.usedToday);
-  }
 
   getAvatarUrl(): string {
     return this.photoUrl || 'https://gravatar.com/avatar/00000000000000000000000000000000?d=mp';
@@ -269,21 +224,7 @@ export class UserStore extends BaseStore<IUserStoreData> {
   // СИНХРОНИЗАЦИЯ ЛИМИТА С СЕРВЕРОМ
   // ==========================================
 
-  async syncUsageLimit(): Promise<void> {
-    try {
-      const { authService } = await import('@/services/auth');
-      const result = await authService.checkSubscription();
-      if (result.usedToday !== undefined) {
-        this._data.usedToday = result.usedToday;
-        this._data.dailyLimit = result.dailyLimit;
-        this.save();
-        console.log(`🔄 [UserStore] Лимит синхронизирован: ${this._data.usedToday}/${this._data.dailyLimit}`);
-      }
-    } catch (err) {
-      console.error('❌ [UserStore] Ошибка синхронизации лимита:', err);
-    }
-  }
 }
 
 export const userStore = new UserStore();
-console.log('✅ UserStore v5.0.0 загружен (добавлены premium_until и trialUsed)');
+console.log('✅ UserStore v6.0.0 загружен (без request-quota)');
