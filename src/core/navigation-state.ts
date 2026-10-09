@@ -240,11 +240,7 @@ export class NavigationState {
           return;
         }
 
-        if (typeof instance.show === 'function') {
-          await instance.show(params);
-          console.log(`✅ show() вызван у модуля ${module}`);
-        }
-
+        // show() уже вызван внутри moduleLoader.load — не дублируем
         console.log(`✅ Модуль ${module} загружен и показан`);
       } else {
         console.error(`❌ ModuleLoader не доступен!`);
@@ -273,7 +269,7 @@ export class NavigationState {
   // ✅ ИСПРАВЛЕНО: ОТКРЫТИЕ ЧАТА (проверка темы)
   // ==========================================
 
-  openChat(chatId: string, topic: string): void {
+  openChat(chatId: string, topic: string, messageId?: string | null): void {
     console.log(`📂 NavigationState.openChat: ${chatId}, ${topic}`);
 
     // ✅ ПРОВЕРЯЕМ, ЧТО ЧАТ ПРИНАДЛЕЖИТ УКАЗАННОЙ ТЕМЕ
@@ -305,7 +301,7 @@ export class NavigationState {
       this.eventBus.emit('drawer:state_changed', { isOpen: false });
     }
 
-    this.navigate('chat', { chatId, topic });
+    this.navigate('chat', { chatId, topic, messageId: messageId || undefined });
   }
 
   // ==========================================
@@ -461,7 +457,7 @@ export class NavigationState {
   private _subscribe(): void {
     this.eventBus.on('navigation:open_chat', (data) => {
       console.log('📡 Событие navigation:open_chat', data);
-      this.openChat(data.chatId, data.topic);
+      this.openChat(data.chatId, data.topic, data.messageId);
     });
 
     this.eventBus.on('navigation:go_back', () => {
