@@ -12,8 +12,6 @@ import type { IAuthCheckResponse } from '@app-types';
 export interface IAuthResult {
   isMember: boolean;
   role: string;
-  dailyLimit: number;
-  usedToday: number;
   syncEnabled: boolean;
   syncToken: string | null;
   dataDeadline: string | null;
@@ -106,12 +104,10 @@ export class AuthService {
         console.log(`🔑 sync_token получен с сервера: ${newSyncToken.substring(0, 8)}... (будет сохранен после проверки)`);
       }
 
-      // ✅ Обновляем userStore с серверными данными (включая usedToday)
+      // Обновляем userStore с серверными данными
       userStore.setRole(
         data.role || 'trial',
-        data.dailyLimit || 5,
-        data.syncEnabled === true,
-        data.usedToday || 0
+        data.syncEnabled === true
       );
 
       if (data.userId) {
@@ -133,8 +129,6 @@ export class AuthService {
       return {
         isMember: data.isMember !== false,
         role: data.role || 'trial',
-        dailyLimit: data.dailyLimit || 5,
-        usedToday: data.usedToday || 0,
         syncEnabled: data.syncEnabled === true,
         syncToken: newSyncToken || null,
         dataDeadline: data.dataDeadline || null,
@@ -247,13 +241,11 @@ export class AuthService {
 
   private fallbackToOffline(): IAuthResult {
     if (userStore.isCreator) {
-      userStore.setRole('creator', 9999, true, 0);
+      userStore.setRole('creator', true);
       userStore.save();
       return {
         isMember: true,
         role: 'creator',
-        dailyLimit: 9999,
-        usedToday: 0,
         syncEnabled: true,
         syncToken: this.getSyncToken() || null,
         dataDeadline: localStorage.getItem('data_deadline') || null,
@@ -266,13 +258,11 @@ export class AuthService {
 
     const savedRole = localStorage.getItem('user_role');
     if (savedRole === 'admin' || savedRole === 'creator') {
-      userStore.setRole(savedRole as any, 9999, true, 0);
+      userStore.setRole(savedRole as any, true);
       userStore.save();
       return {
         isMember: true,
         role: savedRole,
-        dailyLimit: 9999,
-        usedToday: 0,
         syncEnabled: true,
         syncToken: this.getSyncToken() || null,
         dataDeadline: localStorage.getItem('data_deadline') || null,
@@ -283,13 +273,11 @@ export class AuthService {
       };
     }
 
-    userStore.setRole('guest', 0, false, 0);
+    userStore.setRole('trial', false);
     userStore.save();
     return {
       isMember: false,
       role: 'guest',
-      dailyLimit: 0,
-      usedToday: 0,
       syncEnabled: false,
       syncToken: null,
       dataDeadline: null,
@@ -319,4 +307,4 @@ export class AuthService {
 }
 
 export const authService = new AuthService();
-console.log('✅ AuthService v5.1.1 загружен (добавлен usedToday)');
+console.log('✅ AuthService v6.0.0 загружен (без request-quota)');
