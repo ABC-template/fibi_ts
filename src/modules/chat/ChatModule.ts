@@ -41,6 +41,7 @@ export class ChatModule {
   private _agentId: string | null = null;
   private _agentAccess: boolean = true;
   private _agentReason: string | null = null;
+  private _pendingScrollMsgId: string | null = null;
   private _subscriptions: Array<() => void> = [];
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
@@ -497,7 +498,8 @@ export class ChatModule {
   async show(params: Record<string, any> = {}): Promise<void> {
     console.log('📱 ChatModule.show()', params);
 
-    const { chatId, topic } = params;
+    const { chatId, topic, messageId } = params;
+    this._pendingScrollMsgId = messageId || null;
 
     if (chatId) {
       this._openChat(chatId, topic);
@@ -565,6 +567,21 @@ export class ChatModule {
       this._updateHeader();
       this._updateTokenIndicator();
       this._updateSendButton();
+      // Тот же чат, но открыли из избранного — только скролл к msg
+      if (this._pendingScrollMsgId) {
+        const msgId = this._pendingScrollMsgId;
+        this._pendingScrollMsgId = null;
+        setTimeout(() => {
+          const target = document.getElementById(`msg-block-${msgId}`);
+          const container = document.getElementById('chat-container');
+          if (target && container) {
+            container.scrollTo({ top: Math.max(0, target.offsetTop - 80), behavior: 'smooth' });
+            target.classList.add('highlight-msg');
+            setTimeout(() => target.classList.remove('highlight-msg'), 2000);
+            console.log(`⭐ Скролл к сообщению ${msgId} (same chat)`);
+          }
+        }, 50);
+      }
       console.log(`✅ Чат ${this._chatId} уже на экране — skip renderAll`);
       return;
     }
@@ -912,9 +929,25 @@ export class ChatModule {
       }
     }
 
+    // Скролл: если открыли из избранного — к сообщению, иначе вниз
+    const targetMsgId = this._pendingScrollMsgId;
+    this._pendingScrollMsgId = null;
+
     setTimeout(() => {
+      if (targetMsgId) {
+        const target = document.getElementById(`msg-block-${targetMsgId}`);
+        if (target) {
+          const top = Math.max(0, target.offsetTop - 80);
+          container.scrollTo({ top, behavior: 'smooth' });
+          target.classList.add('highlight-msg');
+          setTimeout(() => target.classList.remove('highlight-msg'), 2000);
+          console.log(`⭐ Скролл к сообщению ${targetMsgId}`);
+          return;
+        }
+        console.warn(`⚠️ Сообщение ${targetMsgId} не найдено в DOM после renderAll`);
+      }
       container.scrollTop = container.scrollHeight;
-    }, 100);
+    }, 50);
   }
 
   private _showWelcomeMessage(container: HTMLElement): void {
