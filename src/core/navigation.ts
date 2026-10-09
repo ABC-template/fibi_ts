@@ -14,7 +14,6 @@ export class Navigation {
   private tabs: INavTab[] = [
     { id: 'dashboard', icon: 'home', label: 'Главная' },
     { id: 'organizer', icon: 'layout-dashboard', label: 'Органайзер' },
-    { id: 'chat-list', icon: 'message-square', label: 'Чат' },
     { id: 'agents', icon: 'bot', label: 'Агенты' },
     { id: 'games', icon: 'gamepad-2', label: 'Игры' },
     { id: 'quests', icon: 'trophy', label: 'Задания' },
