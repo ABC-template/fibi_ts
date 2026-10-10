@@ -526,14 +526,13 @@ export class AdminAgentsTab implements IAdminTab {
     return Object.keys(result).length > 0 ? result : null;
   }
 
-  private collectWelcomeMessage(): { ru?: string; en?: string } | null {
-    const ru = (document.getElementById('agent-welcome-ru') as HTMLTextAreaElement)?.value?.trim();
+  private collectWelcomeMessage(): { ru: string; en?: string } | null {
+    const ru = (document.getElementById('agent-welcome-ru') as HTMLTextAreaElement)?.value?.trim() || '';
     const en = (document.getElementById('agent-welcome-en') as HTMLTextAreaElement)?.value?.trim();
     if (!ru && !en) return null;
-    const msg: Record<string, string> = {};
-    if (ru) msg.ru = ru;
+    const msg: { ru: string; en?: string } = { ru };
     if (en) msg.en = en;
-    return msg as any;
+    return msg;
   }
 
   private async loadTiersCheckboxes(agent?: IAiAgent): Promise<void> {
