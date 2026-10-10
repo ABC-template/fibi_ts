@@ -327,4 +327,3 @@ export class AgentsModule {
 
 (window as any).AgentsModule = AgentsModule;
 console.log('✅ AgentsModule v1.1.2 загружен');
-```
