@@ -174,11 +174,6 @@ export class MessageService {
       if (!hasMessages) {
         console.log(`🧹 [deleteMessage] Чат ${chatId} стал пустым, удаляем...`);
         
-        // Показываем уведомление
-        if (uiRenderer) {
-          uiRenderer.showToast('🗑️ Последнее сообщение удалено, чат будет удалён', 'info', 2000);
-        }
-        
         // Удаляем чат (HARD DELETE)
         const chatDeleted = chatStore.permanentDeleteChat(chatId);
         
@@ -197,7 +192,7 @@ export class MessageService {
         // Возвращаемся в список чатов
         if (window.moduleLoader) {
           setTimeout(() => {
-            window.moduleLoader.load('chat-list');
+            window.moduleLoader.load('agents');
           }, 300);
         }
         
@@ -261,3 +256,4 @@ export class MessageService {
 
 export const messageService = new MessageService();
 console.log('✅ MessageService v4.1.1 загружен (авто-удаление пустых чатов)');
+```
