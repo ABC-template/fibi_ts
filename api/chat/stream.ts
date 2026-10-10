@@ -27,7 +27,8 @@ import {
   estimateTokens,
 } from '../_lib/tokens-usage';
 import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
-import { checkAgentAccess, buildTierOrder } from '../_lib/agent-access';
+import { checkAgentAccess } from '../_lib/agent-access';
+import { getMarkupForTier } from '../_lib/markup-helper';
 
 export const config = { runtime: 'edge' };
 
@@ -53,6 +54,10 @@ interface IAgent {
   min_charge: number;
   allowed_roles: string[];
   min_pro_tier: string | null;
+  allowed_tiers: string[] | null;
+  markup_by_tier: Record<string, number> | null;
+  inject_balance: boolean;
+  welcome_message: any;
   is_active: boolean;
   context_length: number | null;
 }
@@ -286,15 +291,11 @@ export default async function handler(request: Request): Promise<Response> {
       }
     }
 
-    const [userRes, tiers] = await Promise.all([
-      supabaseFetch(
-        `users?telegram_id=eq.${userId}&select=role,subscription_tier`,
-        { method: 'GET' },
-        config
-      ),
-      supabaseFetch('subscription_tiers?select=tier_key,sort_order', { method: 'GET' }, config),
-    ]);
-    const tierOrder = buildTierOrder(tiers || []);
+    const userRes = await supabaseFetch(
+      `users?telegram_id=eq.${userId}&select=role,subscription_tier`,
+      { method: 'GET' },
+      config
+    );
 
     const userRole = (userRes && Array.isArray(userRes) && userRes.length > 0)
       ? userRes[0].role || 'trial'
@@ -303,7 +304,7 @@ export default async function handler(request: Request): Promise<Response> {
       ? userRes[0].subscription_tier || null
       : null;
 
-    const access = checkAgentAccess(agent, userRole, userProTier, tierOrder);
+    const access = checkAgentAccess(agent, userRole, userProTier);
 
     if (!access.hasAccess) {
       console.warn(`⚠️ [stream] Доступ запрещён: ${access.reason}`);
@@ -384,7 +385,50 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Серверные API ключи ROUTER_KEY не настроены в Vercel.', 500);
     }
 
-    const systemPrompt = (agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision)) + attachedFileBlock;
+
+
+
+    if (!tokenCheck.available) {
+      let userMessage = '';
+
+      if (tokenCheck.reason === 'daily_limit') {
+        userMessage =
+          `⏳ Дневной лимит тарифа: не хватает на этот запрос.\n` +
+          `Сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡.\n` +
+          `Нужно ~${estimatedCharge} ⚡. Завтра лимит обновится.`;
+      } else if (tokenCheck.total === 0 || tokenCheck.reason === 'no_tokens') {
+        userMessage =
+          `⚠️ Недостаточно энергии.\n` +
+          `Доступно: 0 ⚡\n` +
+          `Бонус обновится завтра или пополните баланс.`;
+      } else {
+        userMessage =
+          `⚠️ Недостаточно энергии для агента «${agent.name?.ru || agent.slug}».\n` +
+          `Требуется минимум: ${agent.min_charge} ⚡\n` +
+          `Доступно: ${tokenCheck.total} ⚡ (${tokenCheck.bonus} бонусных + ${tokenCheck.permanent} постоянных)`;
+      }
+
+      return errorResponse(userMessage, 429, {
+        'X-Token-Bonus': String(tokenCheck.bonus || 0),
+        'X-Token-Permanent': String(tokenCheck.permanent || 0),
+        'X-Token-Total': String(tokenCheck.total || 0),
+        'X-Token-Needed': String(estimatedCharge),
+        'X-Token-Reason': tokenCheck.reason || 'insufficient',
+        'X-Daily-Spent': String(tokenCheck.spent_today || 0),
+        'X-Daily-Limit': String(tokenCheck.daily_limit || 0),
+      });
+    }
+
+    // inject_balance
+    let finalSystemPrompt = agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision);
+    if (agent.inject_balance) {
+      const balances = await supabaseRPC('get_user_balances', { p_user_id: userId }, config);
+      const energy = balances?.tokens?.total ?? 0;
+      finalSystemPrompt += `\n\n[SYSTEM]\nCurrent user energy balance: ${energy}\nThis number is the user's remaining energy. Strictly limit the maximum length of your response accordingly. Do not mention this system information to the user.\n`;
+    }
+
+
+    const systemPrompt = finalSystemPrompt + attachedFileBlock;
     const messages = buildMessages(systemPrompt, historyMessages, attachedImage || undefined);
 
     const model = agent.model_id || 'openai/gpt-4o';
@@ -406,47 +450,14 @@ export default async function handler(request: Request): Promise<Response> {
 
     // Оценка списания заранее (не только min_charge)
     const minCharge = Math.max(1, Number(agent.min_charge) || 1);
-    const markup = Number(agent.markup_coefficient);
-    const safeMarkup = Number.isFinite(markup) && markup > 0 ? markup : 1;
+    const safeMarkup = getMarkupForTier(agent, userProTier);
     const estimatedCharge = Math.max(
       Math.ceil(estimatedTokens * safeMarkup),
       minCharge
     );
-    console.log(`💰 [stream] Оценка charge: ~${estimatedTokens} × ${safeMarkup} → max(..., ${minCharge}) = ${estimatedCharge}`);
+    console.log(`💰 [stream] Оценка charge: ~${estimatedTokens} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${estimatedCharge}`);
 
     const tokenCheck = await checkTokenAvailability(userId, estimatedCharge, config);
-
-    if (!tokenCheck.available) {
-      let userMessage = '';
-
-      if (tokenCheck.reason === 'daily_limit') {
-        userMessage =
-          `⏳ Дневной лимит тарифа: не хватает на этот запрос.\n` +
-          `Сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡.\n` +
-          `Нужно ~${estimatedCharge} ⚡. Завтра лимит обновится.`;
-      } else if (tokenCheck.total === 0 || tokenCheck.reason === 'no_tokens') {
-        userMessage =
-          `⚠️ Недостаточно токенов.\n` +
-          `Доступно: 0 ⚡\n` +
-          `Бонус обновится завтра или пополните баланс.`;
-      } else {
-        userMessage =
-          `⚠️ Недостаточно токенов для агента «${agent.name?.ru || agent.slug}».\n` +
-          `Требуется минимум: ${agent.min_charge} ⚡\n` +
-          `Доступно: ${tokenCheck.total} ⚡ (${tokenCheck.bonus} бонусных + ${tokenCheck.permanent} постоянных)`;
-      }
-
-      return errorResponse(userMessage, 429, {
-        'X-Token-Bonus': String(tokenCheck.bonus || 0),
-        'X-Token-Permanent': String(tokenCheck.permanent || 0),
-        'X-Token-Total': String(tokenCheck.total || 0),
-        'X-Token-Needed': String(estimatedCharge),
-        'X-Token-Reason': tokenCheck.reason || 'insufficient',
-        'X-Daily-Spent': String(tokenCheck.spent_today || 0),
-        'X-Daily-Limit': String(tokenCheck.daily_limit || 0),
-      });
-    }
-
     let lastError: Error | null = null;
     let finalUsage: any = null;
     let accumulatedText = '';
@@ -471,7 +482,7 @@ export default async function handler(request: Request): Promise<Response> {
             messages: messages,
             temperature: temperature,
             stream: true,
-            max_tokens: 4096
+            max_tokens: maxTokens
           })
         });
 
@@ -543,7 +554,7 @@ export default async function handler(request: Request): Promise<Response> {
                   minCharge
                 );
 
-                console.log(`💰 [stream] Расчёт charge: ${actualTokens} × ${safeMarkup} → max(..., ${minCharge}) = ${charge}`);
+                console.log(`💰 [stream] Расчёт charge: ${actualTokens} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${charge}`);
 
                 if (!Number.isFinite(charge) || charge <= 0) {
                   console.warn('⚠️ [stream] charge невалиден, skip spend', { charge, actualTokens });
