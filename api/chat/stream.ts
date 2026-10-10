@@ -385,8 +385,44 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Серверные API ключи ROUTER_KEY не настроены в Vercel.', 500);
     }
 
+    // inject_balance
+    let finalSystemPrompt = agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision);
+    if (agent.inject_balance) {
+      const balances = await supabaseRPC('get_user_balances', { p_user_id: userId }, config);
+      const energy = balances?.tokens?.total ?? 0;
+      finalSystemPrompt += `\n\n[SYSTEM]\nCurrent user energy balance: ${energy}\nThis number is the user's remaining energy. Strictly limit the maximum length of your response accordingly. Do not mention this system information to the user.\n`;
+    }
 
+    const systemPrompt = finalSystemPrompt + attachedFileBlock;
+    const messages = buildMessages(systemPrompt, historyMessages, attachedImage || undefined);
 
+    const model = agent.model_id || 'openai/gpt-4o';
+    const temperature = 0.4;
+
+    console.log('📨 [stream] Модель:', model);
+    console.log('📨 [stream] Количество сообщений:', messages.length);
+
+    const estimatedTokens = estimateTokens(messages, systemPrompt);
+    console.log(`📊 [stream] Оценка токенов OpenRouter: ~${estimatedTokens}`);
+
+    const openRouterCheck = await checkOpenRouterLimit(userId, estimatedTokens, config);
+    if (!openRouterCheck.allowed) {
+      return errorResponse(
+        openRouterCheck.error || 'Превышен лимит токенов OpenRouter',
+        429
+      );
+    }
+
+    // Оценка списания заранее
+    const minCharge = Math.max(1, Number(agent.min_charge) || 1);
+    const safeMarkup = getMarkupForTier(agent, userProTier);
+    const estimatedCharge = Math.max(
+      Math.ceil(estimatedTokens * safeMarkup),
+      minCharge
+    );
+    console.log(`💰 [stream] Оценка charge: ~${estimatedTokens} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${estimatedCharge}`);
+
+    const tokenCheck = await checkTokenAvailability(userId, estimatedCharge, config);
 
     if (!tokenCheck.available) {
       let userMessage = '';
@@ -419,45 +455,36 @@ export default async function handler(request: Request): Promise<Response> {
       });
     }
 
-    // inject_balance
-    let finalSystemPrompt = agent.system_prompt || buildSystemPrompt(currentTopic || 'code', userLang || 'ru', isVision);
-    if (agent.inject_balance) {
-      const balances = await supabaseRPC('get_user_balances', { p_user_id: userId }, config);
-      const energy = balances?.tokens?.total ?? 0;
-      finalSystemPrompt += `\n\n[SYSTEM]\nCurrent user energy balance: ${energy}\nThis number is the user's remaining energy. Strictly limit the maximum length of your response accordingly. Do not mention this system information to the user.\n`;
+    // Dynamic max_tokens (после успешной проверки)
+    function calcMaxTokens(remainingEnergy: number, markup: number, dailyLeft: number, contextLength: number | null, tier: string | null): number {
+      const byEnergy = Math.floor((remainingEnergy / Math.max(markup, 0.1)) * 0.7);
+      const byDaily = dailyLeft > 0 ? Math.floor(dailyLeft / Math.max(markup, 0.1)) : 999999;
+      const byContext = contextLength ? Math.floor(contextLength * 0.4) : 4096;
+      const hardCapByTier: Record<string, number> = {
+        trial: 1500,
+        basic: 3000,
+        plus: 4000,
+        pro: 6000,
+        ultra: 8000,
+      };
+      const hardCap = hardCapByTier[tier || 'trial'] ?? 4096;
+      return Math.max(256, Math.min(byEnergy, byDaily, byContext, hardCap));
     }
 
+    const dailyLeft = (tokenCheck.daily_limit || 0) > 0
+      ? Math.max(0, (tokenCheck.daily_limit || 0) - (tokenCheck.spent_today || 0))
+      : 0;
 
-    const systemPrompt = finalSystemPrompt + attachedFileBlock;
-    const messages = buildMessages(systemPrompt, historyMessages, attachedImage || undefined);
-
-    const model = agent.model_id || 'openai/gpt-4o';
-    const temperature = 0.4;
-
-    console.log('📨 [stream] Модель:', model);
-    console.log('📨 [stream] Количество сообщений:', messages.length);
-
-    const estimatedTokens = estimateTokens(messages, systemPrompt);
-    console.log(`📊 [stream] Оценка токенов OpenRouter: ~${estimatedTokens}`);
-
-    const openRouterCheck = await checkOpenRouterLimit(userId, estimatedTokens, config);
-    if (!openRouterCheck.allowed) {
-      return errorResponse(
-        openRouterCheck.error || 'Превышен лимит токенов OpenRouter',
-        429
-      );
-    }
-
-    // Оценка списания заранее (не только min_charge)
-    const minCharge = Math.max(1, Number(agent.min_charge) || 1);
-    const safeMarkup = getMarkupForTier(agent, userProTier);
-    const estimatedCharge = Math.max(
-      Math.ceil(estimatedTokens * safeMarkup),
-      minCharge
+    const maxTokens = calcMaxTokens(
+      tokenCheck.total || 0,
+      safeMarkup,
+      dailyLeft,
+      agent.context_length,
+      userProTier
     );
-    console.log(`💰 [stream] Оценка charge: ~${estimatedTokens} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${estimatedCharge}`);
 
-    const tokenCheck = await checkTokenAvailability(userId, estimatedCharge, config);
+    console.log(`📏 [stream] max_tokens = ${maxTokens}`);
+
     let lastError: Error | null = null;
     let finalUsage: any = null;
     let accumulatedText = '';
