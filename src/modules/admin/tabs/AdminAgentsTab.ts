@@ -304,16 +304,41 @@ export class AdminAgentsTab implements IAdminTab {
         </div>
 
         <div>
-          <div style="font-weight:600;font-size:13px;color:#d4af37;margin-bottom:8px">Доступ</div>
-          <label style="font-size:12px;color:var(--app-text-tertiary)">Минимальный тариф</label>
-          <select id="agent-min-pro-tier"
-            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
-            <option value="">Загрузка...</option>
-          </select>
-          <div style="font-size:11px;color:var(--app-text-tertiary);margin-top:4px">
-            «Без ограничений» — доступен любому авторизованному пользователю (в т.ч. на trial).
-            Админ и создатель видят агента всегда, вне зависимости от этого выбора.
+          <div style="font-weight:600;font-size:13px;color:#d4af37;margin-bottom:8px">Доступ по тарифам</div>
+          <div id="agent-allowed-tiers" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+            <!-- чекбоксы заполняются динамически -->
           </div>
+          <div style="font-size:11px;color:var(--app-text-tertiary)">
+            Ничего не выбрано = доступен всем авторизованным. Админ/creator всегда имеют доступ.
+          </div>
+        </div>
+
+        <div>
+          <div style="font-weight:600;font-size:13px;color:#d4af37;margin-bottom:8px">Markup по тарифу</div>
+          <div id="agent-markup-by-tier" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <!-- поля заполняются динамически -->
+          </div>
+          <div style="font-size:11px;color:var(--app-text-tertiary);margin-top:4px">
+            Пустое поле = использовать базовый коэффициент выше.
+          </div>
+        </div>
+
+        <div>
+          <label style="font-size:12px;color:var(--app-text-tertiary)">Приветствие (RU)</label>
+          <textarea id="agent-welcome-ru" rows="2"
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);resize:vertical">${this.esc(agent?.welcome_message?.ru || '')}</textarea>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--app-text-tertiary)">Приветствие (EN)</label>
+          <textarea id="agent-welcome-en" rows="2"
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);resize:vertical">${this.esc(agent?.welcome_message?.en || '')}</textarea>
+        </div>
+
+        <div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="agent-inject-balance" ${agent?.inject_balance ? 'checked' : ''}>
+            Вшивать баланс энергии в system prompt
+          </label>
         </div>
 
         <div style="display:flex;gap:20px;align-items:center">
@@ -338,7 +363,7 @@ export class AdminAgentsTab implements IAdminTab {
       await this.loadModels(modalitySelect.value as AgentModality, agent?.model_id);
     });
 
-    await this.loadTiers(agent?.min_pro_tier);
+    await this.loadTiersCheckboxes(agent);
 
     if (!agent) {
       const nameRu = document.getElementById('agent-name-ru') as HTMLInputElement;
@@ -421,7 +446,10 @@ export class AdminAgentsTab implements IAdminTab {
       system_prompt: systemPrompt,
       markup_coefficient: Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value) || 3,
       min_charge: Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value) || 50,
-      min_pro_tier: (document.getElementById('agent-min-pro-tier') as HTMLSelectElement)?.value as ProTier || null,
+      allowed_tiers: this.collectAllowedTiers(),
+      markup_by_tier: this.collectMarkupByTier(),
+      welcome_message: this.collectWelcomeMessage(),
+      inject_balance: (document.getElementById('agent-inject-balance') as HTMLInputElement)?.checked ?? false,
       is_active: (document.getElementById('agent-is-active') as HTMLInputElement)?.checked,
       sort_order: Number((document.getElementById('agent-sort-order') as HTMLInputElement)?.value) || 100,
     };
@@ -476,6 +504,66 @@ export class AdminAgentsTab implements IAdminTab {
     };
     return text.toLowerCase().split('').map(c => map[c] || c).join('')
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 60);
+  }
+
+
+  private collectAllowedTiers(): string[] | null {
+    const container = document.getElementById('agent-allowed-tiers');
+    if (!container) return null;
+    const checked = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))
+      .map(el => el.value).filter(Boolean);
+    return checked.length > 0 ? checked : null;
+  }
+
+  private collectMarkupByTier(): Record<string, number> | null {
+    const inputs = document.querySelectorAll<HTMLInputElement>('.agent-markup-tier');
+    const result: Record<string, number> = {};
+    inputs.forEach(input => {
+      const tier = input.dataset.tier;
+      const val = Number(input.value);
+      if (tier && Number.isFinite(val) && val > 0) result[tier] = val;
+    });
+    return Object.keys(result).length > 0 ? result : null;
+  }
+
+  private collectWelcomeMessage(): { ru?: string; en?: string } | null {
+    const ru = (document.getElementById('agent-welcome-ru') as HTMLTextAreaElement)?.value?.trim();
+    const en = (document.getElementById('agent-welcome-en') as HTMLTextAreaElement)?.value?.trim();
+    if (!ru && !en) return null;
+    const msg: Record<string, string> = {};
+    if (ru) msg.ru = ru;
+    if (en) msg.en = en;
+    return msg as any;
+  }
+
+  private async loadTiersCheckboxes(agent?: IAiAgent): Promise<void> {
+    const container = document.getElementById('agent-allowed-tiers');
+    const markupContainer = document.getElementById('agent-markup-by-tier');
+    if (!container || !markupContainer) return;
+    container.innerHTML = '<span style="font-size:12px;color:var(--app-text-tertiary)">Загрузка...</span>';
+    try {
+      const res = await apiClient.get('/admin/economy/subscriptions');
+      const tiers = (res.tiers || []).filter((t: any) => t.is_active);
+      container.innerHTML = '';
+      markupContainer.innerHTML = '';
+      for (const t of tiers) {
+        const checked = agent?.allowed_tiers?.includes(t.tier_key) ? 'checked' : '';
+        container.innerHTML += `
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" value="${t.tier_key}" ${checked}> ${t.tier_key}
+          </label>`;
+        const currentMarkup = agent?.markup_by_tier?.[t.tier_key] ?? '';
+        markupContainer.innerHTML += `
+          <div>
+            <label style="font-size:11px;color:var(--app-text-tertiary)">${t.tier_key}</label>
+            <input type="number" min="0.1" step="0.1" data-tier="${t.tier_key}" class="agent-markup-tier"
+              value="${currentMarkup}"
+              style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
+          </div>`;
+      }
+    } catch (e) {
+      container.innerHTML = '<span style="color:#e74c3c;font-size:12px">Не удалось загрузить тарифы</span>';
+    }
   }
 
   destroy(): void {}
