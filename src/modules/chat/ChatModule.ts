@@ -912,6 +912,9 @@ export class ChatModule {
         if (Date.now() - created < 8000) {
           await this._showWelcomeMessage(container);
         }
+      } else {
+        // Remove welcome if messages exist
+        document.getElementById('welcome-message')?.remove();
       }
     } else {
       container.innerHTML = '';
@@ -919,6 +922,8 @@ export class ChatModule {
         await this._showWelcomeMessage(container);
         return;
       }
+
+      document.getElementById('welcome-message')?.remove();
 
       const sortedMessages = [...messages]
         .filter(m => !m.deleted_at)
