@@ -183,15 +183,6 @@ export async function getSyncToken(
   }
 }
 
-    return { allowed: true, used: 0, limit: 5 };
-  } catch (err) {
-    console.error('Failed to check usage limit:', (err as Error).message);
-    return { allowed: true, used: 0, limit: 5 };
-  }
-}
-
-}
-
 export async function canUserSync(
   userId: number,
   config: ISupabaseConfig | null = null
