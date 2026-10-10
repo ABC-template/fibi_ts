@@ -1115,6 +1115,21 @@ export class ChatModule {
     }
   }
 
+
+  private _redirectIfEmpty(): void {
+    if (!this._chatId || !this._isShowing) return;
+
+    const found = this.chatStore.findChatById(this._chatId);
+    if (!found) return;
+
+    const messages = (found.chat.messages || []).filter((m: any) => !m.deleted_at);
+    if (messages.length === 0) {
+      console.log(`🧹 [empty] Чат ${this._chatId} стал пустым — редирект на агентов`);
+      this.chatStore.permanentDeleteChat(this._chatId);
+      this.eventBus.emit('navigation:open_module', { module: 'agents' });
+    }
+  }
+
   destroy(): void {
     console.log('🗑️ ChatModule.destroy()');
 
