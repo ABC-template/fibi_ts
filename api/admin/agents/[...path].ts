@@ -178,6 +178,51 @@ export default async function handler(request: Request): Promise<Response> {
         updates.is_system = Boolean(body.is_system);
       }
 
+
+      // --- allowed_tiers ---
+      if (body.allowed_tiers !== undefined) {
+        if (body.allowed_tiers === null || (Array.isArray(body.allowed_tiers) && body.allowed_tiers.length === 0)) {
+          updates.allowed_tiers = null;
+        } else if (Array.isArray(body.allowed_tiers)) {
+          updates.allowed_tiers = body.allowed_tiers;
+        } else {
+          return errorResponse('allowed_tiers must be an array or null', 400);
+        }
+      }
+
+      // --- markup_by_tier ---
+      if (body.markup_by_tier !== undefined) {
+        if (body.markup_by_tier === null) {
+          updates.markup_by_tier = null;
+        } else if (typeof body.markup_by_tier === 'object' && !Array.isArray(body.markup_by_tier)) {
+          for (const [tier, val] of Object.entries(body.markup_by_tier)) {
+            const n = Number(val);
+            if (!Number.isFinite(n) || n <= 0) {
+              return errorResponse(`markup_by_tier.${tier} must be a positive number`, 400);
+            }
+          }
+          updates.markup_by_tier = body.markup_by_tier;
+        } else {
+          return errorResponse('markup_by_tier must be an object or null', 400);
+        }
+      }
+
+      // --- welcome_message ---
+      if (body.welcome_message !== undefined) {
+        if (body.welcome_message === null) {
+          updates.welcome_message = null;
+        } else if (typeof body.welcome_message === 'object' && !Array.isArray(body.welcome_message)) {
+          updates.welcome_message = body.welcome_message;
+        } else {
+          return errorResponse('welcome_message must be an object or null', 400);
+        }
+      }
+
+      // --- inject_balance ---
+      if (body.inject_balance !== undefined) {
+        updates.inject_balance = Boolean(body.inject_balance);
+      }
+
       const updated = await supabaseFetch(
         `ai_agents?id=eq.${agentId}`,
         {
