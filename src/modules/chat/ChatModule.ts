@@ -907,6 +907,12 @@ export class ChatModule {
 
     if (this._patcher) {
       this._patcher.renderAll(messages);
+      if (messages.length === 0) {
+        const created = new Date(found.chat.created_at || 0).getTime();
+        if (Date.now() - created < 8000) {
+          await this._showWelcomeMessage(container);
+        }
+      }
     } else {
       container.innerHTML = '';
       if (messages.length === 0) {
