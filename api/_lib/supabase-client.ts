@@ -183,19 +183,6 @@ export async function getSyncToken(
   }
 }
 
-export async function checkUsageLimit(
-  userId: number,
-  config: ISupabaseConfig | null = null
-): Promise<IUsageLimitResult> {
-  try {
-    const result = await supabaseRPC('check_usage_limit', { uid: userId }, config);
-    if (result && typeof result === 'object') {
-      return {
-        allowed: result.allowed === true || result.allowed === 'true',
-        used: parseInt(result.used || 0, 10),
-        limit: parseInt(result.limit || 5, 10)
-      };
-    }
     return { allowed: true, used: 0, limit: 5 };
   } catch (err) {
     console.error('Failed to check usage limit:', (err as Error).message);
@@ -203,17 +190,6 @@ export async function checkUsageLimit(
   }
 }
 
-export async function incrementUsage(
-  userId: number,
-  config: ISupabaseConfig | null = null
-): Promise<number> {
-  try {
-    const result = await supabaseRPC('increment_usage', { uid: userId }, config);
-    return parseInt(result || 0, 10);
-  } catch (err) {
-    console.error('Failed to increment usage:', (err as Error).message);
-    return 0;
-  }
 }
 
 export async function canUserSync(
