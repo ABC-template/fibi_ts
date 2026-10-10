@@ -954,20 +954,26 @@ export class ChatModule {
     }, 50);
   }
 
-  private _showWelcomeMessage(container: HTMLElement): void {
+  private async _showWelcomeMessage(container: HTMLElement): Promise<void> {
     let text: string | null = null;
+    const lang = this.userStore.languageCode || 'ru';
 
-    // Try to get welcome from current agent
     if (this._agentId) {
-      // Agent may be loaded elsewhere; fallback to topic for now
-      // In future can load from agents list by id
+      try {
+        const { fetchAgentsWithAccess } = await import('@/services/agents');
+        const data = await fetchAgentsWithAccess();
+        const agent = (data.agents || []).find((a: any) => a.id === this._agentId);
+        if (agent?.welcome_message) {
+          text = agent.welcome_message[lang] || agent.welcome_message.ru || null;
+        }
+      } catch (e) {
+        console.warn('Failed to load agent for welcome:', e);
+      }
     }
 
-    // Fallback to topic welcome
-    const topic = this._topic || 'code';
-    const welcomeText = getWelcomeText(topic);
-    if (welcomeText) {
-      text = welcomeText;
+    if (!text) {
+      const topic = this._topic || 'code';
+      text = getWelcomeText(topic) || null;
     }
 
     if (text) {
