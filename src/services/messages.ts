@@ -256,4 +256,3 @@ export class MessageService {
 
 export const messageService = new MessageService();
 console.log('✅ MessageService v4.1.1 загружен (авто-удаление пустых чатов)');
-```
