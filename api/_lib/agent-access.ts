@@ -5,15 +5,13 @@
 // и в api/chat/stream.ts (финальная проверка перед запросом к ИИ),
 // чтобы обе точки не расходились в правилах доступа.
 //
-// Версия: 2.0.0 — новая схема доступа вместо allowed_roles:
-//   1) admin/creator — доступ есть всегда, дальше ничего не проверяем;
-//   2) неавторизованный пользователь (гость) — доступа нет;
-//   3) иначе сравниваем тариф пользователя с минимальным тарифом агента
-//      (min_pro_tier), порядок тарифов берём из subscription_tiers.sort_order
-//      в БД, а не из захардкоженной в коде таблицы.
-//
-//   allowed_roles в БД/типах оставлен как есть (колонка NOT NULL, менять
-//   схему БД сейчас не стали) — но в проверке доступа больше не участвует.
+// Версия: 3.0.0 — multi-tier access (allowed_tiers)
+//   Вместо одного min_pro_tier теперь массив allowed_tiers.
+//   Доступ: user.tier ∈ allowed_tiers.
+//   NULL / пустой массив = доступен всем авторизованным.
+//   admin / creator — bypass.
+//   min_pro_tier оставлен в типах/БД для обратной совместимости,
+//   но в проверке доступа больше не участвует.
 // ============================================
 
 /**
@@ -21,7 +19,10 @@
  */
 export interface IAgentAccessCheckable {
   is_active: boolean;
-  min_pro_tier: string | null;
+  /** @deprecated используйте allowed_tiers */
+  min_pro_tier?: string | null;
+  /** Массив tier_key. NULL или [] = всем авторизованным */
+  allowed_tiers?: string[] | null;
 }
 
 export interface IAgentAccessResult {
@@ -30,63 +31,55 @@ export interface IAgentAccessResult {
 }
 
 /**
- * Порядок тарифов: tier_key → sort_order. Собирается один раз за запрос
- * из subscription_tiers (см. buildTierOrder ниже) и передаётся сюда —
- * сама checkAgentAccess к БД не обращается.
- */
-export type TierOrderMap = Record<string, number>;
-
-/**
  * Проверяет, есть ли у пользователя доступ к агенту.
  *
- * @param userRole     роль пользователя ('admin' | 'creator' | что угодно
- *                      ещё — trial/premium больше не различаются на этом
- *                      уровне, оба идут через сравнение тарифов) либо
- *                      null/undefined/'guest' для неавторизованного.
- * @param userProTier   users.subscription_tier текущего пользователя.
- * @param tierOrder     карта tier_key → sort_order из subscription_tiers.
+ * @param agent        агент (нужны is_active + allowed_tiers)
+ * @param userRole     роль пользователя ('admin' | 'creator' | ...)
+ *                     либо null/undefined/'guest' для неавторизованного
+ * @param userProTier  users.subscription_tier текущего пользователя
  */
 export function checkAgentAccess(
   agent: IAgentAccessCheckable,
   userRole: string | null | undefined,
-  userProTier: string | null,
-  tierOrder: TierOrderMap
+  userProTier: string | null
 ): IAgentAccessResult {
   if (!agent.is_active) {
     return { hasAccess: false, reason: 'inactive' };
   }
 
-  // Админ и создатель — доступ есть всегда, дальше ничего не проверяем.
+  // Админ и создатель — доступ есть всегда
   if (userRole === 'admin' || userRole === 'creator') {
     return { hasAccess: true, reason: null };
   }
 
-  // Неавторизованный пользователь (гость) доступа не имеет.
+  // Неавторизованный пользователь (гость) доступа не имеет
   if (!userRole || userRole === 'guest') {
     return { hasAccess: false, reason: 'auth' };
   }
 
-  // Агент без минимального тарифа — открыт любому авторизованному
-  // пользователю (в т.ч. на trial, у которого subscription_tier обычно
-  // null или 'trial').
-  if (!agent.min_pro_tier) {
+  // NULL или пустой массив = доступен любому авторизованному
+  const allowed = agent.allowed_tiers;
+  if (!allowed || allowed.length === 0) {
     return { hasAccess: true, reason: null };
   }
 
-  const userLevel = tierOrder[userProTier || 'trial'] ?? 0;
-  const requiredLevel = tierOrder[agent.min_pro_tier] ?? 0;
+  const userTier = userProTier || 'trial';
 
-  if (userLevel < requiredLevel) {
-    return { hasAccess: false, reason: 'tier' };
+  if (allowed.includes(userTier)) {
+    return { hasAccess: true, reason: null };
   }
 
-  return { hasAccess: true, reason: null };
+  return { hasAccess: false, reason: 'tier' };
 }
 
 /**
- * Строит карту tier_key → sort_order из строк subscription_tiers.
- * Вызывающий код сам делает SELECT (обычно уже в рамках существующего
- * запроса), здесь только сборка карты.
+ * @deprecated Больше не используется для проверки доступа.
+ * Оставлен только на случай, если где-то ещё нужен sort_order для UI.
+ */
+export type TierOrderMap = Record<string, number>;
+
+/**
+ * @deprecated Больше не используется для проверки доступа.
  */
 export function buildTierOrder(
   tiers: Array<{ tier_key: string; sort_order: number | null }>
