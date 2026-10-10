@@ -955,22 +955,23 @@ export class ChatModule {
   }
 
   private _showWelcomeMessage(container: HTMLElement): void {
-    // Prefer agent welcome_message if available
-    const agent = (window as any).currentAgent; // temporary; better to store on instance
-    const lang = (window as any).userStore?.languageCode || 'ru';
-    const welcomeObj = agent?.welcome_message;
-    const text = welcomeObj?.[lang] || welcomeObj?.ru || null;
+    let text: string | null = null;
 
-    if (text) {
-      this.uiRenderer.renderWelcome(text);
-      return;
+    // Try to get welcome from current agent
+    if (this._agentId) {
+      // Agent may be loaded elsewhere; fallback to topic for now
+      // In future can load from agents list by id
     }
 
-    // Fallback to old topic welcome
+    // Fallback to topic welcome
     const topic = this._topic || 'code';
     const welcomeText = getWelcomeText(topic);
     if (welcomeText) {
-      this.uiRenderer.renderWelcome(welcomeText);
+      text = welcomeText;
+    }
+
+    if (text) {
+      this.uiRenderer.renderWelcome(text);
     }
   }
 
@@ -1077,7 +1078,14 @@ export class ChatModule {
     // Rough estimates (can be refined later with real estimateTokens)
     const requestEst = textLen === 0 ? 0 : Math.max(8, Math.ceil(textLen / 4));
     const responseEst = textLen === 0 ? 0 : Math.max(40, Math.ceil(requestEst * 2.2));
-    const contextEst = 0; // later: history size
+    let contextEst = 0;
+    if (this._chatId) {
+      const found = this.chatStore.findChatById(this._chatId);
+      const messages = found?.chat?.messages || [];
+      const visible = messages.filter((m: any) => !m.deleted_at);
+      const totalChars = visible.reduce((sum: number, m: any) => sum + (m.text?.length || 0), 0);
+      contextEst = Math.ceil(totalChars / 4);
+    }
 
     const totalEst = requestEst + responseEst + contextEst;
 
