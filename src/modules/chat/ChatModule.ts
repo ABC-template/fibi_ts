@@ -189,6 +189,14 @@ export class ChatModule {
       if (fabBtn) {
         console.log('🔧 Делегирование: нажата FAB кнопка');
         this.eventBus.emit('input:expand');
+        setTimeout(() => {
+          const input = document.getElementById('user-input') as HTMLTextAreaElement;
+          if (input && this._agentAccess !== false) {
+            input.disabled = false;
+            input.focus();
+          }
+          this._updateEnergyBar();
+        }, 50);
         return;
       }
 
@@ -673,19 +681,18 @@ export class ChatModule {
 
         <div id="input-overlay" class="hidden"></div>
 
-        <div id="energy-bar" style="
-          font-size: 13px;
-          color: var(--app-text-secondary);
-          padding: 6px 12px;
-          text-align: center;
-          background: rgba(0,0,0,0.35);
-          backdrop-filter: blur(8px);
-          border-radius: 12px 12px 0 0;
-          margin-bottom: -4px;
-        ">
-          ⚡ —  ·  запрос ~—  ·  ответ ~—  ·  контекст ~— ?
-        </div>
         <div id="input-area" class="input-area-hidden">
+          <div id="energy-bar" style="
+            font-size: 13px;
+            color: var(--app-text-secondary);
+            padding: 6px 12px 4px;
+            text-align: center;
+            background: rgba(0,0,0,0.35);
+            backdrop-filter: blur(8px);
+            border-radius: 12px 12px 0 0;
+          ">
+            ⚡ —  ·  запрос ~0  ·  ответ ~0  ·  контекст ~0 ?
+          </div>
           <div style="position:relative;width:100%;display:flex;align-items:flex-start;">
             <textarea id="user-input" placeholder="Ваш вопрос..." rows="1" style="
               width: 100%;
@@ -1060,17 +1067,25 @@ export class ChatModule {
     const bar = document.getElementById('energy-bar');
     if (!bar) return;
 
-    const total = (window as any).userStore?.tokens?.total ?? 0;
-    const requestEst = 15;
-    const responseEst = 95;
-    const contextEst = 0;
+    const tokens = this.economyStore.getTokenBalances();
+    const total = tokens.total ?? 0;
+
+    const input = document.getElementById('user-input') as HTMLTextAreaElement;
+    const text = input?.value?.trim() || '';
+    const textLen = text.length;
+
+    // Rough estimates (can be refined later with real estimateTokens)
+    const requestEst = textLen === 0 ? 0 : Math.max(8, Math.ceil(textLen / 4));
+    const responseEst = textLen === 0 ? 0 : Math.max(40, Math.ceil(requestEst * 2.2));
+    const contextEst = 0; // later: history size
+
+    const totalEst = requestEst + responseEst + contextEst;
 
     bar.innerHTML = `⚡ ${total}  ·  запрос ~${requestEst}  ·  ответ ~${responseEst}  ·  контекст ~${contextEst} ?`;
 
     const sendBtn = document.querySelector('#send-btn') as HTMLButtonElement;
-    const totalEst = requestEst + responseEst + contextEst;
     if (sendBtn) {
-      sendBtn.disabled = totalEst > total || this._agentAccess === false;
+      sendBtn.disabled = (totalEst > total && totalEst > 0) || this._agentAccess === false;
     }
   }
 
