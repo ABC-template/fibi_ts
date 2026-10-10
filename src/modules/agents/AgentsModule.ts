@@ -194,9 +194,10 @@ export class AgentsModule {
       title = '🔒 Нужно войти';
       description = 'Войдите в приложение, чтобы использовать этого агента.';
     } else if (reason === 'tier') {
-      description = agent.min_pro_tier
-        ? `Требуется подписка не ниже тарифа: ${agent.min_pro_tier}`
-        : 'Требуется подписка';
+      const tiers = agent.allowed_tiers?.length
+        ? agent.allowed_tiers.join(', ')
+        : 'подписка';
+      description = `Доступно на тарифах: ${tiers}`;
     }
 
     const content = `
@@ -326,3 +327,4 @@ export class AgentsModule {
 
 (window as any).AgentsModule = AgentsModule;
 console.log('✅ AgentsModule v1.1.2 загружен');
+```
