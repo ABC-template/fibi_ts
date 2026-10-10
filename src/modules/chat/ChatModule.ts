@@ -878,7 +878,7 @@ export class ChatModule {
     this._rendered = true;
   }
 
-  private _loadMessages(): void {
+  private async _loadMessages(): Promise<void> {
     const container = document.getElementById('chat-container');
     if (!container) {
       console.warn('⚠️ _loadMessages: chat-container не найден');
@@ -910,7 +910,7 @@ export class ChatModule {
     } else {
       container.innerHTML = '';
       if (messages.length === 0) {
-        this._showWelcomeMessage(container);
+        await this._showWelcomeMessage(container);
         return;
       }
 
@@ -960,15 +960,27 @@ export class ChatModule {
 
     if (this._agentId) {
       try {
-        const { fetchAgentsWithAccess } = await import('@/services/agents');
-        const data = await fetchAgentsWithAccess();
-        const agent = (data.agents || []).find((a: any) => a.id === this._agentId);
+        // First try from AgentsModule cache if available
+        const agentsModule = (window as any).agentsModule;
+        let agent = agentsModule?._agents?.find((a: any) => a.id === this._agentId);
+        
+        if (!agent) {
+          const { fetchAgentsWithAccess } = await import('@/services/agents');
+          const data = await fetchAgentsWithAccess();
+          agent = (data.agents || []).find((a: any) => a.id === this._agentId);
+        }
+
         if (agent?.welcome_message) {
-          text = agent.welcome_message[lang] || agent.welcome_message.ru || null;
+          text = agent.welcome_message[lang] || agent.welcome_message.ru || agent.welcome_message.en || null;
+          console.log('[welcome] Found agent welcome:', text?.substring(0, 50));
+        } else {
+          console.log('[welcome] Agent found but no welcome_message', agent?.slug);
         }
       } catch (e) {
         console.warn('Failed to load agent for welcome:', e);
       }
+    } else {
+      console.log('[welcome] No _agentId, using topic fallback');
     }
 
     if (!text) {
