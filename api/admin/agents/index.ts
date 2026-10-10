@@ -95,10 +95,14 @@ export default async function handler(request: Request): Promise<Response> {
         min_charge: Number(body.min_charge) ?? 50,
         allowed_roles: Array.isArray(body.allowed_roles) ? body.allowed_roles : [],
         min_pro_tier: body.min_pro_tier || null,
+        allowed_tiers: Array.isArray(body.allowed_tiers) && body.allowed_tiers.length > 0 ? body.allowed_tiers : null,
+        markup_by_tier: body.markup_by_tier && typeof body.markup_by_tier === 'object' ? body.markup_by_tier : null,
+        welcome_message: body.welcome_message && typeof body.welcome_message === 'object' ? body.welcome_message : null,
+        inject_balance: body.inject_balance === true,
         is_active: body.is_active !== false,
         is_system: makeSystem,
         sort_order: Number(body.sort_order) || 100,
-        owner_id: null, // пока только системные/глобальные
+        owner_id: null,
       };
 
       const created = await supabaseFetch(
