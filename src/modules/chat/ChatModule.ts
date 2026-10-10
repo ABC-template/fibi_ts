@@ -1038,6 +1038,42 @@ export class ChatModule {
     return this._patcher;
   }
 
+
+  private _applyAccessRestrictions(): void {
+    if (this._agentAccess === false) {
+      const input = document.querySelector('#user-input') as HTMLTextAreaElement;
+      const sendBtn = document.querySelector('#send-btn') as HTMLButtonElement;
+      const micBtn = document.querySelector('#mic-btn') as HTMLButtonElement;
+      const attachBtn = document.querySelector('#attach-btn') as HTMLButtonElement;
+
+      if (input) {
+        input.disabled = true;
+        input.placeholder = 'Доступно на тарифе…';
+      }
+      if (sendBtn) sendBtn.disabled = true;
+      if (micBtn) micBtn.disabled = true;
+      if (attachBtn) attachBtn.disabled = true;
+    }
+  }
+
+  private _updateEnergyBar(): void {
+    const bar = document.getElementById('energy-bar');
+    if (!bar) return;
+
+    const total = (window as any).userStore?.tokens?.total ?? 0;
+    const requestEst = 15;
+    const responseEst = 95;
+    const contextEst = 0;
+
+    bar.innerHTML = `⚡ ${total}  ·  запрос ~${requestEst}  ·  ответ ~${responseEst}  ·  контекст ~${contextEst} ?`;
+
+    const sendBtn = document.querySelector('#send-btn') as HTMLButtonElement;
+    const totalEst = requestEst + responseEst + contextEst;
+    if (sendBtn) {
+      sendBtn.disabled = totalEst > total || this._agentAccess === false;
+    }
+  }
+
   destroy(): void {
     console.log('🗑️ ChatModule.destroy()');
 
