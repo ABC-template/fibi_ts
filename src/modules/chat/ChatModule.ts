@@ -297,6 +297,8 @@ export class ChatModule {
 
       if (agent) {
         this._agentAccess = agent.has_access;
+        this._applyAccessRestrictions();
+        this._updateEnergyBar();
         this._agentReason = agent.access_reason || null;
         console.log(`🔍 [ChatModule] Доступ к агенту: ${this._agentAccess}, причина: ${this._agentReason}`);
       } else {
@@ -671,6 +673,18 @@ export class ChatModule {
 
         <div id="input-overlay" class="hidden"></div>
 
+        <div id="energy-bar" style="
+          font-size: 13px;
+          color: var(--app-text-secondary);
+          padding: 6px 12px;
+          text-align: center;
+          background: rgba(0,0,0,0.35);
+          backdrop-filter: blur(8px);
+          border-radius: 12px 12px 0 0;
+          margin-bottom: -4px;
+        ">
+          ⚡ —  ·  запрос ~—  ·  ответ ~—  ·  контекст ~— ?
+        </div>
         <div id="input-area" class="input-area-hidden">
           <div style="position:relative;width:100%;display:flex;align-items:flex-start;">
             <textarea id="user-input" placeholder="Ваш вопрос..." rows="1" style="
@@ -804,6 +818,7 @@ export class ChatModule {
     `;
 
     const userInput = document.getElementById('user-input') as HTMLTextAreaElement;
+    userInput?.addEventListener('input', () => this._updateEnergyBar());
     if (userInput) {
       userInput.addEventListener('input', function() {
         this.style.height = 'auto';
@@ -933,9 +948,23 @@ export class ChatModule {
   }
 
   private _showWelcomeMessage(container: HTMLElement): void {
+    // Prefer agent welcome_message if available
+    const agent = (window as any).currentAgent; // temporary; better to store on instance
+    const lang = (window as any).userStore?.languageCode || 'ru';
+    const welcomeObj = agent?.welcome_message;
+    const text = welcomeObj?.[lang] || welcomeObj?.ru || null;
+
+    if (text) {
+      this.uiRenderer.renderWelcome(text);
+      return;
+    }
+
+    // Fallback to old topic welcome
     const topic = this._topic || 'code';
     const welcomeText = getWelcomeText(topic);
-    this.uiRenderer.renderWelcome(welcomeText);
+    if (welcomeText) {
+      this.uiRenderer.renderWelcome(welcomeText);
+    }
   }
 
   private _updateHeader(): void {
