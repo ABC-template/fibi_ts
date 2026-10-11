@@ -1,7 +1,8 @@
 // ============================================
 // src/services/sync.ts
 // Realtime синхронизация для PRO (с JWT)
-// Версия: 4.0.1 - замена @types → @app-types
+// Версия: 4.1.0 - metadata сообщений в Realtime (INSERT/UPDATE), patcher.updateMessage
+//          4.0.1 - замена @types → @app-types
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -527,7 +528,8 @@ export class SyncService {
               type: newData.msg_type,
               isFavorite: newData.is_favorite || false,
               deleted_at: newData.deleted_at || null,
-              created_at: newData.created_at || new Date().toISOString()
+              created_at: newData.created_at || new Date().toISOString(),
+              metadata: newData.metadata || null
             };
             chat.messages.push(newMessage);
             chatStore.save();
@@ -549,6 +551,7 @@ export class SyncService {
             existingMsg.text = newData.text;
             existingMsg.isFavorite = newData.is_favorite;
             existingMsg.deleted_at = newData.deleted_at;
+            if (newData.metadata !== undefined) existingMsg.metadata = newData.metadata;
             chatStore.save();
             console.log(`📝 Обновлено сообщение ${newData.id} (Realtime)`);
             
@@ -558,9 +561,7 @@ export class SyncService {
               if (newData.is_favorite !== undefined) {
                 patcher.updateFavorite(newData.id, newData.is_favorite);
               }
-              if (newData.text !== undefined) {
-                patcher.updateMessageText(newData.id, newData.text);
-              }
+              patcher.updateMessage(existingMsg);
             }
           }
         }
@@ -593,4 +594,4 @@ export class SyncService {
 }
 
 export const syncService = new SyncService();
-console.log('✅ SyncService v4.0.1 загружен (pinned в Realtime)');
+console.log('✅ SyncService v4.1.0 загружен (pinned в Realtime)');
