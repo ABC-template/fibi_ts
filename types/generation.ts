@@ -63,10 +63,18 @@ export interface IGenerationRequestMetadata {
 
 export type IGenerationMetadata = IGenerationResultMetadata | IGenerationRequestMetadata;
 
+/**
+ * Как режим использует загруженные изображения (соответствует API OpenRouter):
+ *  none → только текст; references → input_references (изображения или правка);
+ *  first_frame → первый кадр видео; first_last_frames → первый и последний кадры.
+ */
+export type GenerationModeInput = 'none' | 'references' | 'first_frame' | 'first_last_frames';
+
 /** Описание одного режима в generation_config */
 export interface IGenerationMode {
   key: string;
   label: IAgentName;
+  input?: GenerationModeInput;
   requires_media?: boolean;
   media_types?: MediaType[];
   max_media?: number;
@@ -94,6 +102,43 @@ export interface IGenerationPromptConfig {
   placeholder?: IAgentName;
 }
 
+/**
+ * Цена генерации. Реальное списание считается по фактической стоимости из ответа
+ * OpenRouter; эта запись нужна для оценки в форме и проверки энергии до старта.
+ *  per_second → prices[разрешение] × длительность (ключ 'default' — единая цена)
+ *  per_image  → usd за одно изображение (OpenRouter отдаёт цену за токены,
+ *               поэтому оценку задаёт администратор)
+ * Энергия = usd × energy_per_usd × коэффициент агента, не меньше min_charge.
+ */
+export interface IGenerationPricing {
+  kind: 'per_second' | 'per_image';
+  prices?: Record<string, number>;
+  usd?: number;
+  energy_per_usd: number;
+}
+
+/** Возможности модели OpenRouter (из /images/models и /videos/models) */
+export interface IModelCapabilities {
+  kind: 'image' | 'video';
+  resolutions: string[];
+  aspect_ratios: string[];
+  /** Только видео, секунды */
+  durations: number[];
+  /** Только изображения */
+  qualities: string[];
+  backgrounds: string[];
+  /** Максимум изображений за один запрос (image) */
+  max_n: number;
+  /** Максимум референсов (image) */
+  max_input_references: number;
+  /** Какие кадры принимает модель (video) */
+  frame_images: Array<'first_frame' | 'last_frame'>;
+  generate_audio: boolean;
+  seed: boolean;
+  /** Прайс-лист модели как есть (видео): sku → $ */
+  pricing_skus: Record<string, number>;
+}
+
 /** Полный generation_config агента */
 export interface IGenerationConfig {
   modes?: IGenerationMode[];
@@ -104,6 +149,7 @@ export interface IGenerationConfig {
     max_length?: number;
     placeholder?: IAgentName;
   };
+  pricing?: IGenerationPricing;
   /** Дополнительные настройки (лимиты, подсказки и т.д.) */
   [key: string]: any;
 }
