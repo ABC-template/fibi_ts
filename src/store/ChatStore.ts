@@ -1,11 +1,13 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 6.2.0 — metadata сообщений (генерации), upsertMessage
+// Версия: 6.3.0 — удаление чата запрещено, пока в нём идёт генерация
+//          6.2.0 — metadata сообщений (генерации), upsertMessage
 //          6.1.0 — добавлены agent_id и modality
 // ============================================
 
 import { BaseStore } from './BaseStore';
+import { chatHasLiveGeneration } from './generation-live';
 import type {
   IChat,
   IMessage,
@@ -334,6 +336,11 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return true;
   }
 
+  /** В чате идёт генерация (удалять нельзя) */
+  isChatBusy(chatId: UUID): boolean {
+    return chatHasLiveGeneration(this.findChatById(chatId)?.chat);
+  }
+
   deleteChat(chatId: UUID): boolean {
     const found = this.findChatById(chatId);
     if (!found) {
@@ -345,6 +352,11 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 
     if (chat.deleted_at) {
       console.warn(`⚠️ Чат ${chatId} уже в корзине`);
+      return false;
+    }
+
+    if (chatHasLiveGeneration(chat)) {
+      console.warn(`⚠️ Чат ${chatId}: идёт генерация, удаление отклонено`);
       return false;
     }
 
