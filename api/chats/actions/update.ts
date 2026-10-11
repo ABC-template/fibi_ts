@@ -1,13 +1,16 @@
 // ============================================
 // api/chats/actions/update.ts
 // Описание: Обновление чата (переименование, контекст, удаление, закрепление) с sync_token
-// Версия: 4.0.0 - добавлен pin_chat
+// Версия: 4.1.0 - удаление чата запрещено (409), пока в нём идёт запрос/генерация
+//   4.0.0 - добавлен pin_chat
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken } from '../../_lib/supabase-client';
 import { isValidUUID, validateUUID } from '../../_lib/validators';
+import { assertChatsNotBusy } from '../../_lib/chat-lock';
+import { HttpError } from '../../_lib/http-error';
 
 export const config = { runtime: 'edge' };
 
@@ -318,6 +321,9 @@ export default async function handler(request: Request): Promise<Response> {
         return errorResponse('Missing chatId', 400);
       }
 
+      // Пока в чате идёт ответ или генерация, удалять его нельзя
+      await assertChatsNotBusy(userId, [chatId], config);
+
       const result = await deleteChat(userId, chatId, config);
       if (!result.success) {
         return errorResponse(result.error || 'Unknown error', 400);
@@ -348,6 +354,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     return errorResponse('Unknown action', 400);
   } catch (err) {
+    if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Update handler error:', (err as Error).message);
     return errorResponse((err as Error).message, 500);
   }
