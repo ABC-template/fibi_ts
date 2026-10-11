@@ -314,6 +314,8 @@ export async function downloadVideo(
 export interface IPricing {
   kind: 'per_second' | 'per_image';
   prices?: Record<string, number>;
+  /** Цена за секунду со звуком (если у модели она другая) */
+  audio_prices?: Record<string, number>;
   usd?: number;
   energy_per_usd: number;
 }
@@ -324,6 +326,20 @@ export function readPricing(gen: any): IPricing | null {
   const rate = Number(p.energy_per_usd);
   if (!Number.isFinite(rate) || rate <= 0) return null;
   return p as IPricing;
+}
+
+/** Цена секунды: учитывает звук. Если звук не задан, а у модели есть цена со звуком — берём бóльшую (оценка с запасом). */
+function perSecondUsd(p: any, params: Record<string, any>): number {
+  const res = String(params.resolution);
+  const base = Number(p.prices?.[res] ?? p.prices?.default);
+  const audioTable = p.audio_prices && Object.keys(p.audio_prices).length > 0 ? p.audio_prices : null;
+  const withSound = audioTable ? Number(audioTable[res] ?? audioTable.default) : NaN;
+
+  const flag = params.generate_audio;
+  if (flag === true || flag === 'true') return Number.isFinite(withSound) ? withSound : base;
+  if (flag === false || flag === 'false') return base;
+  const options = [base, withSound].filter((x) => Number.isFinite(x));
+  return options.length ? Math.max(...options) : NaN;
 }
 
 /** Оценка стоимости запроса в долларах по прайсу из generation_config */
@@ -339,8 +355,7 @@ export function estimateUsd(pricing: IPricing | null, params: Record<string, any
 
   const duration = Number(params.duration);
   if (!Number.isFinite(duration) || duration <= 0) return null;
-  const prices = pricing.prices || {};
-  const perSec = Number(prices[String(params.resolution)] ?? prices.default);
+  const perSec = perSecondUsd(pricing, params);
   if (!Number.isFinite(perSec) || perSec <= 0) return null;
   return perSec * duration;
 }
