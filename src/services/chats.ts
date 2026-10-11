@@ -1,12 +1,13 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.2.0 - metadata сообщений при слиянии с облаком, agent_id/modality при создании чата,
+// Версия: 3.3.0 - удаление в корзину: 409 от сервера (чат занят) откатывает локальное удаление
+//          3.2.0 - metadata сообщений при слиянии с облаком, agent_id/modality при создании чата,
 //                 ensureRemoteChat (чат генерации без первого сообщения)
 //          3.1.1 - замена @types → @app-types
 // ============================================
 
-import { apiClient } from './api';
+import { apiClient, ApiError } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import type { IChat, IMessage, MessageType, TopicId, UUID } from '@app-types';
@@ -360,6 +361,11 @@ export class ChatService {
         }
         return false;
       } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          // В чате идёт запрос (например, на другом устройстве) — возвращаем чат
+          chatStore.restoreChat(chatId);
+          return false;
+        }
         console.error(`❌ Ошибка удаления чата ${chatId}:`, err);
         return false;
       }
