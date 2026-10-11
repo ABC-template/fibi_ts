@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.3.0 — передача attachedFile в /api/chat/stream; починена
+// Версия: 4.4.0 — chatId уходит на сервер (замок чата); обработка 409:
+//                  в чате уже идёт запрос
+//          4.3.0 — передача attachedFile в /api/chat/stream; починена
 //                  устаревшая причина отказа 'role' (теперь auth/tier/
 //                  inactive, хвост от редизайна доступа к агентам);
 //                  добавлена обработка 413 (файл слишком большой)
@@ -72,6 +74,7 @@ let streamCallCounter = 0;
       attachedImage: attachedImage || null,
       attachedFile: attachedFile || null,
       agentId: agentId,
+      chatId: chatId,
     };
 
     console.log(`🌊 [СТРИМ #${callId}] Отправляем запрос к /api/chat/stream`);
@@ -111,6 +114,21 @@ let streamCallCounter = 0;
 
       if (response.status === 413) {
         uiRendererInstance.renderMessage(`⚠️ ${text}`, 'ai-msg');
+        return false;
+      }
+
+      if (response.status === 409) {
+        // В этом чате ещё идёт предыдущий запрос (например, после перезагрузки
+        // приложения или с другого устройства)
+        let busyText = 'Предыдущий запрос в этом чате ещё выполняется. Дождитесь ответа.';
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error) busyText = parsed.error;
+        } catch {
+          // не JSON — оставляем текст по умолчанию
+        }
+        uiRendererInstance.hideSkeleton();
+        uiRendererInstance.renderMessage(`⏳ ${busyText}`, 'ai-msg');
         return false;
       }
 
@@ -418,4 +436,4 @@ let streamCallCounter = 0;
   }
 };
 
-console.log('✅ ChatStream v4.2.1 загружен (с поддержкой агентов)');
+console.log('✅ ChatStream v4.4.0 загружен (с поддержкой агентов)');
