@@ -1,12 +1,14 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
 // Описание: Объединенная очистка (корзина + логи + usage + pending + медиа)
-// Версия: 2.2.0 - TypeScript, очистка файлов генераций и просроченных замков чатов
+// Версия: 2.3.0 - довершение застрявших видео-заданий (вебхук/опрос не сработали)
+//          2.2.0 - TypeScript, очистка файлов генераций и просроченных замков чатов
 // ============================================
 
 import { getSupabaseConfig, supabaseFetch, supabaseRPC } from '../../_lib/supabase-client';
 import { cleanupMediaFiles } from '../../_lib/media';
 import { purgeExpiredChatLocks } from '../../_lib/chat-lock';
+import { finalizeVideoJob } from '../../_lib/generation-store';
 
 export const config = { runtime: 'edge' };
 
@@ -165,6 +167,32 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
+    // 6.5. ЗАСТРЯВШИЕ ВИДЕО-ЗАДАНИЯ
+    //      Готовые сохраняем и списываем, просроченные помечаем failed и снимаем замок
+    // ==========================================
+    let videoFinalized = 0;
+
+    try {
+      const stuck = await supabaseFetch(
+        `messages?msg_type=eq.ai-msg&deleted_at=is.null&metadata->>kind=eq.generation` +
+          `&metadata->>modality=eq.video&metadata->>status=in.(pending,processing)&select=id&limit=100`,
+        { method: 'GET' },
+        config
+      );
+      for (const row of Array.isArray(stuck) ? stuck : []) {
+        try {
+          const result = await finalizeVideoJob(row.id, config);
+          if (result.state === 'done' || result.state === 'failed') videoFinalized++;
+        } catch (err) {
+          console.error('Ошибка завершения видео-задания:', (err as Error).message);
+        }
+      }
+      console.log(`✅ Завершено застрявших видео-заданий: ${videoFinalized}`);
+    } catch (err) {
+      console.error('Ошибка проверки видео-заданий:', (err as Error).message);
+    }
+
+    // ==========================================
     // 7. ОЧИСТКА МЕДИА ГЕНЕРАЦИЙ
     //    (неотправленные загрузки > 24 ч + файлы удалённых чатов)
     //    Идёт после очистки корзины: у файлов удалённых чатов
@@ -204,7 +232,8 @@ export default async function handler(request: Request): Promise<Response> {
       pending_deletions_cleaned: pendingDeleted,
       orphaned_devices_cleaned: orphanedDevicesCleaned,
       notifications_cleaned: notificationsDeleted,
-      media_files_removed: mediaRemoved
+      media_files_removed: mediaRemoved,
+      video_jobs_finalized: videoFinalized
     };
 
     console.log('✅ Общая очистка завершена:', JSON.stringify(report));
