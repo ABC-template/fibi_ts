@@ -18,7 +18,7 @@ import type {
 /** Должно совпадать с MEDIA_LIMITS на сервере (api/_lib/media.ts) */
 export const REFERENCE_LIMITS = {
   maxBytes: 10 * 1024 * 1024,
-  maxPerRequest: 4,
+  maxPerRequest: 10,
   mimes: ['image/jpeg', 'image/png', 'image/webp'] as string[],
 };
 
