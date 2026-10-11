@@ -1,7 +1,7 @@
 // ============================================
 // api/subscription/tiers.ts
 // Получение доступных тарифов подписки
-// Версия: 1.0.0
+// Версия: 1.1.0 — бесплатные тарифы (price_stars = 0, например trial) в список покупки не попадают
 // ============================================
 
 import {
@@ -33,7 +33,7 @@ export default async function handler(request: Request): Promise<Response> {
     const config = getSupabaseConfig('service');
 
     const result = await supabaseFetch(
-      'subscription_tiers?is_active=eq.true&order=sort_order.asc',
+      'subscription_tiers?is_active=eq.true&price_stars=gt.0&order=sort_order.asc',
       { method: 'GET' },
       config
     );
