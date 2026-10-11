@@ -8,7 +8,11 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 2.0.0
+// Версия: 3.0.0
+//   - форма в стиле генераторов: сегментные переключатели (до 4 вариантов) и «чипы» (до 8),
+//     шаговый счётчик для n, переключатель для флагов, зона загрузки со счётчиком «0 / N»,
+//     цена в кнопке по прайсу агента (меняется вместе с параметрами)
+//   2.0.0
 //   - видео: сервер отвечает сразу (задание выполняется минуты), приложение опрашивает
 //     /generations/status раз в 10 с; окно ожидания 20 минут (у фото 5)
 //   - ответ фото приходит потоком с пробелами-пульсом; разрыв ответа = ждём результат в чате
@@ -31,6 +35,7 @@ import {
   validateReferenceFile,
 } from '@/services/generation-media';
 import { isLiveGeneration, liveWindowMs } from '@/store/generation-live';
+import { estimateEnergy } from '@/services/generation-pricing';
 import type { IMessage, UUID } from '@app-types';
 import type {
   ICreateGenerationRequest,
@@ -313,7 +318,7 @@ export class GenerationController {
         <div id="gen-notice" class="gen-notice" hidden></div>
         <div id="gen-modes-wrap">${this._buildModesHtml(modes)}</div>
         <div id="gen-refs-wrap" class="gen-field" hidden>
-          <div class="gen-label"><span id="gen-refs-title">Изображения</span></div>
+          <div class="gen-label"><span id="gen-refs-title">Изображения</span><span id="gen-refs-count" class="gen-counter"></span></div>
           <div id="gen-refs" class="gen-refs"></div>
           <input type="file" id="gen-file-input" accept="${REFERENCE_LIMITS.mimes.join(',')}" multiple hidden />
         </div>
@@ -372,13 +377,29 @@ export class GenerationController {
         const value = has ? values[p.key] : p.default;
 
         if (p.type === 'select' && Array.isArray(p.options)) {
-          const options = p.options
-            .map((o) => {
-              const val = typeof o === 'string' ? o : o.value;
-              const text = typeof o === 'string' ? o : ru(o.label, o.value);
-              const selected = String(val) === String(value) ? ' selected' : '';
-              return `<option value="${esc(val)}"${selected}>${esc(text)}</option>`;
-            })
+          const opts = p.options.map((o) => {
+            const val = typeof o === 'string' ? o : o.value;
+            let text = typeof o === 'string' ? o : ru(o.label, o.value);
+            if (p.key === 'duration' && /^\d+$/.test(String(text))) text = `${text} с`;
+            return { val: String(val), text };
+          });
+          const current = opts.some((o) => o.val === String(value)) ? String(value) : opts[0]?.val ?? '';
+
+          if (opts.length >= 2 && opts.length <= 8) {
+            const cls = opts.length <= 4 ? 'gen-seg' : 'gen-chips';
+            const buttons = opts
+              .map(
+                (o) => `<button type="button" class="gen-opt${o.val === current ? ' active' : ''}"
+                  data-opt="${esc(o.val)}">${esc(o.text)}</button>`
+              )
+              .join('');
+            return `<div class="gen-field"><div class="gen-label"><span>${label}</span></div>
+              <div class="${cls}" data-group="${key}">${buttons}</div>
+              <input type="hidden" data-param="${key}" data-type="select" value="${esc(current)}" /></div>`;
+          }
+
+          const options = opts
+            .map((o) => `<option value="${esc(o.val)}"${o.val === current ? ' selected' : ''}>${esc(o.text)}</option>`)
             .join('');
           return `<div class="gen-field"><div class="gen-label"><span>${label}</span></div>
             <select class="gen-input" data-param="${key}" data-type="select">${options}</select></div>`;
@@ -396,6 +417,18 @@ export class GenerationController {
         }
 
         if (p.type === 'number') {
+          const lo = Number(p.min);
+          const hi = Number(p.max);
+          if (Number.isFinite(lo) && Number.isFinite(hi) && p.min !== undefined && p.max !== undefined && hi > lo && hi - lo <= 20) {
+            const start = Math.min(hi, Math.max(lo, Number(value ?? lo) || lo));
+            return `<div class="gen-field gen-stepper-row"><div class="gen-label"><span>${label}</span></div>
+              <div class="gen-stepper" data-stepper="${key}" data-min="${lo}" data-max="${hi}">
+                <button type="button" class="gen-step" data-dir="-1" aria-label="Меньше">−</button>
+                <span class="gen-step-value">${start} / ${hi}</span>
+                <button type="button" class="gen-step" data-dir="1" aria-label="Больше">+</button>
+              </div>
+              <input type="hidden" data-param="${key}" data-type="number" value="${start}" /></div>`;
+          }
           const attrs = [
             Number.isFinite(Number(p.min)) && p.min !== undefined ? `min="${Number(p.min)}"` : '',
             Number.isFinite(Number(p.max)) && p.max !== undefined ? `max="${Number(p.max)}"` : '',
@@ -407,8 +440,9 @@ export class GenerationController {
         }
 
         if (p.type === 'boolean') {
-          return `<label class="gen-check"><input type="checkbox" data-param="${key}" data-type="boolean"
-            ${value ? 'checked' : ''} /><span>${label}</span></label>`;
+          return `<label class="gen-switch"><span class="gen-switch-text">${label}</span>
+            <input type="checkbox" data-param="${key}" data-type="boolean" ${value ? 'checked' : ''} />
+            <span class="gen-switch-track"></span></label>`;
         }
 
         return `<div class="gen-field"><div class="gen-label"><span>${label}</span></div>
@@ -448,6 +482,35 @@ export class GenerationController {
       el.addEventListener('change', () => this._refreshSubmit());
     });
 
+    overlay.querySelectorAll('#gen-params [data-group]').forEach((group) => {
+      const hidden = group.parentElement?.querySelector('input[type="hidden"]') as HTMLInputElement | null;
+      group.querySelectorAll('.gen-opt').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (!hidden) return;
+          hidden.value = (btn as HTMLElement).dataset.opt || '';
+          group.querySelectorAll('.gen-opt').forEach((b) => b.classList.toggle('active', b === btn));
+          this._refreshSubmit();
+        });
+      });
+    });
+
+    overlay.querySelectorAll('#gen-params [data-stepper]').forEach((box) => {
+      const el = box as HTMLElement;
+      const hidden = el.parentElement?.querySelector('input[type="hidden"]') as HTMLInputElement | null;
+      const out = el.querySelector('.gen-step-value') as HTMLElement;
+      const lo = Number(el.dataset.min);
+      const hi = Number(el.dataset.max);
+      el.querySelectorAll('.gen-step').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (!hidden) return;
+          const next = Math.min(hi, Math.max(lo, (Number(hidden.value) || lo) + Number((btn as HTMLElement).dataset.dir)));
+          hidden.value = String(next);
+          out.textContent = `${next} / ${hi}`;
+          this._refreshSubmit();
+        });
+      });
+    });
+
     overlay.querySelectorAll('.gen-mode-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const key = (btn as HTMLElement).dataset.mode || '';
@@ -485,8 +548,7 @@ export class GenerationController {
       const max = this._maxRefs(mode);
       const title = document.getElementById('gen-refs-title');
       if (title) {
-        const need = mode?.requires_media ? 'обязательно, ' : '';
-        title.textContent = `Изображения (${need}до ${max})`;
+        title.textContent = mode?.requires_media ? 'Изображения (обязательно)' : 'Изображения';
       }
       // Лишние референсы режима с меньшим лимитом убираем с конца
       while (this._refs.length > max) this._removeRef(this._refs[this._refs.length - 1].id, false);
@@ -580,6 +642,32 @@ export class GenerationController {
     const box = document.getElementById('gen-refs');
     if (!box) return;
     box.innerHTML = '';
+
+    const count = document.getElementById('gen-refs-count');
+    if (count) count.textContent = `${this._refs.length} / ${this._maxRefs(this._currentMode())}`;
+
+    // Пусто: большая зона загрузки (можно и перетащить файлы)
+    if (this._refs.length === 0) {
+      const zone = document.createElement('button');
+      zone.type = 'button';
+      zone.className = 'gen-drop';
+      zone.innerHTML = '<span class="gen-drop-icon">⬆︎</span><span>Загрузить изображения</span><small>JPEG, PNG, WebP до 10 МБ</small>';
+      zone.addEventListener('click', () => {
+        (document.getElementById('gen-file-input') as HTMLInputElement | null)?.click();
+      });
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        zone.classList.add('over');
+      });
+      zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('over');
+        this._addFiles(Array.from(e.dataTransfer?.files || []));
+      });
+      box.appendChild(zone);
+      return;
+    }
 
     for (const ref of this._refs) {
       const tile = document.createElement('div');
@@ -720,15 +808,9 @@ export class GenerationController {
   }
 
   private _estimateCost(): number {
-    const agent = this._agent;
-    if (!agent) return 0;
+    if (!this._agent) return 0;
     const tier = (userStore as any)._data?.subscription_tier || 'trial';
-    const byTier = Number(agent.markup_by_tier?.[tier]);
-    const fallback = Number(agent.markup_coefficient);
-    const markup =
-      Number.isFinite(byTier) && byTier > 0 ? byTier : Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
-    const min = Number(agent.min_charge) || 1;
-    return Math.max(Math.ceil(min * markup), min);
+    return estimateEnergy(this._agent, tier, this._collectParams());
   }
 
   private _refreshSubmit(): void {
