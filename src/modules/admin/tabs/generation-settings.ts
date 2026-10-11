@@ -6,7 +6,8 @@
 // какие значения параметров доступны пользователю, значения по умолчанию,
 // негативный промпт и цену. Результат — generation_config, по которому
 // форма генерации в чате строится сама (src/modules/chat/generation.ts).
-// Версия: 1.1.0 — у видео-модели без прайса за секунду цену 1 секунды задаёт администратор
+// Версия: 1.2.0 — цена видео с учётом звука (audio_prices), разбор text_to_video_/image_to_video_
+//   1.1.0 — у видео-модели без прайса за секунду цену 1 секунды задаёт администратор
 //   1.0.0
 // ============================================
 
@@ -69,25 +70,30 @@ function pickDefault(values: string[], key: string): string {
 }
 
 /**
- * Прайс-лист видео-модели → $ за секунду по разрешениям.
- * Берём позиции вида duration_seconds[_<разрешение>]; ключ 'default' — единая цена.
+ * Прайс-лист видео-модели → $ за секунду по разрешениям, отдельно без звука и со звуком.
+ * Позиции вида duration_seconds[_with_audio|_without_audio][_<разрешение>]; ключ 'default' —
+ * цена без привязки к разрешению. Префиксы text_to_video_ / image_to_video_ / reference_
+ * отбрасываются, при совпадении ключей берётся бóльшая цена (оценка с запасом).
+ * Модели с оплатой за токены видео (Seedance) сюда не попадают — цену задаёт администратор.
  */
 export function videoPricesFromSkus(
   skus: Record<string, number>,
   resolutions: string[]
-): Record<string, number> {
+): { prices: Record<string, number>; audio_prices: Record<string, number> } {
   const prices: Record<string, number> = {};
+  const audio_prices: Record<string, number> = {};
+
   for (const [sku, value] of Object.entries(skus || {})) {
-    const m = /^duration_seconds(?:_(.+))?$/.exec(sku);
-    if (!m || !Number.isFinite(value)) continue;
-    if (!m[1]) {
-      prices.default = value;
-      continue;
-    }
-    const resolution = resolutions.find((r) => r.toLowerCase() === m[1].toLowerCase()) || m[1];
-    prices[resolution] = value;
+    if (!Number.isFinite(value)) continue;
+    const name = sku.replace(/^(?:text_to_video_|image_to_video_|reference_)/, '');
+    const m = /^duration_seconds(?:_(with|without)_audio)?(?:_([a-z0-9]+))?$/i.exec(name);
+    if (!m) continue;
+
+    const target = m[1] === 'with' ? audio_prices : prices;
+    const key = m[2] ? resolutions.find((r) => r.toLowerCase() === m[2].toLowerCase()) || m[2] : 'default';
+    target[key] = Math.max(target[key] ?? 0, value);
   }
-  return prices;
+  return { prices, audio_prices };
 }
 
 export class GenerationSettingsPanel {
@@ -293,10 +299,17 @@ export class GenerationSettingsPanel {
     const energyRate = Number(pricing?.energy_per_usd) || '';
     let priceHtml: string;
     if (caps.kind === 'video') {
-      const prices = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
-      const lines = Object.entries(prices)
-        .map(([res, usd]) => `${esc(res)}: $${usd}/сек`)
-        .join(' · ');
+      const found = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
+      const fmt = (table: Record<string, number>) =>
+        Object.entries(table)
+          .map(([res, usd]) => `${esc(res === 'default' ? 'любое' : res)}: $${usd}/сек`)
+          .join(' · ');
+      const lines = [
+        Object.keys(found.prices).length ? `${fmt(found.prices)}` : '',
+        Object.keys(found.audio_prices).length ? `со звуком — ${fmt(found.audio_prices)}` : '',
+      ]
+        .filter(Boolean)
+        .join('<br>');
       if (lines) {
         priceHtml = `<div style="${HINT};margin-bottom:6px">Цена модели: ${lines}</div>`;
       } else {
@@ -377,9 +390,11 @@ export class GenerationSettingsPanel {
       if (pricing.kind === 'per_second') {
         const res = this._defaultOf('resolution');
         const duration = Number(this._defaultOf('duration')) || 5;
-        const perSecond = pricing.prices?.[res] ?? pricing.prices?.default ?? Math.min(...Object.values(pricing.prices || { x: 0 }));
+        const sound = (this.root.querySelector('[data-gs-param="generate_audio"] [data-gs-default]') as HTMLInputElement | null)?.checked === true;
+        const table = sound && pricing.audio_prices ? pricing.audio_prices : pricing.prices || {};
+        const perSecond = table[res] ?? table.default ?? pricing.prices?.[res] ?? pricing.prices?.default ?? Math.min(...Object.values(table));
         usd = perSecond * duration;
-        sample = `${duration} сек${res ? ' · ' + res : ''}`;
+        sample = `${duration} сек${res ? ' · ' + res : ''}${sound ? ' · со звуком' : ''}`;
       } else {
         usd = pricing.usd || 0;
         sample = '1 изображение';
@@ -409,15 +424,17 @@ export class GenerationSettingsPanel {
     if (!Number.isFinite(rate) || rate <= 0) throw new Error('Укажите, сколько энергии стоит $1');
 
     if (caps.kind === 'video') {
-      const prices = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
-      if (Object.keys(prices).length === 0) {
+      const found = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
+      if (Object.keys(found.prices).length === 0 && Object.keys(found.audio_prices).length === 0) {
         const perSec = Number((this.root.querySelector('#gs-usd-sec') as HTMLInputElement)?.value);
         if (!Number.isFinite(perSec) || perSec <= 0) {
           throw new Error('Укажите ориентировочную цену 1 секунды в $');
         }
         return { kind: 'per_second', prices: { default: perSec }, energy_per_usd: rate };
       }
-      return { kind: 'per_second', prices, energy_per_usd: rate };
+      const pricing: IGenerationPricing = { kind: 'per_second', prices: found.prices, energy_per_usd: rate };
+      if (Object.keys(found.audio_prices).length > 0) pricing.audio_prices = found.audio_prices;
+      return pricing;
     }
 
     const usd = Number((this.root.querySelector('#gs-usd') as HTMLInputElement)?.value);
