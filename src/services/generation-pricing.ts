@@ -17,6 +17,20 @@ export function markupForTier(agent: any, tier: string | null | undefined): numb
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
 }
 
+/** Цена секунды: учитывает звук. Если звук не задан, а у модели есть цена со звуком — берём бóльшую (оценка с запасом). */
+function perSecondUsd(p: any, params: Record<string, any>): number {
+  const res = String(params.resolution);
+  const base = Number(p.prices?.[res] ?? p.prices?.default);
+  const audioTable = p.audio_prices && Object.keys(p.audio_prices).length > 0 ? p.audio_prices : null;
+  const withSound = audioTable ? Number(audioTable[res] ?? audioTable.default) : NaN;
+
+  const flag = params.generate_audio;
+  if (flag === true || flag === 'true') return Number.isFinite(withSound) ? withSound : base;
+  if (flag === false || flag === 'false') return base;
+  const options = [base, withSound].filter((x) => Number.isFinite(x));
+  return options.length ? Math.max(...options) : NaN;
+}
+
 function estimateUsd(gen: IGenerationConfig, params: Record<string, any>): number | null {
   const p = gen?.pricing;
   const rate = Number(p?.energy_per_usd);
@@ -30,8 +44,7 @@ function estimateUsd(gen: IGenerationConfig, params: Record<string, any>): numbe
 
   const duration = Number(params.duration);
   if (!Number.isFinite(duration) || duration <= 0) return null;
-  const prices = p.prices || {};
-  const perSec = Number(prices[String(params.resolution)] ?? prices.default);
+  const perSec = perSecondUsd(p, params);
   if (!Number.isFinite(perSec) || perSec <= 0) return null;
   return perSec * duration;
 }
