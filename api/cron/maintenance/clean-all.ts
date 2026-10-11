@@ -1,10 +1,12 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
-// Описание: Объединенная очистка (корзина + логи + usage + pending)
-// Версия: 2.0.0 - TypeScript
+// Описание: Объединенная очистка (корзина + логи + usage + pending + медиа)
+// Версия: 2.2.0 - TypeScript, очистка файлов генераций и просроченных замков чатов
 // ============================================
 
 import { getSupabaseConfig, supabaseFetch, supabaseRPC } from '../../_lib/supabase-client';
+import { cleanupMediaFiles } from '../../_lib/media';
+import { purgeExpiredChatLocks } from '../../_lib/chat-lock';
 
 export const config = { runtime: 'edge' };
 
@@ -163,7 +165,34 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 7. ОТВЕТ
+    // 7. ОЧИСТКА МЕДИА ГЕНЕРАЦИЙ
+    //    (неотправленные загрузки > 24 ч + файлы удалённых чатов)
+    //    Идёт после очистки корзины: у файлов удалённых чатов
+    //    chat_id уже обнулён по FK ON DELETE SET NULL
+    // ==========================================
+    console.log('🖼️ Очистка медиа генераций...');
+    let mediaRemoved = 0;
+
+    try {
+      const result = await cleanupMediaFiles(config);
+      mediaRemoved = result.removed;
+      console.log(`✅ Удалено ${mediaRemoved} файлов генераций`);
+    } catch (err) {
+      console.error('Ошибка очистки медиа:', (err as Error).message);
+    }
+
+    // ==========================================
+    // 8. ПРОСРОЧЕННЫЕ ЗАМКИ ЧАТОВ (старше суток)
+    // ==========================================
+    try {
+      await purgeExpiredChatLocks(config);
+      console.log('✅ Просроченные замки чатов очищены');
+    } catch (err) {
+      console.error('Ошибка очистки замков чатов:', (err as Error).message);
+    }
+
+    // ==========================================
+    // 9. ОТВЕТ
     // ==========================================
 
     const report = {
@@ -174,7 +203,8 @@ export default async function handler(request: Request): Promise<Response> {
       usage_records_deleted: usageDeleted,
       pending_deletions_cleaned: pendingDeleted,
       orphaned_devices_cleaned: orphanedDevicesCleaned,
-      notifications_cleaned: notificationsDeleted
+      notifications_cleaned: notificationsDeleted,
+      media_files_removed: mediaRemoved
     };
 
     console.log('✅ Общая очистка завершена:', JSON.stringify(report));
