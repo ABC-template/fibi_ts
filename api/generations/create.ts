@@ -1,7 +1,10 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video / audio)
-// Версия: 2.1.0
+// Версия: 2.2.0
+//   - ответ содержит готовые строки обеих сообщений (клиент кладёт их в хранилище без
+//     повторной загрузки чата), chats.updated_at обновляется (другие устройства увидят результат)
+//   2.1.0:
 //   - замок чата: пока в чате идёт запрос, второй отклоняется (409)
 //   - энергия списывается ПОСЛЕ успешного сохранения результата
 //     (как в текстовом стриме): неудачная генерация ничего не стоит
@@ -368,10 +371,14 @@ export default async function handler(request: Request): Promise<Response> {
 
     openMessageId = null; // финальный статус записан
 
+    const finalRows = await loadFinalMessages([requestMessageId, messageId], body.chat_id, config);
+
     return jsonResponse({
       success: true,
       message_id: messageId,
       request_message_id: requestMessageId,
+      request_message: finalRows.find((r) => r.id === requestMessageId) || null,
+      message: finalRows.find((r) => r.id === messageId) || null,
       status: stored.length > 0 ? 'done' : 'failed',
       cost: finalCost,
       media: stored.length > 0 ? stored : undefined,
@@ -390,6 +397,37 @@ export default async function handler(request: Request): Promise<Response> {
     return errorResponse((err as Error).message || 'Internal error', 500);
   } finally {
     if (lock) await lock.release();
+  }
+}
+
+/**
+ * Итоговые строки сообщений для ответа клиенту + отметка об изменении чата
+ * (chats.updated_at: по ней клиенты других устройств понимают, что чат изменился).
+ * Сбой здесь не должен ломать ответ: результат уже сохранён и оплачен.
+ */
+async function loadFinalMessages(ids: string[], chatId: string, config: any): Promise<any[]> {
+  try {
+    await supabaseFetch(
+      `chats?id=eq.${chatId}`,
+      { method: 'PATCH', body: JSON.stringify({ updated_at: new Date().toISOString() }) },
+      config
+    );
+  } catch (err) {
+    console.error('Failed to touch chat:', (err as Error).message);
+  }
+
+  try {
+    const valid = ids.filter((id) => typeof id === 'string' && UUID_RE.test(id));
+    if (valid.length === 0) return [];
+    const rows = await supabaseFetch(
+      `messages?id=in.(${valid.join(',')})&select=*`,
+      { method: 'GET' },
+      config
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    console.error('Failed to load final messages:', (err as Error).message);
+    return [];
   }
 }
 
