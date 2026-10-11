@@ -1,10 +1,11 @@
 // ============================================
 // types/chat.ts
 // Типы для чатов и сообщений
-// Версия: 2.1.0 — добавлены agent_id и modality
+// Версия: 2.2.0 — добавлен metadata для генераций
 // ============================================
 
 import { UUID, TopicId, MessageType, ISODateString } from './common';
+import type { IGenerationMetadata } from './generation';
 
 /** Сообщение */
 export interface IMessage {
@@ -15,6 +16,7 @@ export interface IMessage {
   created_at: ISODateString;
   updated_at?: ISODateString;
   deleted_at?: ISODateString | null;
+  metadata?: IGenerationMetadata | Record<string, any> | null;
 }
 
 /** Сообщение из БД (с дополнительными полями) */
@@ -76,6 +78,7 @@ export interface ICreateMessageData {
   text: string;
   type: MessageType;
   isFavorite?: boolean;
+  metadata?: IGenerationMetadata | Record<string, any> | null;
 }
 
 /** Корзина */
