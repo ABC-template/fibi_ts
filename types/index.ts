@@ -14,6 +14,8 @@ export * from './chat';
 
 export * from './agents';
 
+export * from './generation';
+
 // API
 export type {
   IStreamRequest,
@@ -26,7 +28,7 @@ export type {
   IExportRequest,
   IExportResponse,
   IUsageLimit,
-  IAuthCheckResponse           // ✅ ДОБАВЛЕНО
+  IAuthCheckResponse
 } from './api';
 
 // Organizer
