@@ -1,7 +1,8 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 2.6.0 — добавлен пункт "ИИ-агенты"
+// Версия: 2.6.1 — нельзя удалить чат, пока в нём идёт генерация
+//          2.6.0 — добавлен пункт "ИИ-агенты"
 // ============================================
 
 import './drawer.css';
@@ -9,6 +10,7 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { questsStore } from '@/store/QuestsStore';
 import { eventBus } from '@/core/event-bus';
+import { CHAT_BUSY_DELETE_HINT } from '@/store/generation-live';
 import { modalManager } from '@/core/modal-manager';
 import { navigationState } from '@/core/navigation-state';
 import { uiRenderer } from '@/modules/ui/renderer';
@@ -454,6 +456,10 @@ export function renameChatFromDrawer(chatId: string, currentTitle: string): void
 }
 
 export function deleteChatFromDrawer(chatId: string): void {
+    if (chatStore.isChatBusy(chatId)) {
+        uiRenderer?.showToast('⏳ ' + CHAT_BUSY_DELETE_HINT, 'warning', 2500);
+        return;
+    }
     const confirmMsg = window.getLangString ? window.getLangString('confirm_del_chat') : 'Удалить чат в корзину?';
 
     const action = (): void => {
@@ -466,7 +472,13 @@ export function deleteChatFromDrawer(chatId: string): void {
 
         chatStore.deleteChat(chatId);
         if (userStore.canSync() && window.chatService) {
-            window.chatService.deleteChat(chatId).catch(err => {
+            window.chatService.deleteChat(chatId).then(deleted => {
+                if (!deleted) {
+                    // Сервер отказал (например, в чате идёт запрос на другом устройстве) — чат возвращён
+                    renderChatsInDrawer();
+                    uiRenderer?.showToast('⚠️ Не удалось удалить чат', 'warning', 2500);
+                }
+            }).catch(err => {
                 console.error('❌ Ошибка синхронизации удаления:', err);
             });
         }
