@@ -223,6 +223,17 @@ export default async function handler(request: Request): Promise<Response> {
         updates.inject_balance = Boolean(body.inject_balance);
       }
 
+      // --- generation_config ---
+      if (body.generation_config !== undefined) {
+        if (body.generation_config === null) {
+          updates.generation_config = null;
+        } else if (typeof body.generation_config === 'object' && !Array.isArray(body.generation_config)) {
+          updates.generation_config = body.generation_config;
+        } else {
+          return errorResponse('generation_config must be an object or null', 400);
+        }
+      }
+
       const updated = await supabaseFetch(
         `ai_agents?id=eq.${agentId}`,
         {
