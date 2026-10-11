@@ -1,12 +1,14 @@
 // ============================================
 // src/modules/ui/chat-ui.ts
 // Управление чатами (компактная версия)
-// Версия: 4.1.3 - замена @types → @app-types
+// Версия: 4.2.0 - нельзя удалить чат, пока в нём идёт генерация
+//          4.1.3 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
+import { CHAT_BUSY_DELETE_HINT } from '@/store/generation-live';
 import type { IChat, TopicId, UUID } from '@app-types';
 
 export class ChatUI {
@@ -17,7 +19,7 @@ export class ChatUI {
 
     constructor() {
         this._subscribeToEvents();
-        console.log('✅ ChatUI v4.1.3 загружен');
+        console.log('✅ ChatUI v4.2.0 загружен');
     }
 
     private _subscribeToEvents(): void {
@@ -136,6 +138,10 @@ export const chatUI = new ChatUI();
     }
     const found = chatStore.findChatById(chatId);
     if (!found || found.chat.deleted_at) return;
+    if (chatStore.isChatBusy(chatId)) {
+        if ((window as any).uiRenderer) (window as any).uiRenderer.showToast('⏳ ' + CHAT_BUSY_DELETE_HINT, 'warning', 2500);
+        return;
+    }
     const confirmMsg = (window as any).getLangString ? (window as any).getLangString('confirm_del_chat') : 'Удалить чат в корзину?';
     const action = async () => {
         const chatMod = (window as any).chatModule;
@@ -149,7 +155,13 @@ export const chatUI = new ChatUI();
             return;
         }
         if (userStore.canSync() && (window as any).chatService) {
-            await (window as any).chatService.deleteChat(chatId);
+            const deleted = await (window as any).chatService.deleteChat(chatId);
+            if (!deleted) {
+                // Сервер отказал (например, в чате идёт запрос на другом устройстве) — чат возвращён
+                (window as any).chatUI?._updateLists();
+                if ((window as any).uiRenderer) (window as any).uiRenderer.showToast('⚠️ Не удалось удалить чат', 'warning', 2500);
+                return;
+            }
         }
         (window as any).chatUI?._updateLists();
         if ((window as any).updateTrashCount) setTimeout((window as any).updateTrashCount, 300);
@@ -175,4 +187,4 @@ export const chatUI = new ChatUI();
     return chatStore.getActiveChat();
 };
 
-console.log('✅ ChatUI v4.1.3 загружен (удалена cleanupAllEmptyChats)');
+console.log('✅ ChatUI v4.2.0 загружен (удалена cleanupAllEmptyChats)');
