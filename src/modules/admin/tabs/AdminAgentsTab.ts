@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.1.0 — context_length выбранной модели (уже приходит от
+// Версия: 3.2.0 — настройки генерации строятся по возможностям модели (GenerationSettingsPanel):
+//                  режимы, параметры формы, цена; JSON остаётся запасным вариантом
+//          3.1.0 — context_length выбранной модели (уже приходит от
 //                  OpenRouter в /admin/agents/models) теперь сохраняется
 //                  вместе с агентом — нужен для динамической проверки
 //                  размера прикреплённых файлов в api/chat/stream.ts
@@ -10,6 +12,8 @@
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
 import type { IAiAgent, IAiAgentInput, AgentModality, ProTier } from '../../../../types/agents';
+import type { IModelCapabilities } from '../../../../types/generation';
+import { GenerationSettingsPanel } from './generation-settings';
 
 interface OpenRouterModelOption {
   id: string;
@@ -19,6 +23,8 @@ interface OpenRouterModelOption {
     prompt: string;
     completion: string;
   };
+  /** Только image/video: возможности модели, по ним строится панель настроек */
+  capabilities?: IModelCapabilities;
 }
 
 export class AdminAgentsTab implements IAdminTab {
@@ -33,6 +39,8 @@ export class AdminAgentsTab implements IAdminTab {
   private filterActive = 'all';
   private currentEditingId: string | null = null;
   private availableModels: OpenRouterModelOption[] = [];
+  private editingAgent: IAiAgent | null = null;
+  private genPanel: GenerationSettingsPanel | null = null;
 
   async init(): Promise<void> {
     await this.loadData();
@@ -341,13 +349,15 @@ export class AdminAgentsTab implements IAdminTab {
           </label>
         </div>
 
-        <div>
-          <div style="font-weight:600;font-size:13px;color:#d4af37;margin-bottom:8px">Generation Config (JSON)</div>
-          <textarea id="agent-generation-config" rows="8" placeholder='{"modes":[...],"params":[...]}'
-            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);resize:vertical;font-family:monospace;font-size:12px">${this.esc(agent?.generation_config ? JSON.stringify(agent.generation_config, null, 2) : '')}</textarea>
-          <div style="font-size:11px;color:var(--app-text-tertiary);margin-top:4px">
-            Только для image/video/audio. Оставь пустым для text-агентов.
-          </div>
+        <div id="agent-gen-section" style="display:${modality === 'text' ? 'none' : 'block'}">
+          <div style="font-weight:600;font-size:14px;color:#d4af37">Настройки генерации</div>
+          <div id="agent-gen-panel"></div>
+          <div id="agent-gen-note" style="font-size:12px;color:#e67e22;margin-top:8px;display:none"></div>
+          <details id="agent-gen-json-wrap" style="margin-top:12px">
+            <summary style="font-size:12px;color:var(--app-text-tertiary);cursor:pointer">JSON (запасной вариант, если у модели нет данных о возможностях)</summary>
+            <textarea id="agent-generation-config" rows="8" placeholder='{"modes":[...],"params":[...]}'
+              style="width:100%;margin-top:6px;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);resize:vertical;font-family:monospace;font-size:12px">${this.esc(agent?.generation_config ? JSON.stringify(agent.generation_config, null, 2) : '')}</textarea>
+          </details>
         </div>
 
         <div style="display:flex;gap:20px;align-items:center">
@@ -367,10 +377,17 @@ export class AdminAgentsTab implements IAdminTab {
     document.getElementById('agent-modal-cancel')?.addEventListener('click', () => this.closeModal());
     document.getElementById('agent-modal-save')?.addEventListener('click', () => this.saveAgent());
 
+    this.editingAgent = agent || null;
+    this.genPanel?.dispose();
+    const panelRoot = document.getElementById('agent-gen-panel');
+    this.genPanel = panelRoot ? new GenerationSettingsPanel(panelRoot) : null;
+
     const modalitySelect = document.getElementById('agent-modality') as HTMLSelectElement;
     modalitySelect?.addEventListener('change', async () => {
       await this.loadModels(modalitySelect.value as AgentModality, agent?.model_id);
     });
+
+    document.getElementById('agent-model')?.addEventListener('change', () => this.refreshGenPanel());
 
     await this.loadTiersCheckboxes(agent);
 
@@ -415,14 +432,55 @@ export class AdminAgentsTab implements IAdminTab {
     try {
       const res = await apiClient.get(`/admin/agents/models?modality=${modality}`);
       this.availableModels = res.models || [];
-      select.innerHTML = this.availableModels
-        .map(m => `<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${m.name} (${m.id})</option>`)
-        .join('') || '<option value="">Нет моделей</option>';
+
+      // Сохранённая модель могла выпасть из актуального списка — оставляем её выбираемой
+      const keepCurrent =
+        selectedId &&
+        this.editingAgent?.modality === modality &&
+        !this.availableModels.some(m => m.id === selectedId);
+      const currentOption = keepCurrent
+        ? `<option value="${this.esc(selectedId as string)}" selected>${this.esc(selectedId as string)} (нет в текущем списке)</option>`
+        : '';
+
+      select.innerHTML = currentOption + (this.availableModels
+        .map(m => `<option value="${this.esc(m.id)}" ${m.id === selectedId ? 'selected' : ''}>${this.esc(m.name)} (${this.esc(m.id)})</option>`)
+        .join('') || (currentOption ? '' : '<option value="">Нет моделей</option>'));
     } catch (e) {
       select.innerHTML = '<option value="">Ошибка загрузки</option>';
     } finally {
       select.disabled = false;
     }
+
+    this.refreshGenPanel();
+  }
+
+  /** Перестроить панель настроек генерации под выбранную модель */
+  private refreshGenPanel(): void {
+    const modality = (document.getElementById('agent-modality') as HTMLSelectElement)?.value as AgentModality;
+    const section = document.getElementById('agent-gen-section');
+    const note = document.getElementById('agent-gen-note');
+    const jsonWrap = document.getElementById('agent-gen-json-wrap') as HTMLDetailsElement | null;
+    if (section) section.style.display = modality === 'text' ? 'none' : 'block';
+    if (!this.genPanel || modality === 'text') return;
+
+    const modelId = (document.getElementById('agent-model') as HTMLSelectElement)?.value;
+    const caps = this.availableModels.find(m => m.id === modelId)?.capabilities || null;
+    const usable = !!caps && (modality === 'image' || modality === 'video') && caps.kind === modality;
+
+    // Сохранённая конфигурация подставляется, только пока выбрана та же модель
+    const saved = this.editingAgent && this.editingAgent.model_id === modelId
+      ? this.editingAgent.generation_config
+      : null;
+
+    this.genPanel.setModel(usable ? caps : null, saved);
+
+    if (note) {
+      note.style.display = usable ? 'none' : 'block';
+      note.textContent = modality === 'audio'
+        ? 'Для аудио настройки пока задаются JSON-ом ниже.'
+        : 'У выбранной модели нет данных о возможностях (её нет в текущем списке OpenRouter). Выберите другую модель или задайте настройки JSON-ом ниже.';
+    }
+    if (jsonWrap) jsonWrap.open = !usable;
   }
 
   private async saveAgent(): Promise<void> {
@@ -499,6 +557,9 @@ export class AdminAgentsTab implements IAdminTab {
       modal.style.display = 'none';
     }
     this.currentEditingId = null;
+    this.genPanel?.dispose();
+    this.genPanel = null;
+    this.editingAgent = null;
   }
 
   private esc(str: string): string {
@@ -537,6 +598,18 @@ export class AdminAgentsTab implements IAdminTab {
   }
 
   private collectGenerationConfig(): any | null {
+    const modality = (document.getElementById('agent-modality') as HTMLSelectElement)?.value;
+    if (modality === 'text') return null;
+
+    if (this.genPanel?.active) {
+      try {
+        return this.genPanel.collect();
+      } catch (e: any) {
+        alert(e?.message || 'Проверьте настройки генерации');
+        throw e;
+      }
+    }
+
     const raw = (document.getElementById('agent-generation-config') as HTMLTextAreaElement)?.value?.trim();
     if (!raw) return null;
     try {
