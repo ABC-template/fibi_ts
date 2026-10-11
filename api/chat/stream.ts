@@ -1,7 +1,10 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.1.0 — замок чата: пока в чате идёт запрос, второй отклоняется (409);
+// Версия: 3.2.0 — списание текста в долларах: usage.cost OpenRouter × ENERGY_PER_USD
+//                  × коэффициент агента (единая шкала с фото/видео); предварительная
+//                  проверка и max_tokens считаются по цене модели за токен
+//          3.1.0 — замок чата: пока в чате идёт запрос, второй отклоняется (409);
 //                  замок снимается после списания энергии, при обрыве клиента
 //                  и при любой ошибке. chatId обязателен.
 //          3.0.0 — daily_limit messages + spend RPC v2
@@ -38,6 +41,7 @@ import {
   isValidChatId,
 } from '../_lib/chat-lock';
 import type { IChatLock } from '../_lib/chat-lock';
+import { ENERGY_PER_USD, getModelPrices, textEnergyForUsd } from '../_lib/text-pricing';
 
 export const config = { runtime: 'edge' };
 
@@ -78,6 +82,7 @@ interface IAgent {
 // к модели (через systemPrompt ниже), в историю чата не персистится.
 const MAX_ATTACHED_FILE_CHARS = 3_000_000; // ~3 МБ текста — жёсткий потолок
 const RESPONSE_TOKEN_RESERVE = 4000; // запас под ответ модели
+const MIN_EXPECTED_COMPLETION_TOKENS = 500; // ответ, который заведомо должен поместиться в баланс
 
 async function getAgentById(
   agentId: string,
@@ -434,14 +439,15 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
-    // Оценка списания заранее
+    // Оценка списания заранее: входные токены + небольшой ответ по цене модели.
+    // Если цену узнать не удалось — проверяем только min_charge.
     const minCharge = Math.max(1, Number(agent.min_charge) || 1);
     const safeMarkup = getMarkupForTier(agent, userProTier);
-    const estimatedCharge = Math.max(
-      Math.ceil(estimatedTokens * safeMarkup),
-      minCharge
-    );
-    console.log(`💰 [stream] Оценка charge: ~${estimatedTokens} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${estimatedCharge}`);
+    const modelPrices = await getModelPrices(model, keysPool[0]);
+    const promptUsd = modelPrices ? estimatedTokens * modelPrices.prompt : 0;
+    const estimatedUsd = modelPrices ? promptUsd + MIN_EXPECTED_COMPLETION_TOKENS * modelPrices.completion : 0;
+    const estimatedCharge = textEnergyForUsd(estimatedUsd, safeMarkup, minCharge);
+    console.log(`💰 [stream] Оценка charge: $${estimatedUsd.toFixed(6)} × ${ENERGY_PER_USD} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${estimatedCharge}`);
 
     const tokenCheck = await checkTokenAvailability(userId, estimatedCharge, config);
 
@@ -485,9 +491,16 @@ export default async function handler(request: Request): Promise<Response> {
     chatLock = acquired.lock;
 
     // Dynamic max_tokens (после успешной проверки)
-    function calcMaxTokens(remainingEnergy: number, markup: number, dailyLeft: number, contextLength: number | null, tier: string | null): number {
-      const byEnergy = Math.floor((remainingEnergy / Math.max(markup, 0.1)) * 0.7);
-      const byDaily = dailyLeft > 0 ? Math.floor(dailyLeft / Math.max(markup, 0.1)) : 999999;
+    // Сколько выходных токенов можно оплатить энергией energy при цене модели
+    function completionTokensFor(energy: number): number {
+      if (!modelPrices || modelPrices.completion <= 0) return 999999;
+      const usd = energy / (ENERGY_PER_USD * Math.max(safeMarkup, 0.1)) - promptUsd;
+      return Math.max(0, Math.floor(usd / modelPrices.completion));
+    }
+
+    function calcMaxTokens(remainingEnergy: number, dailyLeft: number, contextLength: number | null, tier: string | null): number {
+      const byEnergy = completionTokensFor(remainingEnergy * 0.7);
+      const byDaily = dailyLeft > 0 ? completionTokensFor(dailyLeft) : 999999;
       const byContext = contextLength ? Math.floor(contextLength * 0.4) : 4096;
       const hardCapByTier: Record<string, number> = {
         trial: 1500,
@@ -506,7 +519,6 @@ export default async function handler(request: Request): Promise<Response> {
 
     const maxTokens = calcMaxTokens(
       tokenCheck.total || 0,
-      safeMarkup,
       dailyLeft,
       agent.context_length,
       userProTier
@@ -538,6 +550,8 @@ export default async function handler(request: Request): Promise<Response> {
             messages: messages,
             temperature: temperature,
             stream: true,
+            stream_options: { include_usage: true },
+            usage: { include: true },
             max_tokens: maxTokens
           })
         });
@@ -558,6 +572,7 @@ export default async function handler(request: Request): Promise<Response> {
         let totalPromptTokens = 0;
         let totalCompletionTokens = 0;
         let totalTokens = 0;
+        let totalCostUsd: number | null = null;
 
         const readable = new ReadableStream({
           async start(controller) {
@@ -592,6 +607,8 @@ export default async function handler(request: Request): Promise<Response> {
                         totalPromptTokens = data.usage.prompt_tokens || 0;
                         totalCompletionTokens = data.usage.completion_tokens || 0;
                         totalTokens = data.usage.total_tokens || 0;
+                        const cost = Number(data.usage.cost);
+                        if (Number.isFinite(cost) && cost >= 0) totalCostUsd = cost;
                         finalUsage = data.usage;
                       }
                     } catch (e) {
@@ -607,16 +624,26 @@ export default async function handler(request: Request): Promise<Response> {
                 console.log(`📊 [stream] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
                 console.log(`📊 [stream] OpenRouter usage:`, finalUsage);
 
-                const actualTokens = totalTokens > 0 ? totalTokens : estimatedTokens;
-                const charge = Math.max(
-                  Math.ceil(actualTokens * safeMarkup),
-                  minCharge
-                );
+                // Факт — usage.cost. Нет его (BYOK, сбой usage) — считаем по токенам и цене модели,
+                // иначе — оценка до запроса.
+                let usd: number;
+                let usdSource: string;
+                if (totalCostUsd !== null && totalCostUsd > 0) {
+                  usd = totalCostUsd;
+                  usdSource = 'usage.cost';
+                } else if (modelPrices && totalTokens > 0) {
+                  usd = totalPromptTokens * modelPrices.prompt + totalCompletionTokens * modelPrices.completion;
+                  usdSource = 'tokens×price';
+                } else {
+                  usd = estimatedUsd;
+                  usdSource = 'estimate';
+                }
+                const charge = textEnergyForUsd(usd, safeMarkup, minCharge);
 
-                console.log(`💰 [stream] Расчёт charge: ${actualTokens} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${charge}`);
+                console.log(`💰 [stream] Расчёт charge (${usdSource}): $${usd.toFixed(6)} × ${ENERGY_PER_USD} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${charge}`);
 
                 if (!Number.isFinite(charge) || charge <= 0) {
-                  console.warn('⚠️ [stream] charge невалиден, skip spend', { charge, actualTokens });
+                  console.warn('⚠️ [stream] charge невалиден, skip spend', { charge, usd });
                 } else {
                   const spendResult = await spendTokens(userId, charge, config);
 
