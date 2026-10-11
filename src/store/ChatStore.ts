@@ -1,7 +1,8 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 6.1.0 — добавлены agent_id и modality
+// Версия: 6.2.0 — metadata сообщений (генерации), upsertMessage
+//          6.1.0 — добавлены agent_id и modality
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -540,7 +541,8 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       type: msgType as MessageType,
       isFavorite: options.isFavorite || false,
       deleted_at: null,
-      created_at: options.created_at || new Date().toISOString()
+      created_at: options.created_at || new Date().toISOString(),
+      metadata: options.metadata ?? null
     };
 
     chat.messages.push(newMsg);
@@ -564,6 +566,72 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       topic: chat.topic
     });
     return newMsg;
+  }
+
+  /**
+   * Добавляет сообщение или обновляет существующее (по id): текст, metadata,
+   * избранное, удаление. Используется там, где сообщение создал сервер
+   * (генерации): ответ запроса и Realtime могут прийти в любом порядке.
+   * Сообщает UI событиями chat:message_added / chat:message_updated.
+   */
+  upsertMessage(
+    chatId: UUID,
+    data: {
+      id: UUID;
+      text: string;
+      type: MessageType;
+      isFavorite?: boolean;
+      created_at?: ISODateString;
+      deleted_at?: ISODateString | null;
+      metadata?: IMessage['metadata'];
+    }
+  ): IMessage | null {
+    const found = this.findChatById(chatId);
+    if (!found || !data?.id) return null;
+
+    const { chat } = found;
+    const existing = chat.messages.find((m: IMessage) => m.id === data.id);
+
+    if (existing) {
+      existing.text = data.text;
+      existing.metadata = data.metadata ?? existing.metadata ?? null;
+      if (data.isFavorite !== undefined) existing.isFavorite = data.isFavorite;
+      if (data.deleted_at !== undefined) existing.deleted_at = data.deleted_at;
+      this.save();
+      this._emitChange('chat:message_updated', {
+        chatId,
+        messageId: existing.id,
+        text: existing.text,
+        message: existing
+      });
+      return existing;
+    }
+
+    const msg: IMessage = {
+      id: data.id,
+      text: data.text,
+      type: data.type,
+      isFavorite: data.isFavorite || false,
+      deleted_at: data.deleted_at || null,
+      created_at: data.created_at || new Date().toISOString(),
+      metadata: data.metadata ?? null
+    };
+
+    chat.messages.push(msg);
+    chat.messages.sort(
+      (a: IMessage, b: IMessage) =>
+        new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+    );
+    chat.updated_at = new Date().toISOString();
+    this.save();
+
+    this._emitChange('chat:message_added', {
+      chatId,
+      message: msg,
+      chatTitle: chat.title,
+      topic: chat.topic
+    });
+    return msg;
   }
 
   getTrash(): ITrash {
