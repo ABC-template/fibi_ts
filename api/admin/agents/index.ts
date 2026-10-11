@@ -99,6 +99,7 @@ export default async function handler(request: Request): Promise<Response> {
         markup_by_tier: body.markup_by_tier && typeof body.markup_by_tier === 'object' ? body.markup_by_tier : null,
         welcome_message: body.welcome_message && typeof body.welcome_message === 'object' ? body.welcome_message : null,
         inject_balance: body.inject_balance === true,
+        generation_config: body.generation_config && typeof body.generation_config === 'object' ? body.generation_config : null,
         is_active: body.is_active !== false,
         is_system: makeSystem,
         sort_order: Number(body.sort_order) || 100,
