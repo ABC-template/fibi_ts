@@ -1,17 +1,29 @@
 // ============================================
 // src/modules/chat/ChatPatcher.ts
 // Описание: Точечные обновления DOM для чата
-// Версия: 1.1.1 - замена @types → @app-types
+// Версия: 1.2.0 - decorator для сообщений с metadata (генерации), updateMessage
+//          1.1.1 - замена @types → @app-types
 // ============================================
 
 import { uiRenderer } from '@/modules/ui/renderer';
 import type { IMessage, UUID } from '@app-types';
 
+export type MessageDecorator = (message: IMessage, element: HTMLElement) => void;
+
 export class ChatPatcher {
   private container: HTMLElement;
+  private decorator: MessageDecorator | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
+  }
+
+  /**
+   * Хук оформления сообщений: вызывается после отрисовки каждого сообщения
+   * и при его обновлении (карточки генераций и т.п.)
+   */
+  setDecorator(decorator: MessageDecorator | null): void {
+    this.decorator = decorator;
   }
 
   /**
@@ -108,6 +120,7 @@ export class ChatPatcher {
 
     if (element) {
       this.container.appendChild(element);
+      this.decorator?.(message, element);
       console.log(`✅ [ChatPatcher] Сообщение ${message.id} добавлено в DOM`);
     } else {
       console.warn(`⚠️ [ChatPatcher] Не удалось отрендерить сообщение ${message.id}`);
@@ -125,6 +138,9 @@ export class ChatPatcher {
       console.warn(`⚠️ [ChatPatcher] Элемент сообщения ${messageId} не найден`);
       return;
     }
+
+    // Оформленные сообщения (карточки генераций) текстом не перезаписываем
+    if (element.dataset.genSig !== undefined) return;
 
     // Находим контейнер с содержимым
     const content = element.querySelector('.msg-content') || element;
@@ -165,6 +181,25 @@ export class ChatPatcher {
   }
 
   /**
+   * Обновить сообщение целиком: сообщения с metadata перерисовываются через
+   * decorator, обычные — обновлением текста. Если блока нет, сообщение добавляется.
+   */
+  updateMessage(message: IMessage): void {
+    const element = document.getElementById(`msg-block-${message.id}`);
+    if (!element) {
+      this.addMessage(message);
+      return;
+    }
+
+    if ((message.metadata as any)?.kind && this.decorator) {
+      this.decorator(message, element);
+      return;
+    }
+
+    this.updateMessageText(message.id, message.text);
+  }
+
+  /**
    * Полная перерисовка (только для загрузки чата)
    * @param messages - Массив сообщений
    */
@@ -188,6 +223,7 @@ export class ChatPatcher {
       );
       if (element) {
         this.container.appendChild(element);
+        this.decorator?.(msg, element);
       }
     }
 
