@@ -1,74 +1,104 @@
 // ============================================
 // api/admin/agents/models.ts
-// Описание: Получение списка моделей OpenRouter с фильтрацией по modality
-// Версия: 1.1.0 — добавлен edge runtime
+// Список моделей OpenRouter для формы агента (по модальности)
+// Версия: 2.0.0
+//   - изображения: GET /images/models, видео: GET /videos/models — отдельные API
+//     OpenRouter с описанием возможностей модели (разрешения, соотношения сторон,
+//     длительности, кадры, референсы, цены). Они приходят в поле capabilities и
+//     по ним админка строит настройки формы генерации
+//   - текст и аудио: GET /models?output_modalities=... (без подбора по подстрокам в id:
+//     раньше «minimax»/«hunyuan» попадали в видео, хотя это текстовые модели)
 // ============================================
 
 import { authenticate, isAdmin } from '../../_lib/auth';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import type { IModelCapabilities } from '../../../types/generation';
 
 export const config = { runtime: 'edge' };
 
-export interface OpenRouterModel {
+const OPENROUTER = 'https://openrouter.ai/api/v1';
+
+interface IModelOption {
   id: string;
   name: string;
   context_length?: number;
-  pricing?: {
-    prompt: string;
-    completion: string;
-    image?: string;
-    request?: string;
-  };
-  architecture?: {
-    modality?: string;
-    input_modalities?: string[];
-    output_modalities?: string[];
-  };
+  pricing?: Record<string, any>;
+  capabilities?: IModelCapabilities;
 }
 
-const MODALITY_FILTERS: Record<string, (model: OpenRouterModel) => boolean> = {
-  text: (m) => {
-    const outputs = m.architecture?.output_modalities || [];
-    return outputs.length === 0 || outputs.includes('text');
-  },
-  image: (m) => {
-    const outputs = m.architecture?.output_modalities || [];
-    const id = m.id.toLowerCase();
-    return (
-      outputs.includes('image') ||
-      id.includes('dall-e') ||
-      id.includes('flux') ||
-      id.includes('stable-diffusion') ||
-      id.includes('ideogram') ||
-      id.includes('recraft') ||
-      id.includes('black-forest')
-    );
-  },
-  video: (m) => {
-    const outputs = m.architecture?.output_modalities || [];
-    const id = m.id.toLowerCase();
-    return (
-      outputs.includes('video') ||
-      id.includes('video') ||
-      id.includes('runway') ||
-      id.includes('luma') ||
-      id.includes('kling') ||
-      id.includes('minimax') ||
-      id.includes('hunyuan')
-    );
-  },
-  audio: (m) => {
-    const outputs = m.architecture?.output_modalities || [];
-    const id = m.id.toLowerCase();
-    return (
-      outputs.includes('audio') ||
-      id.includes('tts') ||
-      id.includes('whisper') ||
-      id.includes('eleven') ||
-      id.includes('audio')
-    );
-  },
-};
+function arr<T = any>(v: any): T[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function enumValues(param: any): string[] {
+  return arr(param?.values).map((x) => String(x));
+}
+
+function num(v: any, fallback = 0): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Модель из /images/models → название и возможности */
+function imageModel(m: any): IModelOption {
+  const p = m?.supported_parameters || {};
+  const caps: IModelCapabilities = {
+    kind: 'image',
+    resolutions: enumValues(p.resolution),
+    aspect_ratios: enumValues(p.aspect_ratio),
+    durations: [],
+    qualities: enumValues(p.quality),
+    backgrounds: enumValues(p.background),
+    max_n: Math.max(1, num(p.n?.max, 1)),
+    max_input_references: Math.max(0, num(p.input_references?.max, 0)),
+    frame_images: [],
+    generate_audio: false,
+    seed: !!p.seed,
+    pricing_skus: {},
+  };
+  return { id: String(m.id), name: String(m.name || m.id), capabilities: caps };
+}
+
+/** Модель из /videos/models → название и возможности */
+function videoModel(m: any): IModelOption {
+  const skus: Record<string, number> = {};
+  for (const [key, value] of Object.entries(m?.pricing_skus || {})) {
+    const n = Number(value);
+    if (Number.isFinite(n)) skus[key] = n;
+  }
+
+  const caps: IModelCapabilities = {
+    kind: 'video',
+    resolutions: arr(m?.supported_resolutions).map((x) => String(x)),
+    aspect_ratios: arr(m?.supported_aspect_ratios).map((x) => String(x)),
+    durations: arr(m?.supported_durations).map((x) => Number(x)).filter((x) => Number.isFinite(x)),
+    qualities: [],
+    backgrounds: [],
+    max_n: 1,
+    max_input_references: 0,
+    frame_images: arr(m?.supported_frame_images).filter(
+      (x) => x === 'first_frame' || x === 'last_frame'
+    ),
+    generate_audio: m?.generate_audio === true,
+    seed: m?.seed === true,
+    pricing_skus: skus,
+  };
+  return { id: String(m.id), name: String(m.name || m.id), capabilities: caps };
+}
+
+async function fetchList(path: string, apiKey: string): Promise<any[]> {
+  const res = await fetch(`${OPENROUTER}${path}`, {
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`OpenRouter ${path} error:`, res.status, text.substring(0, 300));
+    throw new Error(`OpenRouter ${path}: ${res.status}`);
+  }
+  const body = await res.json();
+  // Ответы приходят как { data: [...] }; на случай другой обёртки
+  return arr(body?.data ?? body?.models ?? body);
+}
 
 export default async function handler(request: Request): Promise<Response> {
   const cors = handleCORS(request);
@@ -96,47 +126,34 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Invalid modality', 400);
     }
 
-    // Берём первый доступный ключ
-    const apiKey =
-      process.env.ROUTER_KEY0 ||
-      process.env.ROUTER_KEY1 ||
-      process.env.ROUTER_KEY2;
-
+    const apiKey = process.env.ROUTER_KEY0 || process.env.ROUTER_KEY1 || process.env.ROUTER_KEY2;
     if (!apiKey) {
       return errorResponse('OpenRouter API key not configured', 500);
     }
 
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    let models: IModelOption[];
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error('OpenRouter models error:', text);
-      return errorResponse('Failed to fetch models from OpenRouter', 502);
+    if (modality === 'image') {
+      models = (await fetchList('/images/models', apiKey)).map(imageModel);
+    } else if (modality === 'video') {
+      models = (await fetchList('/videos/models', apiKey)).map(videoModel);
+    } else {
+      const raw = await fetchList(`/models?output_modalities=${modality}`, apiKey);
+      models = raw.map((m) => ({
+        id: String(m.id),
+        name: String(m.name || m.id),
+        context_length: m.context_length,
+        pricing: m.pricing,
+      }));
     }
 
-    const data = await response.json();
-    const allModels: OpenRouterModel[] = data.data || [];
-
-    const filterFn = MODALITY_FILTERS[modality] || MODALITY_FILTERS.text;
-    const filtered = allModels
-      .filter(filterFn)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    models.sort((a, b) => a.name.localeCompare(b.name));
 
     return jsonResponse({
       success: true,
       modality,
-      count: filtered.length,
-      models: filtered.map((m) => ({
-        id: m.id,
-        name: m.name,
-        context_length: m.context_length,
-        pricing: m.pricing,
-      })),
+      count: models.length,
+      models,
     });
   } catch (err) {
     console.error('admin/agents/models error:', err);
