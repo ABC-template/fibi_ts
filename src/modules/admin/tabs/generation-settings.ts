@@ -6,7 +6,8 @@
 // какие значения параметров доступны пользователю, значения по умолчанию,
 // негативный промпт и цену. Результат — generation_config, по которому
 // форма генерации в чате строится сама (src/modules/chat/generation.ts).
-// Версия: 1.0.0
+// Версия: 1.1.0 — у видео-модели без прайса за секунду цену 1 секунды задаёт администратор
+//   1.0.0
 // ============================================
 
 import type {
@@ -296,7 +297,17 @@ export class GenerationSettingsPanel {
       const lines = Object.entries(prices)
         .map(([res, usd]) => `${esc(res)}: $${usd}/сек`)
         .join(' · ');
-      priceHtml = `<div style="${HINT};margin-bottom:6px">Цена модели: ${lines || 'не указана провайдером'}</div>`;
+      if (lines) {
+        priceHtml = `<div style="${HINT};margin-bottom:6px">Цена модели: ${lines}</div>`;
+      } else {
+        const saved = pricing?.kind === 'per_second' ? pricing.prices?.default : '';
+        priceHtml = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <span style="font-size:12px">Ориентировочная цена 1 секунды, $</span>
+          <input type="number" id="gs-usd-sec" min="0" step="0.001" value="${esc(saved ?? '')}" style="width:90px;${INPUT}">
+        </div>
+        <div style="${HINT};margin-bottom:6px">Провайдер не указал цену за секунду, поэтому оценку задаёте вы.
+          Фактическое списание считается по реальной стоимости из ответа OpenRouter.</div>`;
+      }
     } else {
       priceHtml = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
         <span style="font-size:12px">Ориентировочная цена 1 изображения, $</span>
@@ -400,7 +411,11 @@ export class GenerationSettingsPanel {
     if (caps.kind === 'video') {
       const prices = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
       if (Object.keys(prices).length === 0) {
-        throw new Error('У модели нет прайс-листа за секунду — цену рассчитать нельзя');
+        const perSec = Number((this.root.querySelector('#gs-usd-sec') as HTMLInputElement)?.value);
+        if (!Number.isFinite(perSec) || perSec <= 0) {
+          throw new Error('Укажите ориентировочную цену 1 секунды в $');
+        }
+        return { kind: 'per_second', prices: { default: perSec }, energy_per_usd: rate };
       }
       return { kind: 'per_second', prices, energy_per_usd: rate };
     }
