@@ -1,7 +1,7 @@
 // ============================================
 // api/subscription/purchase.ts
 // Покупка подписки через Telegram Stars
-// Версия: 1.0.0
+// Версия: 1.1.0 — бесплатные тарифы (price_stars = 0) купить нельзя
 // ============================================
 
 import {
@@ -43,7 +43,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     // Получаем тариф
     const tier = await supabaseFetch(
-      `subscription_tiers?tier_key=eq.${tier_key}&is_active=eq.true`,
+      `subscription_tiers?tier_key=eq.${tier_key}&is_active=eq.true&price_stars=gt.0`,
       { method: 'GET' },
       config
     );
