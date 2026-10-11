@@ -1,7 +1,10 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.0.0 — daily_limit messages + spend RPC v2
+// Версия: 3.1.0 — замок чата: пока в чате идёт запрос, второй отклоняется (409);
+//                  замок снимается после списания энергии, при обрыве клиента
+//                  и при любой ошибке. chatId обязателен.
+//          3.0.0 — daily_limit messages + spend RPC v2
 //                  жёсткий потолок + динамическая проверка по context_length
 //                  агента, содержимое уходит только в этот запрос
 //                  (дописывается в systemPrompt), никуда не персистится
@@ -29,6 +32,12 @@ import {
 import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
 import { checkAgentAccess } from '../_lib/agent-access';
 import { getMarkupForTier } from '../_lib/markup-helper';
+import {
+  acquireChatLock,
+  chatBusyResponse,
+  isValidChatId,
+} from '../_lib/chat-lock';
+import type { IChatLock } from '../_lib/chat-lock';
 
 export const config = { runtime: 'edge' };
 
@@ -41,6 +50,8 @@ interface IStreamRequestBody {
   attachedImage?: string | null;
   attachedFile?: { name: string; content: string } | null;
   agentId?: string | null;
+  /** Чат, в котором идёт запрос (ключ замка) */
+  chatId?: string | null;
 }
 
 interface IAgent {
@@ -223,6 +234,11 @@ export default async function handler(request: Request): Promise<Response> {
     return errorResponse('Method Not Allowed', 405);
   }
 
+  // Замок чата. После передачи стриму его снимает сам стрим (в конце, при обрыве
+  // клиента или ошибке); во всех остальных случаях — finally ниже.
+  let chatLock: IChatLock | null = null;
+  let lockOwnedByStream = false;
+
   try {
     const auth = await authenticate(request);
     if (auth.error) {
@@ -246,7 +262,12 @@ export default async function handler(request: Request): Promise<Response> {
       attachedImage,
       attachedFile,
       agentId,
+      chatId,
     } = body;
+
+    if (!isValidChatId(chatId)) {
+      return errorResponse('chatId is required', 400);
+    }
 
     console.log('📨 [stream] Запрос:', {
       userId,
@@ -455,6 +476,14 @@ export default async function handler(request: Request): Promise<Response> {
       });
     }
 
+    // Замок чата: до этой точки возвраты без замка, дальше он обязателен
+    const acquired = await acquireChatLock(userId, chatId, 'text', config);
+    if (!acquired.ok) {
+      console.warn(`⚠️ [stream] Чат ${chatId} занят, повтор через ~${acquired.retryAfter}с`);
+      return chatBusyResponse(acquired.retryAfter);
+    }
+    chatLock = acquired.lock;
+
     // Dynamic max_tokens (после успешной проверки)
     function calcMaxTokens(remainingEnergy: number, markup: number, dailyLeft: number, contextLength: number | null, tier: string | null): number {
       const byEnergy = Math.floor((remainingEnergy / Math.max(markup, 0.1)) * 0.7);
@@ -525,6 +554,7 @@ export default async function handler(request: Request): Promise<Response> {
         const decoder = new TextDecoder();
         let buffer = '';
         let streamCompleted = false;
+        let clientCancelled = false;
         let totalPromptTokens = 0;
         let totalCompletionTokens = 0;
         let totalTokens = 0;
@@ -571,7 +601,9 @@ export default async function handler(request: Request): Promise<Response> {
                 }
               }
 
-              if (streamCompleted && accumulatedText.trim().length > 0) {
+              if (clientCancelled) {
+                console.warn(`⚠️ [stream] Клиент оборвал соединение. Токены не списаны.`);
+              } else if (streamCompleted && accumulatedText.trim().length > 0) {
                 console.log(`📊 [stream] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
                 console.log(`📊 [stream] OpenRouter usage:`, finalUsage);
 
@@ -630,12 +662,27 @@ export default async function handler(request: Request): Promise<Response> {
                 console.warn(`⚠️ [stream] Стрим завершен, но ответ пустой. Токены не списаны.`);
               }
 
-              controller.close();
+              if (!clientCancelled) controller.close();
             } catch (err) {
               console.error('❌ Ошибка в стриме:', err);
               console.warn(`⚠️ [stream] Стрим прерван ошибкой. Токены не списаны.`);
               controller.error(err);
+            } finally {
+              // Замок снимается после списания энергии: следующий запрос
+              // в этот чат не обгонит текущее списание
+              await chatLock?.release();
             }
+          },
+          async cancel() {
+            // Клиент ушёл (закрыл приложение / прервал запрос): не ждём конца
+            // ответа модели и не списываем энергию за обрыв
+            clientCancelled = true;
+            try {
+              await reader.cancel();
+            } catch {
+              // уже закрыт
+            }
+            await chatLock?.release();
           }
         });
 
@@ -646,6 +693,8 @@ export default async function handler(request: Request): Promise<Response> {
           'X-Agent-Slug': agent.slug,
           ...corsHeaders
         };
+
+        lockOwnedByStream = true;
 
         return new Response(readable, {
           headers: responseHeaders
@@ -664,5 +713,7 @@ export default async function handler(request: Request): Promise<Response> {
   } catch (err) {
     console.error('Stream handler error:', (err as Error).message);
     return errorResponse(`Критическое исключение сервера: ${(err as Error).message}`, 500);
+  } finally {
+    if (chatLock && !lockOwnedByStream) await chatLock.release();
   }
 }
