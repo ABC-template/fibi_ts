@@ -341,6 +341,15 @@ export class AdminAgentsTab implements IAdminTab {
           </label>
         </div>
 
+        <div>
+          <div style="font-weight:600;font-size:13px;color:#d4af37;margin-bottom:8px">Generation Config (JSON)</div>
+          <textarea id="agent-generation-config" rows="8" placeholder='{"modes":[...],"params":[...]}'
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);resize:vertical;font-family:monospace;font-size:12px">${this.esc(agent?.generation_config ? JSON.stringify(agent.generation_config, null, 2) : '')}</textarea>
+          <div style="font-size:11px;color:var(--app-text-tertiary);margin-top:4px">
+            Только для image/video/audio. Оставь пустым для text-агентов.
+          </div>
+        </div>
+
         <div style="display:flex;gap:20px;align-items:center">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="agent-is-active" ${agent?.is_active !== false ? 'checked' : ''}> Активен
@@ -450,6 +459,7 @@ export class AdminAgentsTab implements IAdminTab {
       markup_by_tier: this.collectMarkupByTier(),
       welcome_message: this.collectWelcomeMessage(),
       inject_balance: (document.getElementById('agent-inject-balance') as HTMLInputElement)?.checked ?? false,
+      generation_config: this.collectGenerationConfig(),
       is_active: (document.getElementById('agent-is-active') as HTMLInputElement)?.checked,
       sort_order: Number((document.getElementById('agent-sort-order') as HTMLInputElement)?.value) || 100,
     };
@@ -524,6 +534,17 @@ export class AdminAgentsTab implements IAdminTab {
       if (tier && Number.isFinite(val) && val > 0) result[tier] = val;
     });
     return Object.keys(result).length > 0 ? result : null;
+  }
+
+  private collectGenerationConfig(): any | null {
+    const raw = (document.getElementById('agent-generation-config') as HTMLTextAreaElement)?.value?.trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      alert('Некорректный JSON в Generation Config');
+      throw new Error('Invalid generation_config JSON');
+    }
   }
 
   private collectWelcomeMessage(): { ru: string; en?: string } | null {
