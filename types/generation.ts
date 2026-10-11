@@ -119,11 +119,26 @@ export interface ICreateGenerationRequest {
   negative_prompt?: string;
 }
 
+/** Строка сообщения из БД (так её отдаёт сервер) */
+export interface IGenerationServerMessage {
+  id: UUID;
+  chat_id: UUID;
+  msg_type: 'user-msg' | 'ai-msg';
+  text: string;
+  is_favorite?: boolean;
+  created_at: string;
+  deleted_at?: string | null;
+  metadata: IGenerationMetadata | null;
+}
+
 /** Ответ на создание генерации */
 export interface ICreateGenerationResponse {
   success: boolean;
   message_id?: UUID;
   request_message_id?: UUID;
+  /** Итоговые строки обоих сообщений (null, если их не удалось перечитать) */
+  request_message?: IGenerationServerMessage | null;
+  message?: IGenerationServerMessage | null;
   status?: GenerationStatus;
   error?: string;
   cost?: number;
