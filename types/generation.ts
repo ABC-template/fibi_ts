@@ -105,7 +105,8 @@ export interface IGenerationPromptConfig {
 /**
  * Цена генерации. Реальное списание считается по фактической стоимости из ответа
  * OpenRouter; эта запись нужна для оценки в форме и проверки энергии до старта.
- *  per_second → prices[разрешение] × длительность (ключ 'default' — единая цена)
+ *  per_second → prices[разрешение] × длительность (ключ 'default' — единая цена);
+ *               со звуком берётся audio_prices (если заданы)
  *  per_image  → usd за одно изображение (OpenRouter отдаёт цену за токены,
  *               поэтому оценку задаёт администратор)
  * Энергия = usd × energy_per_usd × коэффициент агента, не меньше min_charge.
@@ -113,6 +114,7 @@ export interface IGenerationPromptConfig {
 export interface IGenerationPricing {
   kind: 'per_second' | 'per_image';
   prices?: Record<string, number>;
+  audio_prices?: Record<string, number>;
   usd?: number;
   energy_per_usd: number;
 }
