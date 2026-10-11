@@ -41,6 +41,8 @@ export class ChatModule {
   private _agentId: string | null = null;
   private _agentAccess: boolean = true;
   private _agentReason: string | null = null;
+  private _isGenerative: boolean = false;
+  private _generationFormOpen: boolean = false;
   private _pendingScrollMsgId: string | null = null;
   private _subscriptions: Array<() => void> = [];
   private _rendered: boolean = false;
@@ -188,15 +190,19 @@ export class ChatModule {
       const fabBtn = target.closest('#fab-open-input') as HTMLElement;
       if (fabBtn) {
         console.log('🔧 Делегирование: нажата FAB кнопка');
-        this.eventBus.emit('input:expand');
-        setTimeout(() => {
-          const input = document.getElementById('user-input') as HTMLTextAreaElement;
-          if (input && this._agentAccess !== false) {
-            input.disabled = false;
-            input.focus();
-          }
-          this._updateEnergyBar();
-        }, 50);
+        if (this._isGenerative) {
+          this._openGenerationForm();
+        } else {
+          this.eventBus.emit('input:expand');
+          setTimeout(() => {
+            const input = document.getElementById('user-input') as HTMLTextAreaElement;
+            if (input && this._agentAccess !== false) {
+              input.disabled = false;
+              input.focus();
+            }
+            this._updateEnergyBar();
+          }, 50);
+        }
         return;
       }
 
@@ -532,6 +538,7 @@ export class ChatModule {
     this._chatId = chatId;
     this._topic = actualTopic;
     this._agentId = found.chat.agent_id || null;
+    this._isGenerative = ['image', 'video', 'audio'].includes(found.chat.modality || '');
 
     if (this._topic) {
       this.chatStore.currentTopic = this._topic;
@@ -907,6 +914,7 @@ export class ChatModule {
 
     if (this._patcher) {
       this._patcher.renderAll(messages);
+      this._enhanceGenerationCards(container);
       if (messages.length === 0) {
         const created = new Date(found.chat.created_at || 0).getTime();
         if (Date.now() - created < 8000) {
@@ -942,6 +950,7 @@ export class ChatModule {
           container.appendChild(msgDiv);
         }
       }
+      this._enhanceGenerationCards(container);
     }
 
     // Скролл: если открыли из избранного — к сообщению, иначе вниз
@@ -1168,7 +1177,349 @@ export class ChatModule {
     this._patcher = null;
     this.container.innerHTML = '';
   }
+
+  // ==========================================
+  // GENERATIVE (image / video / audio)
+  // ==========================================
+
+  private _enhanceGenerationCards(container: HTMLElement): void {
+    if (!this._chatId) return;
+    const found = this.chatStore.findChatById(this._chatId);
+    if (!found) return;
+
+    const genMessages = (found.chat.messages || []).filter(
+      (m: any) => m.metadata?.kind === 'generation'
+    );
+
+    for (const msg of genMessages) {
+      const block = document.getElementById(`msg-block-${msg.id}`);
+      if (!block || block.dataset.genEnhanced) continue;
+
+      block.dataset.genEnhanced = '1';
+      const meta = msg.metadata as any;
+      const status = meta.status || 'pending';
+
+      let statusHtml = '';
+      if (status === 'pending' || status === 'processing') {
+        statusHtml = `<div style="padding:12px;text-align:center;color:var(--app-text-secondary);">
+          <div style="font-size:24px;margin-bottom:4px;">⏳</div>
+          <div>Генерируется...</div>
+        </div>`;
+      } else if (status === 'failed') {
+        statusHtml = `<div style="padding:12px;color:#e74c3c;">
+          Ошибка: ${meta.error || 'неизвестная'}
+        </div>`;
+      } else if (status === 'done' && meta.media?.length) {
+        const media = meta.media[0];
+        if (media.type === 'image') {
+          statusHtml = `<img src="${media.url}" style="max-width:100%;border-radius:12px;display:block;" />`;
+        } else if (media.type === 'video') {
+          statusHtml = `<video src="${media.url}" controls style="max-width:100%;border-radius:12px;"></video>`;
+        } else if (media.type === 'audio') {
+          statusHtml = `<audio src="${media.url}" controls style="width:100%;"></audio>`;
+        }
+      }
+
+      const card = document.createElement('div');
+      card.className = 'generation-card';
+      card.style.cssText = 'margin-top:8px;';
+      card.innerHTML = statusHtml + `
+        <div style="font-size:12px;color:var(--app-text-tertiary);margin-top:6px;padding:0 4px;">
+          ${meta.prompt ? meta.prompt.substring(0, 80) : ''}
+        </div>
+      `;
+
+      // Вставляем после текста сообщения или заменяем содержимое
+      const textEl = block.querySelector('.msg-text, .message-text, p');
+      if (textEl) {
+        textEl.insertAdjacentElement('afterend', card);
+      } else {
+        block.appendChild(card);
+      }
+
+      card.addEventListener('click', () => this._openGenerationViewer(msg));
+    }
+  }
+
+  private _openGenerationViewer(msg: any): void {
+    const meta = msg.metadata || {};
+    const media = meta.media?.[0];
+    if (!media) return;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:fixed;inset:0;background:#000;z-index:300;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+    `;
+
+    let mediaHtml = '';
+    if (media.type === 'image') {
+      mediaHtml = `<img src="${media.url}" style="max-width:100%;max-height:70vh;object-fit:contain;" />`;
+    } else if (media.type === 'video') {
+      mediaHtml = `<video src="${media.url}" controls autoplay style="max-width:100%;max-height:70vh;"></video>`;
+    } else {
+      mediaHtml = `<audio src="${media.url}" controls autoplay></audio>`;
+    }
+
+    overlay.innerHTML = `
+      <button id="gen-viewer-close" style="position:absolute;top:16px;right:16px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:28px;width:40px;height:40px;border-radius:50%;">×</button>
+      ${mediaHtml}
+      <div style="position:absolute;bottom:24px;left:16px;right:16px;display:flex;gap:8px;">
+        <button id="gen-repeat" style="flex:1;height:44px;border-radius:12px;border:none;background:var(--app-gradient-primary);color:#fff;font-weight:600;">Повторить</button>
+        <a href="${media.url}" download style="flex:1;height:44px;border-radius:12px;background:var(--app-bg-secondary);color:var(--app-text-primary);display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:600;">Скачать</a>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('#gen-viewer-close')?.addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#gen-repeat')?.addEventListener('click', () => {
+      overlay.remove();
+      this._openGenerationForm();
+      // TODO: подставить params и prompt
+      setTimeout(() => {
+        const promptEl = document.getElementById('gen-prompt') as HTMLTextAreaElement;
+        if (promptEl && meta.prompt) promptEl.value = meta.prompt;
+      }, 50);
+    });
+  }
+
+  private _openGenerationForm(): void {
+    if (!this._agentAccess) {
+      this._showAccessDeniedModal();
+      return;
+    }
+    if (this._generationFormOpen) return;
+    this._generationFormOpen = true;
+    await this._renderGenerationForm();
+  }
+
+  private _closeGenerationForm(): void {
+    this._generationFormOpen = false;
+    const overlay = document.getElementById('generation-form-overlay');
+    if (overlay) overlay.remove();
+  }
+
+  private async _renderGenerationForm(): Promise<void> {
+    const existing = document.getElementById('generation-form-overlay');
+    if (existing) existing.remove();
+
+    // Загружаем агента для generation_config
+    let config: any = null;
+    try {
+      const { fetchAgentsWithAccess } = await import('@/services/agents');
+      const data = await fetchAgentsWithAccess();
+      const agent = (data.agents || []).find((a: any) => a.id === this._agentId);
+      config = agent?.generation_config || null;
+    } catch (e) {
+      console.warn('Failed to load generation_config', e);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'generation-form-overlay';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 200;
+      display: flex; align-items: flex-end; justify-content: center;
+    `;
+
+    const modesHtml = this._buildModesHtml(config);
+    const paramsHtml = this._buildParamsHtml(config);
+
+    overlay.innerHTML = `
+      <div id="generation-form" style="
+        width: 100%; max-height: 85vh; background: var(--app-bg-primary);
+        border-radius: 20px 20px 0 0; padding: 16px 16px 24px; overflow-y: auto;
+        box-shadow: 0 -8px 30px rgba(0,0,0,0.4);
+      ">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div style="font-weight:700;font-size:16px;">Генерация</div>
+          <button id="gen-form-close" style="background:none;border:none;color:var(--app-text-secondary);font-size:22px;cursor:pointer;">×</button>
+        </div>
+        <div id="gen-form-body">
+          ${modesHtml}
+          <textarea id="gen-prompt" placeholder="${config?.prompt?.placeholder?.ru || 'Опишите ваш запрос...'}" rows="4" style="
+            width:100%;border:none;border-radius:12px;padding:12px;background:var(--app-bg-secondary);
+            color:var(--app-text-primary);font-size:15px;resize:vertical;margin-top:8px;
+          "></textarea>
+          <div id="gen-params" style="margin-top:12px;">
+            ${paramsHtml}
+          </div>
+        </div>
+        <button id="gen-submit" style="
+          margin-top:16px;width:100%;height:48px;border:none;border-radius:14px;
+          background:var(--app-gradient-primary);color:#fff;font-weight:700;font-size:16px;cursor:pointer;
+        ">Сгенерировать ⚡ …</button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#gen-form-close')?.addEventListener('click', () => this._closeGenerationForm());
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this._closeGenerationForm();
+    });
+    overlay.querySelector('#gen-submit')?.addEventListener('click', () => this._submitGeneration());
+
+    // Живая стоимость
+    this._updateGenerationCost();
+    overlay.querySelector('#gen-prompt')?.addEventListener('input', () => this._updateGenerationCost());
+    overlay.querySelectorAll('#gen-params [data-param], .gen-mode-btn').forEach(el => {
+      el.addEventListener('change', () => this._updateGenerationCost());
+      el.addEventListener('input', () => this._updateGenerationCost());
+    });
+
+    // Переключение режимов
+    overlay.querySelectorAll('.gen-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = (btn as HTMLElement).dataset.mode;
+        const hidden = document.getElementById('gen-selected-mode') as HTMLInputElement;
+        if (hidden && key) hidden.value = key;
+        overlay.querySelectorAll('.gen-mode-btn').forEach(b => {
+          (b as HTMLElement).style.background = 'var(--app-bg-secondary)';
+          (b as HTMLElement).style.color = 'var(--app-text-secondary)';
+        });
+        (btn as HTMLElement).style.background = 'var(--app-accent-primary)';
+        (btn as HTMLElement).style.color = '#fff';
+      });
+    });
+  }
+
+  private async _updateGenerationCost(): Promise<void> {
+    const btn = document.getElementById('gen-submit');
+    if (!btn || !this._agentId) return;
+
+    try {
+      const { fetchAgentsWithAccess } = await import('@/services/agents');
+      const data = await fetchAgentsWithAccess();
+      const agent = (data.agents || []).find((a: any) => a.id === this._agentId);
+      if (!agent) return;
+
+      // Простая оценка: min_charge * markup (по tier)
+      const tier = (window as any).userStore?.subscription_tier || 'trial';
+      let markup = Number(agent.markup_coefficient) || 1;
+      if (agent.markup_by_tier && agent.markup_by_tier[tier]) {
+        markup = Number(agent.markup_by_tier[tier]);
+      }
+      const cost = Math.max(Math.ceil((agent.min_charge || 1) * markup), agent.min_charge || 1);
+
+      btn.textContent = `Сгенерировать ⚡ ${cost}`;
+    } catch {
+      btn.textContent = 'Сгенерировать ⚡';
+    }
+  }
+
+  private _buildModesHtml(config: any): string {
+    if (!config?.modes || !Array.isArray(config.modes) || config.modes.length === 0) {
+      return '';
+    }
+    const buttons = config.modes.map((m: any, idx: number) => {
+      const label = m.label?.ru || m.key;
+      const active = idx === 0 ? 'background:var(--app-accent-primary);color:#fff;' : 'background:var(--app-bg-secondary);color:var(--app-text-secondary);';
+      return `<button type="button" data-mode="${m.key}" class="gen-mode-btn" style="
+        flex:1;padding:8px 6px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;${active}
+      ">${label}</button>`;
+    }).join('');
+    return `
+      <div id="gen-modes" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+        ${buttons}
+      </div>
+      <input type="hidden" id="gen-selected-mode" value="${config.modes[0]?.key || ''}" />
+    `;
+  }
+
+  private _buildParamsHtml(config: any): string {
+    if (!config?.params || !Array.isArray(config.params)) {
+      return '<div style="font-size:13px;color:var(--app-text-tertiary);">Нет дополнительных параметров</div>';
+    }
+
+    return config.params.map((p: any) => {
+      const label = p.label?.ru || p.key;
+      if (p.type === 'select' && Array.isArray(p.options)) {
+        const opts = p.options.map((o: any) => {
+          const val = typeof o === 'string' ? o : o.value;
+          const text = typeof o === 'string' ? o : (o.label?.ru || o.value);
+          const selected = val === p.default ? 'selected' : '';
+          return `<option value="${val}" ${selected}>${text}</option>`;
+        }).join('');
+        return `
+          <div style="margin-bottom:10px;">
+            <div style="font-size:12px;color:var(--app-text-secondary);margin-bottom:4px;">${label}</div>
+            <select data-param="${p.key}" style="width:100%;padding:10px;border-radius:10px;border:none;background:var(--app-bg-secondary);color:var(--app-text-primary);">
+              ${opts}
+            </select>
+          </div>`;
+      }
+      if (p.type === 'number' || p.type === 'slider') {
+        return `
+          <div style="margin-bottom:10px;">
+            <div style="font-size:12px;color:var(--app-text-secondary);margin-bottom:4px;">${label}</div>
+            <input type="number" data-param="${p.key}" value="${p.default ?? ''}" min="${p.min ?? ''}" max="${p.max ?? ''}"
+              style="width:100%;padding:10px;border-radius:10px;border:none;background:var(--app-bg-secondary);color:var(--app-text-primary);" />
+          </div>`;
+      }
+      if (p.type === 'boolean') {
+        return `
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:14px;">
+            <input type="checkbox" data-param="${p.key}" ${p.default ? 'checked' : ''} />
+            ${label}
+          </label>`;
+      }
+      return `
+        <div style="margin-bottom:10px;">
+          <div style="font-size:12px;color:var(--app-text-secondary);margin-bottom:4px;">${label}</div>
+          <input type="text" data-param="${p.key}" value="${p.default ?? ''}" placeholder="${p.placeholder?.ru || ''}"
+            style="width:100%;padding:10px;border-radius:10px;border:none;background:var(--app-bg-secondary);color:var(--app-text-primary);" />
+        </div>`;
+    }).join('');
+  }
+
+  private _collectParams(): Record<string, any> {
+    const params: Record<string, any> = {};
+    const modeEl = document.getElementById('gen-selected-mode') as HTMLInputElement;
+    if (modeEl?.value) params.mode = modeEl.value;
+
+    document.querySelectorAll('#gen-params [data-param]').forEach((el: any) => {
+      const key = el.dataset.param;
+      if (!key) return;
+      if (el.type === 'checkbox') {
+        params[key] = el.checked;
+      } else if (el.type === 'number') {
+        params[key] = el.value === '' ? null : Number(el.value);
+      } else {
+        params[key] = el.value;
+      }
+    });
+    return params;
+  }
+
+  private async _submitGeneration(): Promise<void> {
+    const promptEl = document.getElementById('gen-prompt') as HTMLTextAreaElement;
+    const prompt = promptEl?.value?.trim();
+    if (!prompt || !this._chatId || !this._agentId) return;
+
+    const params = this._collectParams();
+
+    try {
+      const { apiClient } = await import('@/services/api');
+      const data = await apiClient.post('/generations/create', {
+        agent_id: this._agentId,
+        chat_id: this._chatId,
+        prompt,
+        params,
+      });
+
+      if (!data?.success) {
+        alert(data?.error || 'Ошибка генерации');
+        return;
+      }
+
+      this._closeGenerationForm();
+      await this._loadMessages();
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось отправить запрос');
+    }
+  }
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v8.11.1 загружен (исправлен импорт типов)');
+console.log('✅ ChatModule v9.0.0 (generative support) загружен');
