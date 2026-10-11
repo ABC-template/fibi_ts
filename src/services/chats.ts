@@ -1,7 +1,9 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.1.1 - замена @types → @app-types
+// Версия: 3.2.0 - metadata сообщений при слиянии с облаком, agent_id/modality при создании чата,
+//                 ensureRemoteChat (чат генерации без первого сообщения)
+//          3.1.1 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
@@ -165,8 +167,8 @@ export class ChatService {
       });
       
       for (const msg of cloudChat.messages) {
-        const exists = chat.messages.some((m: IMessage) => m.id === msg.id);
-        if (!exists) {
+        const local = chat.messages.find((m: IMessage) => m.id === msg.id);
+        if (!local) {
           const msgType = msg.msg_type || msg.type || 'user-msg';
           chat.messages.push({
             id: msg.id,
@@ -174,8 +176,14 @@ export class ChatService {
             type: msgType as MessageType,
             isFavorite: msg.is_favorite || false,
             created_at: msg.created_at || new Date().toISOString(),
-            deleted_at: msg.deleted_at || null
+            deleted_at: msg.deleted_at || null,
+            metadata: msg.metadata || null
           });
+        } else if (msg.metadata) {
+          // Сообщения с metadata (генерации) меняются на сервере после создания:
+          // pending → processing → done/failed
+          local.metadata = msg.metadata;
+          local.text = msg.text;
         }
       }
       
@@ -204,7 +212,8 @@ export class ChatService {
               type: msgType as MessageType,
               isFavorite: m.is_favorite || false,
               created_at: m.created_at || new Date().toISOString(),
-              deleted_at: m.deleted_at || null
+              deleted_at: m.deleted_at || null,
+              metadata: m.metadata || null
             };
           })
         }
@@ -442,6 +451,8 @@ export class ChatService {
       const chatId = options.existingChatId || undefined;
       const pinned = options.pinned || false;
 
+      const local = chatId ? chatStore.findChatById(chatId) : null;
+
       const data = await apiClient.post('/chats/actions/create', {
         action: 'create_chat',
         chat: {
@@ -450,7 +461,9 @@ export class ChatService {
           title: title || `Чат в ${topicId}`,
           max_context: options.maxContext || 15,
           user_renamed: options.userRenamed || false,
-          pinned: pinned
+          pinned: pinned,
+          agent_id: local?.chat.agent_id || null,
+          modality: local?.chat.modality || null
         },
         firstMessage: options.firstMessage || null
       });
@@ -513,6 +526,46 @@ export class ChatService {
     } catch (err) {
       console.error('❌ Ошибка создания чата:', err);
       return null;
+    }
+  }
+
+  /**
+   * Гарантирует, что локальный чат существует на сервере. Нужен чатам
+   * генеративных агентов: первое сообщение в них создаёт сам сервер
+   * (POST /generations/create), поэтому чат нужно завести заранее и без сообщений.
+   */
+  async ensureRemoteChat(chatId: UUID): Promise<boolean> {
+    const found = chatStore.findChatById(chatId);
+    if (!found) return false;
+
+    const { chat } = found;
+    if (chat.synced) return true;
+    if (!userStore.canSync()) return false;
+
+    try {
+      const data = await apiClient.post('/chats/actions/create', {
+        action: 'create_chat',
+        chat: {
+          id: chat.id,
+          topic_id: chat.topic,
+          title: chat.title,
+          max_context: chat.maxContext || 15,
+          user_renamed: chat.userRenamed || false,
+          pinned: chat.pinned || false,
+          agent_id: chat.agent_id || null,
+          modality: chat.modality || null
+        },
+        firstMessage: null
+      });
+
+      if (!data?.success) return false;
+
+      this._saveSyncToken(data.syncToken);
+      chatStore.updateChat(chat.id, { synced: true });
+      return true;
+    } catch (err) {
+      console.error('❌ Не удалось создать чат на сервере:', err);
+      return false;
     }
   }
 
