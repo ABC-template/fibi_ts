@@ -5,13 +5,17 @@
 // типов агентов. Замок живёт в таблице chat_locks (см. sql/chat_locks.sql),
 // захват атомарный, у замка есть TTL — если функция упала и не сняла замок,
 // он сам освободится.
-// Версия: 1.0.0
+// Версия: 2.0.0
+//   - видео-генерация живёт дольше запроса: замок берётся на длинный срок, а токен
+//     замка сохраняется в сообщении, чтобы снять его из вебхука/опроса статуса
+//   - assertChatsNotBusy: удаление чата запрещено, пока в нём идёт запрос
 // ============================================
 
 import { supabaseFetch, supabaseRPC } from './supabase-client';
 import type { ISupabaseConfig } from './supabase-client';
 import { corsHeaders } from './cors';
 import { UUID_RE } from './media';
+import { HttpError } from './http-error';
 
 export type ChatLockKind = 'text' | 'generation';
 
@@ -21,10 +25,15 @@ export const CHAT_LOCK_TTL: Record<ChatLockKind, number> = {
   generation: 180,
 };
 
+/** Видео-задание живёт до 15 минут: замок держится дольше, чем сама функция */
+export const VIDEO_LOCK_TTL_SEC = 20 * 60;
+
 export const CHAT_BUSY_MESSAGE =
   'Предыдущий запрос в этом чате ещё выполняется. Дождитесь ответа.';
 
 export interface IChatLock {
+  /** Токен владельца: по нему замок снимается из другого запроса (видео) */
+  token: string;
   /** Идемпотентно: повторный вызов ничего не делает. Ошибки снятия не бросает. */
   release(): Promise<void>;
 }
@@ -52,7 +61,8 @@ export async function acquireChatLock(
   userId: number,
   chatId: string,
   kind: ChatLockKind,
-  config: ISupabaseConfig
+  config: ISupabaseConfig,
+  ttlSeconds: number = CHAT_LOCK_TTL[kind]
 ): Promise<IAcquireResult> {
   const res = await supabaseRPC(
     'acquire_chat_lock',
@@ -60,7 +70,7 @@ export async function acquireChatLock(
       p_user_id: userId,
       p_chat_id: chatId,
       p_kind: kind,
-      p_ttl_seconds: CHAT_LOCK_TTL[kind],
+      p_ttl_seconds: ttlSeconds,
     },
     config
   );
@@ -80,6 +90,7 @@ export async function acquireChatLock(
     ok: true,
     retryAfter: 0,
     lock: {
+      token,
       async release() {
         if (released) return;
         released = true;
@@ -97,6 +108,51 @@ export async function acquireChatLock(
     },
   };
 }
+
+/** Снять замок по токену из другого запроса (вебхук, опрос статуса). Ошибки не бросает. */
+export async function releaseChatLockByToken(
+  userId: number,
+  chatId: string,
+  token: unknown,
+  config: ISupabaseConfig
+): Promise<void> {
+  if (typeof token !== 'string' || !UUID_RE.test(token)) return;
+  try {
+    await supabaseRPC(
+      'release_chat_lock',
+      { p_user_id: userId, p_chat_id: chatId, p_token: token },
+      config
+    );
+  } catch (err) {
+    console.error('release_chat_lock failed:', (err as Error).message);
+  }
+}
+
+/**
+ * Бросает HttpError 409, если хотя бы в одном из чатов идёт запрос
+ * (замок жив). Нужна, чтобы нельзя было удалить чат, пока генерация не закончилась.
+ */
+export async function assertChatsNotBusy(
+  userId: number,
+  chatIds: string[],
+  config: ISupabaseConfig
+): Promise<void> {
+  const ids = chatIds.filter(isValidChatId);
+  if (ids.length === 0) return;
+
+  const rows = await supabaseFetch(
+    `chat_locks?user_id=eq.${userId}&chat_id=in.(${ids.join(',')})` +
+      `&locked_until=gt.${encodeURIComponent(new Date().toISOString())}&select=chat_id`,
+    { method: 'GET' },
+    config
+  );
+  if (Array.isArray(rows) && rows.length > 0) {
+    throw new HttpError(409, CHAT_DELETE_BUSY_MESSAGE);
+  }
+}
+
+export const CHAT_DELETE_BUSY_MESSAGE =
+  'Чат нельзя удалить, пока в нём идёт генерация. Дождитесь ответа.';
 
 /** Ответ 409 «в чате уже идёт запрос» (с заголовками для клиента) */
 export function chatBusyResponse(retryAfter: number): Response {
