@@ -15,17 +15,19 @@ export type GenerationStatus = 'pending' | 'processing' | 'done' | 'failed';
 /** Тип медиа */
 export type MediaType = 'image' | 'video' | 'audio';
 
-/** Один медиа-файл (результат или вход) */
+/**
+ * Один медиа-файл (результат или референс).
+ * В БД хранится только storage_path (приватный бакет generation-media);
+ * url — подписанная ссылка, существует только на клиенте и получается
+ * через POST /api/media/sign.
+ */
 export interface IGenerationMedia {
   type: MediaType;
-  url: string;
-  storage_path?: string;
-  mime?: string;
-  width?: number | null;
-  height?: number | null;
-  duration_sec?: number | null;
-  size_bytes?: number | null;
-  filename?: string;
+  storage_path: string;
+  mime: string;
+  size_bytes: number;
+  /** Только клиент, не сохраняется */
+  url?: string;
 }
 
 /** Параметры формы (произвольный объект, схема задаётся generation_config) */
@@ -38,6 +40,9 @@ export interface IGenerationResultMetadata {
   status: GenerationStatus;
   params: GenerationParams;
   prompt: string;
+  negative_prompt?: string | null;
+  /** Референсы, с которыми делалась генерация (для «Повторить») */
+  media_inputs?: IGenerationMedia[];
   cost?: number;
   media: IGenerationMedia[];
   error?: string | null;
@@ -52,6 +57,7 @@ export interface IGenerationRequestMetadata {
   modality: GenerationModality;
   params: GenerationParams;
   prompt: string;
+  negative_prompt?: string | null;
   media_inputs?: IGenerationMedia[];
 }
 
@@ -108,7 +114,8 @@ export interface ICreateGenerationRequest {
   chat_id: UUID;
   prompt: string;
   params: GenerationParams;
-  media_inputs?: IGenerationMedia[];
+  /** Только пути: тип и размер сервер берёт из media_files */
+  media_inputs?: Array<{ storage_path: string }>;
   negative_prompt?: string;
 }
 
@@ -120,4 +127,31 @@ export interface ICreateGenerationResponse {
   status?: GenerationStatus;
   error?: string;
   cost?: number;
+  media?: IGenerationMedia[];
+}
+
+/** Ответ POST /api/media/upload-url */
+export interface IMediaUploadUrlResponse {
+  success: boolean;
+  file_id: UUID;
+  storage_path: string;
+  /** Одноразовая ссылка: клиент делает PUT с телом файла и заголовком Content-Type */
+  upload_url: string;
+}
+
+/** Ответ POST /api/media/confirm */
+export interface IMediaConfirmResponse {
+  success: boolean;
+  file_id: UUID;
+  storage_path: string;
+  type: MediaType;
+  mime: string;
+  size_bytes: number;
+}
+
+/** Ответ POST /api/media/sign: карта storage_path → подписанный URL */
+export interface IMediaSignResponse {
+  success: boolean;
+  urls: Record<string, string>;
+  expires_in: number;
 }
