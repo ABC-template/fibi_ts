@@ -1,10 +1,11 @@
 // ============================================
 // types/agents.ts
 // Типы для конструктора ИИ-агентов
-// Версия: 1.3.0 — multi-tier access, markup_by_tier, welcome_message, inject_balance
+// Версия: 1.4.0 — добавлен generation_config
 // ============================================
 
 import { UUID, ISODateString } from './common';
+import type { IGenerationConfig } from './generation';
 
 export type AgentModality = 'text' | 'image' | 'video' | 'audio';
 
@@ -56,6 +57,11 @@ export interface IAiAgent {
    * текущий баланс энергии пользователя.
    */
   inject_balance: boolean;
+  /**
+   * Конфигурация формы генерации для image/video/audio агентов.
+   * NULL для text-агентов.
+   */
+  generation_config: IGenerationConfig | null;
   owner_id: UUID | null;
   is_active: boolean;
   is_system: boolean;
@@ -89,6 +95,7 @@ export interface IAiAgentInput {
   markup_by_tier?: Record<string, number> | null;
   welcome_message?: IAgentName | null;
   inject_balance?: boolean;
+  generation_config?: IGenerationConfig | null;
   is_active?: boolean;
   is_system?: boolean;
   sort_order?: number;
