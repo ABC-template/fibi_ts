@@ -8,7 +8,11 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 1.0.0
+// Версия: 2.0.0
+//   - видео: сервер отвечает сразу (задание выполняется минуты), приложение опрашивает
+//     /generations/status раз в 10 с; окно ожидания 20 минут (у фото 5)
+//   - ответ фото приходит потоком с пробелами-пульсом; разрыв ответа = ждём результат в чате
+//   1.0.0 — форма, карточки, просмотрщик, «Повторить»
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -26,6 +30,7 @@ import {
   uploadReference,
   validateReferenceFile,
 } from '@/services/generation-media';
+import { isLiveGeneration, liveWindowMs } from '@/store/generation-live';
 import type { IMessage, UUID } from '@app-types';
 import type {
   ICreateGenerationRequest,
@@ -38,10 +43,10 @@ import type {
 import type { ChatPatcher } from './ChatPatcher';
 
 /** Запрос на сервере дольше этого времени не ждём (мс) */
-const REQUEST_TIMEOUT_MS = 180_000;
-/** Генерация в статусе pending/processing старше этого считается оборванной */
-const STALE_AFTER_MS = 5 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 240_000;
+/** Опрос: фото (результат с другого устройства / оборванный запрос) и видео-задание */
 const POLL_INTERVAL_MS = 4000;
+const VIDEO_POLL_INTERVAL_MS = 10_000;
 /** После обрыва запроса ждём результат в чате не дольше этого */
 const AWAIT_RESULT_MS = 4 * 60 * 1000;
 const AGENTS_TTL_MS = 60 * 1000;
@@ -815,12 +820,16 @@ export class GenerationController {
 
     if (err instanceof ApiError) {
       // 4xx: запрос не принят (занят чат, нет энергии, не прошла валидация) — вернуть форму
-      const message = e.status === 409 ? '⏳ Предыдущий запрос в этом чате ещё выполняется. Дождитесь ответа.' : e.message;
-      this.open(preset, message);
+      this.open(preset, e.status === 409 ? `⏳ ${e.message}` : e.message);
       return;
     }
 
-    if (e?.name === 'TimeoutError' || e?.name === 'AbortError' || e instanceof TypeError) {
+    if (
+      e?.name === 'TimeoutError' ||
+      e?.name === 'AbortError' ||
+      e instanceof TypeError ||
+      e instanceof SyntaxError // поток оборвался до конца JSON
+    ) {
       // Связь оборвалась, а сервер мог продолжить работу — ждём результат в чате
       this._awaitingSince = startedAt;
       this._toast('Запрос выполняется дольше обычного. Результат появится в чате.', 'info', 3500);
@@ -867,15 +876,12 @@ export class GenerationController {
   }
 
   private _isLive(msg: IMessage): boolean {
-    const meta = msg.metadata as any;
-    if (meta?.kind !== 'generation') return false;
-    if (meta.status !== 'pending' && meta.status !== 'processing') return false;
-    return !this._isStale(msg);
+    return isLiveGeneration(msg);
   }
 
   private _isStale(msg: IMessage): boolean {
     const created = new Date(msg.created_at || 0).getTime();
-    return Date.now() - created >= STALE_AFTER_MS;
+    return Date.now() - created >= liveWindowMs((msg.metadata as any)?.modality);
   }
 
   private _needsPolling(): boolean {
@@ -889,10 +895,11 @@ export class GenerationController {
 
   private _schedulePoll(): void {
     if (this._pollTimer || this._polling) return;
+    const hasVideo = this._liveGenerations().some((m) => (m.metadata as any)?.modality === 'video');
     this._pollTimer = setTimeout(() => {
       this._pollTimer = null;
       this._poll();
-    }, POLL_INTERVAL_MS);
+    }, hasVideo ? VIDEO_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
   }
 
   private _stopPolling(): void {
@@ -906,7 +913,13 @@ export class GenerationController {
 
     this._polling = true;
     try {
-      await chatService.getChat(chatId);
+      // Видео-задания: просим сервер проверить задание (он же сохранит готовый результат)
+      const videos = this._liveGenerations().filter((m) => (m.metadata as any)?.modality === 'video');
+      if (videos.length > 0) {
+        await Promise.all(videos.map((m) => this._pollVideo(chatId, m)));
+      } else {
+        await chatService.getChat(chatId);
+      }
     } catch (err) {
       console.warn('⚠️ [generation] Опрос чата не удался:', (err as Error).message);
     } finally {
@@ -921,6 +934,32 @@ export class GenerationController {
       this._refreshEnergy();
     }
     this.reconcile();
+  }
+
+  /** Один опрос видео-задания: сервер проверяет OpenRouter и возвращает актуальную строку */
+  private async _pollVideo(chatId: UUID, msg: IMessage): Promise<void> {
+    try {
+      const res = await apiClient.post<{ success: boolean; message?: any }>(
+        '/generations/status',
+        { message_id: msg.id },
+        { timeout: 60_000, retries: 1 }
+      );
+      if (res?.success && res.message) {
+        const before = (msg.metadata as any)?.status;
+        this._applyServerMessages(chatId, [res.message]);
+        const after = res.message.metadata?.status;
+        if (before !== after && (after === 'done' || after === 'failed')) {
+          this._refreshEnergy();
+        }
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // Сообщение удалено на сервере — подтянем чат целиком
+        await chatService.getChat(chatId);
+        return;
+      }
+      console.warn('⚠️ [generation] Опрос видео не удался:', (err as Error).message);
+    }
   }
 
   private _hasFinishedSince(chatId: UUID, since: number): boolean {
@@ -1022,7 +1061,13 @@ export class GenerationController {
     card.className = 'generation-card';
 
     if ((status === 'pending' || status === 'processing') && !stale) {
-      card.appendChild(this._statusBlock('⏳', 'Генерируется…', meta.prompt));
+      card.appendChild(
+        this._statusBlock(
+          '⏳',
+          'Генерируется…',
+          meta.modality === 'video' ? 'Видео создаётся несколько минут. Можно выйти из чата — результат появится здесь.' : meta.prompt
+        )
+      );
       return card;
     }
 
