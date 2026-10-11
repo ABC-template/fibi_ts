@@ -1,27 +1,30 @@
 // ============================================
 // api/generations/create.ts
-// Создание генерации (image / video / audio)
-// Версия: 2.2.0
-//   - ответ содержит готовые строки обеих сообщений (клиент кладёт их в хранилище без
-//     повторной загрузки чата), chats.updated_at обновляется (другие устройства увидят результат)
-//   2.1.0:
-//   - замок чата: пока в чате идёт запрос, второй отклоняется (409)
-//   - энергия списывается ПОСЛЕ успешного сохранения результата
-//     (как в текстовом стриме): неудачная генерация ничего не стоит
-//   - серверная валидация по generation_config (режим, params, промпты)
-//   - референсы (media_inputs) из приватного Storage, модель получает
-//     короткоживущие подписанные ссылки (image_url)
-//   - negative_prompt и media_inputs сохраняются в metadata (для «Повторить»)
-//   - результаты сохраняются в Storage, в metadata только storage_path
-//   - проверка, что чат принадлежит пользователю и агенту
+// Создание генерации (image / video)
+// Версия: 3.0.0
+//   - фото: отдельный API OpenRouter POST /images с реальными параметрами
+//     (разрешение, соотношение сторон, качество, фон, n, референсы). Ответ идёт
+//     потоком с «пробелами-пульсом»: Vercel требует начать ответ за ~25 с, а
+//     генерация может идти дольше; пробелы перед JSON парсер игнорирует
+//   - видео: асинхронное задание POST /videos. create отвечает сразу (сообщение в
+//     статусе processing), результат приходит вебхуком /api/generations/webhook или
+//     забирается опросом /api/generations/status. Замок чата держится до конца
+//     задания (токен замка лежит в metadata сообщения)
+//   - одно активное видео на пользователя
+//   - энергия: оценка до старта по generation_config.pricing; списание после
+//     успеха по фактической стоимости (usage.cost × energy_per_usd × коэффициент)
+//   - аудио пока не поддерживается и отклоняется явно
+//   2.2.0 и ранее: замок чата, списание после успеха, референсы из приватного
+//   Storage, результаты только как storage_path, валидация по generation_config
 // ============================================
 
 import { authenticate } from '../_lib/auth';
 import { handleCORS, errorResponse, jsonResponse } from '../_lib/cors';
-import { getSupabaseConfig, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
+import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { getMarkupForTier } from '../_lib/markup-helper';
 import { checkTokenAvailability } from '../_lib/tokens';
 import { HttpError } from '../_lib/http-error';
+import { keepAliveJson } from '../_lib/keepalive';
 import {
   loadGenerativeAgent,
   maxInputsForMode,
@@ -34,21 +37,35 @@ import {
   MEDIA_LIMITS,
   UUID_RE,
   assertStoragePaths,
-  deleteMediaRows,
-  extFromMime,
   getOwnedFiles,
-  isAllowedMime,
   mediaTypeFromMime,
-  mimeFromUrlExt,
-  signUrls,
-  uploadObject,
 } from '../_lib/media';
 import type { IMediaFileRow } from '../_lib/media';
 import {
+  VIDEO_LOCK_TTL_SEC,
   acquireChatLock,
   chatBusyResponse,
 } from '../_lib/chat-lock';
 import type { IChatLock } from '../_lib/chat-lock';
+import {
+  appBaseUrl,
+  energyForUsd,
+  estimateUsd,
+  generateImages,
+  readPricing,
+  signReferenceUrls,
+  submitVideoJob,
+} from '../_lib/openrouter-media';
+import {
+  VIDEO_MAX_AGE_MS,
+  chargeForGeneration,
+  finalizeVideoJob,
+  loadFinalMessages,
+  patchMessage,
+  persistBytes,
+  updateGenerationStatus,
+} from '../_lib/generation-store';
+import type { IStoredMedia } from '../_lib/generation-store';
 
 export const config = { runtime: 'edge' };
 
@@ -62,13 +79,6 @@ interface ICreateBody {
   negative_prompt?: string;
 }
 
-interface IStoredMedia {
-  type: 'image' | 'video' | 'audio';
-  storage_path: string;
-  mime: string;
-  size_bytes: number;
-}
-
 export default async function handler(request: Request): Promise<Response> {
   const cors = handleCORS(request);
   if (cors) return cors;
@@ -78,8 +88,8 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   let lock: IChatLock | null = null;
-  // Сообщение, которое ещё не получило финальный статус: если обработчик упадёт,
-  // в catch оно помечается failed, а не висит в «Генерация...»
+  // Сообщение без финального статуса: если обработчик упадёт, в catch оно
+  // помечается failed, а не висит в «Генерация...»
   let openMessageId: string | null = null;
   let dbConfig: any = null;
 
@@ -105,6 +115,11 @@ export default async function handler(request: Request): Promise<Response> {
     // 1. Агент + доступ
     const { agent, user } = await loadGenerativeAgent(body.agent_id, userId, config);
     const gen = agent.generation_config || {};
+    const modality: 'image' | 'video' = agent.modality;
+
+    if (modality !== 'image' && modality !== 'video') {
+      return errorResponse('Генерация этого типа пока не поддерживается', 400);
+    }
 
     // 2. Чат принадлежит пользователю и этому агенту
     const chats = await supabaseFetch(
@@ -130,13 +145,18 @@ export default async function handler(request: Request): Promise<Response> {
       (body.media_inputs || []).map((m) => m?.storage_path),
       MEDIA_LIMITS.maxInputsPerRequest
     );
+    const modeInput = resolveModeInput(mode);
 
     if (inputPaths.length > 0) {
-      if (!modeAcceptsImages(mode)) {
+      if (!modeAcceptsImages(mode) || modeInput === 'none') {
         return errorResponse('This mode does not accept image references', 400);
       }
-      if (inputPaths.length > maxInputsForMode(mode)) {
-        return errorResponse(`Too many references (max ${maxInputsForMode(mode)})`, 400);
+      const limit = Math.min(
+        maxInputsForMode(mode),
+        modeInput === 'first_frame' ? 1 : modeInput === 'first_last_frames' ? 2 : 99
+      );
+      if (inputPaths.length > limit) {
+        return errorResponse(`Too many references (max ${limit})`, 400);
       }
     } else if (mode?.requires_media) {
       return errorResponse('This mode requires at least one reference', 400);
@@ -144,15 +164,11 @@ export default async function handler(request: Request): Promise<Response> {
 
     const inputFiles = await loadInputFiles(userId, body.chat_id, inputPaths, config);
 
-    // 5. Оценка стоимости (пока упрощённо: min_charge * markup)
-    // TODO: учитывать params, media, generation_config
+    // 5. Оценка стоимости и проверка энергии
     const markup = getMarkupForTier(agent, user?.subscription_tier || null);
-    const estimatedCost = Math.max(
-      Math.ceil((agent.min_charge || 1) * markup),
-      agent.min_charge || 1
-    );
+    const pricing = readPricing(gen);
+    const estimatedCost = energyForUsd(estimateUsd(pricing, params), pricing, agent, markup);
 
-    // 6. Проверка энергии
     const tokenCheck = await checkTokenAvailability(userId, estimatedCost, config);
     if (!tokenCheck.available) {
       return errorResponse(
@@ -161,9 +177,23 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
+    // 6. Одно активное видео на пользователя
+    if (modality === 'video') {
+      const active = await findActiveVideo(userId, config);
+      if (active) {
+        return errorResponse('У вас уже идёт генерация видео. Дождитесь результата.', 409);
+      }
+    }
+
     // 7. Замок чата: дальше всё под ним. Если замок свободен, а в чате висят
-    //    сообщения pending/processing — прошлая попытка умерла (упала функция).
-    const acquired = await acquireChatLock(userId, body.chat_id, 'generation', config);
+    //    сообщения pending/processing — прошлая попытка умерла.
+    const acquired = await acquireChatLock(
+      userId,
+      body.chat_id,
+      'generation',
+      config,
+      modality === 'video' ? VIDEO_LOCK_TTL_SEC : undefined
+    );
     if (!acquired.ok) {
       return chatBusyResponse(acquired.retryAfter);
     }
@@ -189,7 +219,7 @@ export default async function handler(request: Request): Promise<Response> {
           text: prompt,
           metadata: {
             kind: 'generation_request',
-            modality: agent.modality,
+            modality,
             params,
             prompt,
             media_inputs: mediaInputsMeta,
@@ -210,7 +240,7 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
-    // 9. ai-msg со статусом pending
+    // 9. ai-msg со статусом processing
     const resultMsg = await supabaseFetch(
       'messages',
       {
@@ -221,8 +251,8 @@ export default async function handler(request: Request): Promise<Response> {
           text: 'Генерация...',
           metadata: {
             kind: 'generation',
-            modality: agent.modality,
-            status: 'pending',
+            modality,
+            status: 'processing',
             params,
             prompt,
             negative_prompt: negative,
@@ -231,159 +261,96 @@ export default async function handler(request: Request): Promise<Response> {
             media: [],
             error: null,
             model_id: agent.model_id,
-            progress: 0,
+            progress: 0.3,
+            // Видео: замок снимается при завершении задания, а не в этой функции
+            lock_token: modality === 'video' ? lock.token : undefined,
           },
         }),
       },
       config
     );
 
-    const messageId = resultMsg?.id;
+    const messageId: string = resultMsg?.id;
     openMessageId = messageId || null;
-    const requestMessageId = requestMsg?.id;
+    const requestMessageId: string = requestMsg?.id;
 
-    // 10. Вызов модели (OpenRouter chat completions, non-streaming).
-    //     Энергия на этом этапе НЕ списывается.
-    const keys: string[] = [];
-    for (let i = 0; i < 10; i++) {
-      const k = process.env[`ROUTER_KEY${i}`];
-      if (k) keys.push(k);
-    }
+    const referenceUrls = await signReferenceUrls(
+      inputFiles.map((f) => f.storage_path),
+      config
+    );
 
-    if (keys.length === 0) {
-      await updateGenerationStatus(messageId, 'failed', 'No OpenRouter keys', config, { cost: 0 });
-      return errorResponse('Server keys not configured', 500);
-    }
-
-    await updateGenerationStatus(messageId, 'processing', null, config);
-
-    let extracted: Array<{ type: string; url: string }> = [];
-    let errorText: string | null = null;
-
-    const systemHint = agent.system_prompt || `You are a ${agent.modality} generation assistant.`;
-    const userText = buildUserContent(prompt, params, negative);
-
-    // Модель получает короткоживущие подписанные ссылки на референсы
-    let userContent: any = userText;
-    if (inputFiles.length > 0) {
-      const urls = await signUrls(
-        inputFiles.map((f) => f.storage_path),
-        MEDIA_LIMITS.modelSignTtlSec,
-        config
-      );
-      userContent = [
-        { type: 'text', text: userText },
-        ...inputFiles
-          .filter((f) => urls[f.storage_path])
-          .map((f) => ({ type: 'image_url', image_url: { url: urls[f.storage_path] } })),
-      ];
-    }
-
-    for (const key of keys) {
+    // ---------- Видео: отправляем задание и отвечаем сразу ----------
+    if (modality === 'video') {
+      const base = appBaseUrl();
+      let submitted;
       try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': process.env.APP_URL?.trim() || 'https://vercel.com',
-            'X-Title': 'FIBI Generation',
-          },
-          body: JSON.stringify({
-            model: agent.model_id,
-            messages: [
-              { role: 'system', content: systemHint },
-              { role: 'user', content: userContent },
-            ],
-            temperature: 0.7,
-            stream: false,
-          }),
+        submitted = await submitVideoJob({
+          model: agent.model_id,
+          prompt,
+          negative,
+          params,
+          input: modeInput,
+          referenceUrls,
+          callbackUrl: base ? `${base}/api/generations/webhook` : null,
         });
-
-        if (!response.ok) {
-          const txt = await response.text();
-          errorText = `OpenRouter ${response.status}: ${txt.substring(0, 180)}`;
-          continue;
-        }
-
-        const data = await response.json();
-        extracted = extractMedia(data, agent.modality);
-        if (extracted.length > 0) {
-          errorText = null;
-          break;
-        }
-        errorText = 'No media in model response';
       } catch (e) {
-        errorText = (e as Error).message;
+        await updateGenerationStatus(messageId, 'failed', (e as Error).message, config, { cost: 0 });
+        openMessageId = null;
+        return jsonResponse(
+          await buildResult(config, body.chat_id, requestMessageId, messageId, {
+            status: 'failed',
+            error: (e as Error).message,
+          })
+        );
       }
-    }
 
-    // 11. Сохраняем результаты в Storage
-    let stored: IStoredMedia[] = [];
-    let finalCost = 0;
-    if (extracted.length > 0) {
-      try {
-        stored = await persistOutputs(userId, body.chat_id, extracted, config);
-      } catch (e) {
-        errorText = `Failed to store result: ${(e as Error).message}`;
-        stored = [];
-      }
-    }
-
-    if (stored.length > 0) {
-      // 12. Списание — только после того, как результат сохранён
-      const charged = await chargeForGeneration(userId, estimatedCost, agent.modality, body.chat_id, config);
-
-      await supabaseFetch(
-        `messages?id=eq.${messageId}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            text: 'Готово',
-            metadata: {
-              kind: 'generation',
-              modality: agent.modality,
-              status: 'done',
-              params,
-              prompt,
-              negative_prompt: negative,
-              media_inputs: mediaInputsMeta,
-              cost: charged,
-              media: stored,
-              error: null,
-              model_id: agent.model_id,
-              progress: 1,
-            },
-          }),
-        },
+      await patchMessage(
+        messageId,
+        { job_id: submitted.job.id, key_index: submitted.keyIndex },
         config
       );
-      finalCost = charged;
-    } else {
-      await updateGenerationStatus(
-        messageId,
-        'failed',
-        errorText || 'Generation failed',
-        config,
-        { cost: 0 }
+
+      // Замок теперь принадлежит заданию: его снимет finalizeVideoJob
+      lock = null;
+      openMessageId = null;
+
+      return jsonResponse(
+        await buildResult(config, body.chat_id, requestMessageId, messageId, {
+          status: 'processing',
+        })
       );
     }
 
-    openMessageId = null; // финальный статус записан
+    // ---------- Фото: поток с пульсом, пока модель работает ----------
+    const imageLock = lock;
+    lock = null;
+    openMessageId = null;
 
-    const finalRows = await loadFinalMessages([requestMessageId, messageId], body.chat_id, config);
-
-    return jsonResponse({
-      success: true,
-      message_id: messageId,
-      request_message_id: requestMessageId,
-      request_message: finalRows.find((r) => r.id === requestMessageId) || null,
-      message: finalRows.find((r) => r.id === messageId) || null,
-      status: stored.length > 0 ? 'done' : 'failed',
-      cost: finalCost,
-      media: stored.length > 0 ? stored : undefined,
-      error: stored.length > 0 ? undefined : errorText || undefined,
-    });
+    return keepAliveJson(
+      async () => {
+      try {
+        return await runImageGeneration({
+          userId,
+          chatId: body.chat_id,
+          agent,
+          markup,
+          pricing,
+          params,
+          prompt,
+          negative,
+          referenceUrls,
+          messageId,
+          requestMessageId,
+          config,
+        });
+      } finally {
+        await imageLock.release();
+      }
+      },
+      async (err) => {
+        await updateGenerationStatus(messageId, 'failed', err.message || 'Internal error', config, { cost: 0 });
+      }
+    );
   } catch (err) {
     if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Generation create error:', err);
@@ -400,118 +367,135 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-/**
- * Итоговые строки сообщений для ответа клиенту + отметка об изменении чата
- * (chats.updated_at: по ней клиенты других устройств понимают, что чат изменился).
- * Сбой здесь не должен ломать ответ: результат уже сохранён и оплачен.
- */
-async function loadFinalMessages(ids: string[], chatId: string, config: any): Promise<any[]> {
-  try {
-    await supabaseFetch(
-      `chats?id=eq.${chatId}`,
-      { method: 'PATCH', body: JSON.stringify({ updated_at: new Date().toISOString() }) },
-      config
-    );
-  } catch (err) {
-    console.error('Failed to touch chat:', (err as Error).message);
-  }
+/** Как режим использует загруженные изображения */
+function resolveModeInput(mode: any | null): string {
+  if (!mode) return 'none';
+  if (typeof mode.input === 'string') return mode.input;
+  return modeAcceptsImages(mode) ? 'references' : 'none';
+}
+
+/** Тело ответа create: строки обоих сообщений + статус */
+async function buildResult(
+  config: any,
+  chatId: string,
+  requestMessageId: string,
+  messageId: string,
+  extra: { status: string; error?: string; cost?: number; media?: IStoredMedia[] }
+): Promise<Record<string, any>> {
+  const rows = await loadFinalMessages([requestMessageId, messageId], chatId, config);
+  return {
+    success: true,
+    message_id: messageId,
+    request_message_id: requestMessageId,
+    request_message: rows.find((r) => r.id === requestMessageId) || null,
+    message: rows.find((r) => r.id === messageId) || null,
+    ...extra,
+  };
+}
+
+async function runImageGeneration(ctx: {
+  userId: number;
+  chatId: string;
+  agent: any;
+  markup: number;
+  pricing: ReturnType<typeof readPricing>;
+  params: Record<string, any>;
+  prompt: string;
+  negative: string | null;
+  referenceUrls: string[];
+  messageId: string;
+  requestMessageId: string;
+  config: any;
+}): Promise<Record<string, any>> {
+  const { userId, chatId, agent, config, messageId } = ctx;
+
+  let stored: IStoredMedia[] = [];
+  let costUsd: number | null = null;
+  let errorText: string | null = null;
 
   try {
-    const valid = ids.filter((id) => typeof id === 'string' && UUID_RE.test(id));
-    if (valid.length === 0) return [];
-    const rows = await supabaseFetch(
-      `messages?id=in.(${valid.join(',')})&select=*`,
-      { method: 'GET' },
-      config
-    );
-    return Array.isArray(rows) ? rows : [];
-  } catch (err) {
-    console.error('Failed to load final messages:', (err as Error).message);
-    return [];
+    const result = await generateImages({
+      model: agent.model_id,
+      prompt: ctx.prompt,
+      negative: ctx.negative,
+      params: ctx.params,
+      referenceUrls: ctx.referenceUrls,
+    });
+    costUsd = result.costUsd;
+    stored = await persistBytes(userId, chatId, result.items, config);
+  } catch (e) {
+    errorText = (e as Error).message || 'Generation failed';
+    stored = [];
   }
+
+  let finalCost = 0;
+  if (stored.length > 0) {
+    // Списание — только после того, как результат сохранён
+    const usd = costUsd !== null && costUsd > 0 ? costUsd : estimateUsd(ctx.pricing, ctx.params);
+    const amount = energyForUsd(usd, ctx.pricing, agent, ctx.markup);
+    finalCost = await chargeForGeneration(userId, amount, 'image', chatId, config);
+
+    await patchMessage(
+      messageId,
+      {
+        status: 'done',
+        error: null,
+        progress: 1,
+        cost: finalCost,
+        cost_usd: costUsd,
+        media: stored,
+      },
+      config,
+      'Готово'
+    );
+  } else {
+    await updateGenerationStatus(messageId, 'failed', errorText || 'Generation failed', config, { cost: 0 });
+  }
+
+  return buildResult(config, chatId, ctx.requestMessageId, messageId, {
+    status: stored.length > 0 ? 'done' : 'failed',
+    cost: finalCost,
+    media: stored.length > 0 ? stored : undefined,
+    error: stored.length > 0 ? undefined : errorText || undefined,
+  });
+}
+
+/** Активное (не просроченное) видео-задание пользователя в любом его чате */
+async function findActiveVideo(userId: number, config: any): Promise<boolean> {
+  const cutoff = new Date(Date.now() - VIDEO_MAX_AGE_MS).toISOString();
+  const rows = await supabaseFetch(
+    `messages?select=id,chats!inner(user_id)&chats.user_id=eq.${userId}` +
+      `&msg_type=eq.ai-msg&deleted_at=is.null` +
+      `&metadata->>kind=eq.generation&metadata->>modality=eq.video` +
+      `&metadata->>status=in.(pending,processing)&created_at=gt.${encodeURIComponent(cutoff)}&limit=1`,
+    { method: 'GET' },
+    config
+  );
+  return Array.isArray(rows) && rows.length > 0;
 }
 
 /**
  * Сообщения pending/processing в чате, когда замок свободен, — следы упавшей
- * попытки (функция умерла, не дойдя до финального статуса). Помечаем failed.
+ * попытки. Видео-задания доводит до конца finalizeVideoJob (оно же закроет просроченные),
+ * остальные помечаются failed.
  */
 async function failStaleGenerations(chatId: string, config: any): Promise<void> {
   try {
     const stale = await supabaseFetch(
       `messages?chat_id=eq.${chatId}&msg_type=eq.ai-msg` +
-        `&metadata->>kind=eq.generation&metadata->>status=in.(pending,processing)&select=id`,
+        `&metadata->>kind=eq.generation&metadata->>status=in.(pending,processing)&select=id,metadata`,
       { method: 'GET' },
       config
     );
     for (const row of Array.isArray(stale) ? stale : []) {
-      await updateGenerationStatus(row.id, 'failed', 'Генерация прервана', config, { cost: 0 });
+      if (row.metadata?.modality === 'video') {
+        await finalizeVideoJob(row.id, config);
+      } else {
+        await updateGenerationStatus(row.id, 'failed', 'Генерация прервана', config, { cost: 0 });
+      }
     }
   } catch (err) {
     console.error('failStaleGenerations error:', (err as Error).message);
-  }
-}
-
-/**
- * Списание энергии за успешную генерацию. Возвращает фактически списанную сумму
- * (0 для admin/creator). Если списать не удалось (например, энергию успели
- * потратить в параллельном чате), результат всё равно отдаётся, а сбой пишется
- * в system_logs.
- */
-async function chargeForGeneration(
-  userId: number,
-  amount: number,
-  modality: string,
-  chatId: string,
-  config: any
-): Promise<number> {
-  try {
-    const spend = await supabaseRPC(
-      'spend_abstract_tokens',
-      {
-        p_user_id: userId,
-        p_amount: amount,
-        p_source: 'generation',
-        p_description: `Генерация (${modality})`,
-      },
-      config
-    );
-
-    if (spend?.success) {
-      return spend.bypass ? 0 : amount;
-    }
-
-    await logChargeFailure(userId, amount, chatId, spend?.error || 'unknown', config);
-    return 0;
-  } catch (err) {
-    await logChargeFailure(userId, amount, chatId, (err as Error).message, config);
-    return 0;
-  }
-}
-
-async function logChargeFailure(
-  userId: number,
-  amount: number,
-  chatId: string,
-  reason: string,
-  config: any
-): Promise<void> {
-  try {
-    await supabaseFetch(
-      'system_logs',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          level: 'warning',
-          event_type: 'generation_charge_failed',
-          message: `Не удалось списать ${amount} за успешную генерацию (пользователь ${userId}): ${reason}`,
-          user_id: userId,
-          metadata: { amount, chat_id: chatId, reason },
-        }),
-      },
-      config
-    );
-  } catch (err) {
-    console.error('logChargeFailure error:', (err as Error).message);
   }
 }
 
@@ -544,176 +528,4 @@ async function loadInputFiles(
 
   // Сохраняем порядок, в котором их прислал клиент
   return paths.map((p) => rows.find((r) => r.storage_path === p) as IMediaFileRow);
-}
-
-async function updateGenerationStatus(
-  messageId: string,
-  status: string,
-  error: string | null,
-  config: any,
-  extra: Record<string, any> = {}
-) {
-  if (!messageId) return;
-  // Получаем текущий metadata чтобы не затереть
-  const current = await supabaseFetch(
-    `messages?id=eq.${messageId}&select=metadata`,
-    { method: 'GET' },
-    config
-  );
-  const meta = (Array.isArray(current) && current[0]?.metadata) || {};
-  await supabaseFetch(
-    `messages?id=eq.${messageId}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({
-        metadata: {
-          ...meta,
-          ...extra,
-          status,
-          error,
-          progress: status === 'processing' ? 0.3 : status === 'done' ? 1 : 0,
-        },
-      }),
-    },
-    config
-  );
-}
-
-function buildUserContent(
-  prompt: string,
-  params: Record<string, any>,
-  negative: string | null
-): string {
-  let text = prompt;
-  if (params && Object.keys(params).length) {
-    text += '\n\nParameters: ' + JSON.stringify(params);
-  }
-  if (negative) {
-    text += '\n\nNegative prompt: ' + negative;
-  }
-  return text;
-}
-
-function extractMedia(data: any, modality: string): Array<{ type: string; url: string }> {
-  const media: Array<{ type: string; url: string }> = [];
-  const content = data?.choices?.[0]?.message?.content;
-
-  if (typeof content === 'string') {
-    // Ищем URL изображений / видео / аудио
-    const urlRegex = /(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|webp|gif|mp4|webm|mp3|wav|ogg))/gi;
-    const matches = content.match(urlRegex) || [];
-    for (const url of matches) {
-      media.push({
-        type: modality === 'video' ? 'video' : modality === 'audio' ? 'audio' : 'image',
-        url,
-      });
-    }
-    // base64 image
-    const b64 = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
-    if (b64) {
-      media.push({ type: 'image', url: b64[0] });
-    }
-  }
-
-  // Некоторые модели возвращают images в отдельном поле
-  const messageImages = data?.choices?.[0]?.message?.images;
-  for (const img of Array.isArray(messageImages) ? messageImages : []) {
-    const url = img?.image_url?.url || img?.url;
-    if (url) media.push({ type: 'image', url });
-  }
-  if (Array.isArray(data?.images)) {
-    for (const img of data.images) {
-      if (img.url) media.push({ type: 'image', url: img.url });
-    }
-  }
-
-  return media;
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-/** Достаёт байты результата: из data:-URL или по https-ссылке модели */
-async function fetchOutputBytes(url: string): Promise<{ bytes: Uint8Array; mime: string }> {
-  if (url.startsWith('data:')) {
-    const m = /^data:([^;,]+);base64,(.+)$/.exec(url);
-    if (!m) throw new Error('Unsupported data URL');
-    return { bytes: base64ToBytes(m[2]), mime: m[1].toLowerCase() };
-  }
-
-  if (!url.startsWith('https://')) throw new Error('Only https result URLs are supported');
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Result download failed: ${res.status}`);
-
-  const declared = Number(res.headers.get('content-length') || 0);
-  if (declared > MEDIA_LIMITS.outputMaxBytes) throw new Error('Result is too large');
-
-  const bytes = new Uint8Array(await res.arrayBuffer());
-
-  let mime = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-  if (!isAllowedMime(mime)) mime = mimeFromUrlExt(url) || mime;
-
-  return { bytes, mime };
-}
-
-/**
- * Кладёт результаты в Storage и учитывает их в media_files.
- * Порядок: запись → загрузка; при сбое загрузки запись откатывается.
- */
-async function persistOutputs(
-  userId: number,
-  chatId: string,
-  items: Array<{ type: string; url: string }>,
-  config: any
-): Promise<IStoredMedia[]> {
-  const stored: IStoredMedia[] = [];
-
-  for (const item of items) {
-    const { bytes, mime } = await fetchOutputBytes(item.url);
-
-    if (bytes.length === 0) throw new Error('Empty result');
-    if (bytes.length > MEDIA_LIMITS.outputMaxBytes) throw new Error('Result is too large');
-    if (!isAllowedMime(mime)) throw new Error(`Unsupported result type: ${mime || 'unknown'}`);
-
-    const ext = extFromMime(mime) as string;
-    const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`;
-
-    const row = await supabaseFetch(
-      'media_files',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: userId,
-          chat_id: chatId,
-          storage_path: storagePath,
-          kind: 'output',
-          mime,
-          size_bytes: bytes.length,
-          status: 'attached',
-        }),
-      },
-      config
-    );
-
-    try {
-      await uploadObject(storagePath, bytes, mime, config);
-    } catch (err) {
-      await deleteMediaRows([row.id], config);
-      throw err;
-    }
-
-    stored.push({
-      type: mediaTypeFromMime(mime) as IStoredMedia['type'],
-      storage_path: storagePath,
-      mime,
-      size_bytes: bytes.length,
-    });
-  }
-
-  return stored;
 }
