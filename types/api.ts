@@ -104,6 +104,13 @@ export interface IUsageLimit {
   error: string | null;
 }
 
+/** Токен Supabase Realtime (подписан сервером, sub = users.id) */
+export interface IRealtimeToken {
+  token: string;
+  /** Unix-время истечения (секунды) */
+  expiresAt: number;
+}
+
 /** Ответ от /auth/check */
 export interface IAuthCheckResponse {
   isMember: boolean;
@@ -112,13 +119,36 @@ export interface IAuthCheckResponse {
   usedToday: number;
   syncEnabled: boolean;
   syncToken: string | null;
+  /** Есть только при syncEnabled */
+  realtime: IRealtimeToken | null;
+  /** Доступ к админ-панели (по Telegram ID на сервере) */
+  adminPanel: boolean;
+  /** Пользователь заблокирован (бонусы дня не начисляются) */
+  blocked: boolean;
   userId: number;
-  authUserId: UUID;
   userUuid: UUID;
-  jwtToken: string;
-  expiresIn: number;
   isNewUser: boolean;
   dataDeadline?: ISODateString | null;
   serverModels: Record<string, boolean>;
+  tokens?: { bonus: number; permanent: number; total: number };
+  limits?: {
+    tier_key: string;
+    bonus_tokens_per_day: number;
+    permanent_tokens: number;
+    daily_spend_limit: number;
+    bypass: boolean;
+  };
+  today_bonus_added?: number;
+  checkin?: {
+    claimed: boolean;
+    streak: number;
+    base: number;
+    bonus: number;
+    reward: number;
+    coins: number | null;
+  } | null;
+  subscription_tier?: string | null;
+  premium_until?: ISODateString | null;
+  trial_used?: boolean;
   error?: string;
 }
