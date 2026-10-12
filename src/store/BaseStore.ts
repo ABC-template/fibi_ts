@@ -1,7 +1,8 @@
 // ============================================
 // src/store/BaseStore.ts
 // Базовый класс для всех хранилищ с изоляцией данных
-// Версия: 4.0.0 - FIXED
+// Версия: 4.1.0 - JWT убран (авторизация только по Telegram initData)
+//          4.0.0 - FIXED
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
@@ -55,7 +56,6 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
       'user': 'user_store_data_',
       'organizer': 'organizer_',
       'tasks': 'tasks_',
-      'jwt': 'jwt_token_',
       'temp': 'temp_'
     };
     
@@ -104,36 +104,6 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
   }
 
   // ==========================================
-  // JWT (с привязкой к пользователю)
-  // ==========================================
-
-  saveJWT(token: string | null): void {
-    const telegramId = this.getTelegramId();
-    const id = telegramId || 'default';
-    if (!token) {
-      localStorage.removeItem(`jwt_token_${id}`);
-      return;
-    }
-    localStorage.setItem(`jwt_token_${id}`, token);
-    console.log(`🔑 JWT сохранен`);
-    this._emitChange('auth:jwt_updated', { token: token ? 'present' : 'null' });
-  }
-
-  getJWT(): string | null {
-    const telegramId = this.getTelegramId();
-    const id = telegramId || 'default';
-    return localStorage.getItem(`jwt_token_${id}`);
-  }
-
-  clearJWT(): void {
-    const telegramId = this.getTelegramId();
-    const id = telegramId || 'default';
-    localStorage.removeItem(`jwt_token_${id}`);
-    console.log(`🗑️ JWT удален`);
-    this._emitChange('auth:jwt_cleared', {});
-  }
-
-  // ==========================================
   // SYNC TOKEN (БЕЗ ПРИВЯЗКИ К ПОЛЬЗОВАТЕЛЮ!)
   // ==========================================
 
@@ -158,7 +128,7 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
   }
 
   // ==========================================
-  // ОЧИСТКА (данные + токены)
+  // ОЧИСТКА (данные + sync_token)
   // ==========================================
 
   clear(): void {
@@ -167,8 +137,7 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
     
     this._data = {} as T;
     this.save();
-    
-    localStorage.removeItem(`jwt_token_${id}`);
+
     localStorage.removeItem('sync_token');
     
     console.log(`🧹 Данные ${this.storeName} и sync_token очищены для пользователя ${id}`);
