@@ -1,7 +1,9 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.3.0 - удаление в корзину: 409 от сервера (чат занят) откатывает локальное удаление
+// Версия: 3.4.0 - agent_id/modality при слиянии нового чата из облака и при выгрузке
+//                 локальных чатов; metadata и избранное сообщений при выгрузке
+//          3.3.0 - удаление в корзину: 409 от сервера (чат занят) откатывает локальное удаление
 //          3.2.0 - metadata сообщений при слиянии с облаком, agent_id/modality при создании чата,
 //                 ensureRemoteChat (чат генерации без первого сообщения)
 //          3.1.1 - замена @types → @app-types
@@ -158,6 +160,8 @@ export class ChatService {
       chat.pinned = cloudChat.pinned || false;
       chat.updated_at = cloudChat.updated_at;
       chat.deleted_at = cloudChat.deleted_at || null;
+      if (cloudChat.agent_id !== undefined) chat.agent_id = cloudChat.agent_id || null;
+      if (cloudChat.modality !== undefined) chat.modality = cloudChat.modality || null;
       chat.synced = true;
       
       const cloudMsgIds = new Set(cloudChat.messages.map((m: any) => m.id));
@@ -204,6 +208,8 @@ export class ChatService {
           maxContext: cloudChat.max_context || 15,
           userRenamed: cloudChat.user_renamed || false,
           pinned: cloudChat.pinned || false,
+          agent_id: cloudChat.agent_id || null,
+          modality: cloudChat.modality || null,
           synced: true,
           messages: cloudChat.messages.map((m: any) => {
             const msgType = m.msg_type || m.type || 'user-msg';
@@ -682,44 +688,76 @@ export class ChatService {
   private async updateChatInCloud(localChat: any): Promise<void> {
     console.log(`📝 Обновляем чат ${localChat.id} в облаке (мерж)...`);
 
-    const cloudChat = await this.getChat(localChat.id);
-    if (!cloudChat) {
+    // Сравниваем с «сырыми» данными сервера. mergeChatFromCloud здесь не подходит:
+    // он выкидывает локальные сообщения, которых нет на сервере, — то есть ровно те,
+    // которые нужно выгрузить.
+    const data = await apiClient.get(`/chats/get?id=${localChat.id}`);
+    if (!data?.success || !data.chat) {
       throw new Error('Не удалось загрузить чат из облака');
     }
+    const cloudChat = data.chat;
+    const cloudMsgIds = new Set((data.messages || []).map((m: any) => m.id));
 
-    const cloudMsgIds = new Set(cloudChat.messages.map((m: IMessage) => m.id));
-    const newMessages = localChat.messages.filter((m: IMessage) => !cloudMsgIds.has(m.id));
+    const newMessages = (localChat.messages || []).filter(
+      (m: IMessage) => !m.deleted_at && !cloudMsgIds.has(m.id)
+    );
 
+    for (const msg of newMessages) {
+      const result = await apiClient.post('/chats/actions/message', {
+        action: 'new_message',
+        chatId: localChat.id,
+        message: this._messagePayload(msg)
+      });
+      this._saveSyncToken(result.syncToken);
+    }
     if (newMessages.length > 0) {
-      for (const msg of newMessages) {
-        const result = await apiClient.post('/chats/actions/message', {
-          action: 'new_message',
-          chatId: localChat.id,
-          message: {
-            id: msg.id,
-            text: msg.text,
-            type: msg.type,
-            isFavorite: msg.isFavorite || false
-          }
-        });
-        this._saveSyncToken(result.syncToken);
-      }
       console.log(`📝 Добавлено ${newMessages.length} новых сообщений в чат ${localChat.id}`);
     }
 
-    if (localChat.title !== cloudChat.title || localChat.maxContext !== cloudChat.maxContext) {
+    if (localChat.title !== cloudChat.title) {
       const result = await apiClient.post('/chats/actions/update', {
         action: 'rename_chat',
         chatId: localChat.id,
         newTitle: localChat.title
       });
       this._saveSyncToken(result.syncToken);
-      console.log(`📝 Обновлены метаданные чата ${localChat.id}`);
     }
 
-    if (localChat.pinned !== cloudChat.pinned) {
+    if ((localChat.maxContext || 15) !== (cloudChat.max_context || 15)) {
+      const result = await apiClient.post('/chats/actions/update', {
+        action: 'update_context',
+        chatId: localChat.id,
+        maxContext: localChat.maxContext || 15
+      });
+      this._saveSyncToken(result.syncToken);
+    }
+
+    if (!!localChat.pinned !== !!cloudChat.pinned) {
       await this.pinChat(localChat.id, localChat.pinned || false);
     }
+
+    this._markSynced(localChat.id);
+    console.log(`📝 Чат ${localChat.id} синхронизирован`);
+  }
+
+  /** Отметить локальный чат синхронизированным, не трогая дату и сообщения */
+  private _markSynced(chatId: UUID): void {
+    const found = chatStore.findChatById(chatId);
+    if (found && !found.chat.synced) {
+      found.chat.synced = true;
+      chatStore.save();
+    }
+  }
+
+  /** Сообщение для выгрузки в облако (вместе с избранным и metadata генераций) */
+  private _messagePayload(msg: IMessage): Record<string, any> {
+    return {
+      id: msg.id,
+      text: msg.text,
+      type: msg.type,
+      is_favorite: msg.isFavorite || false,
+      metadata: msg.metadata || null
+    };
   }
 
   private async createChatInCloud(localChat: any): Promise<void> {
@@ -733,7 +771,9 @@ export class ChatService {
         title: localChat.title,
         max_context: localChat.maxContext || 15,
         user_renamed: localChat.userRenamed || false,
-        pinned: localChat.pinned || false
+        pinned: localChat.pinned || false,
+        agent_id: localChat.agent_id || null,
+        modality: localChat.modality || null
       },
       firstMessage: null
     });
@@ -746,18 +786,14 @@ export class ChatService {
         const msgResult = await apiClient.post('/chats/actions/message', {
           action: 'new_message',
           chatId: localChat.id,
-          message: {
-            id: msg.id,
-            text: msg.text,
-            type: msg.type,
-            isFavorite: msg.isFavorite || false
-          }
+          message: this._messagePayload(msg)
         });
         this._saveSyncToken(msgResult.syncToken);
       }
       console.log(`📝 Загружено ${messages.length} сообщений в чат ${localChat.id}`);
     }
 
+    this._markSynced(localChat.id);
     console.log(`✅ Чат ${localChat.id} создан в облаке`);
   }
 
@@ -914,4 +950,4 @@ export class ChatService {
 }
 
 export const chatService = new ChatService();
-console.log('✅ ChatService v3.1.1 загружен (добавлен pinChat)');
+console.log('✅ ChatService v3.4.0 загружен');
