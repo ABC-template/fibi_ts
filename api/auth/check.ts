@@ -1,7 +1,9 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 7.1.0 — sync_token отдаётся из БД без перегенерации
+// Версия: 7.2.0 — ежедневный вход на сервере (daily_checkin: стрик + монеты) и награда
+//                  пригласившему, когда приглашённый вернулся на следующий день
+//          7.1.0 — sync_token отдаётся из БД без перегенерации
 //          7.0.0 — канал=gate, expiry→trial, tier из subscription_tiers
 // ============================================
 
@@ -16,6 +18,7 @@ import {
   getSyncToken,
   updateSyncToken,
   supabaseRPC,
+  getVerifiedStartParam,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
@@ -101,6 +104,32 @@ export default async function handler(request: Request): Promise<Response> {
       dbUser = { role: 'trial', subscription_tier: 'trial' };
       role = 'trial';
       subscriptionTier = 'trial';
+    }
+
+    // ==========================================
+    // 3a. Приглашение: ссылка t.me/<бот>?startapp=ref_<код>. start_param берётся
+    //     из подписанного initData, запись создаёт БД (только для новых пользователей,
+    //     один пригласивший). Награда — позже, когда приглашённый вернётся.
+    // ==========================================
+    try {
+      const startParam = await getVerifiedStartParam(request, telegramId);
+      const m = startParam ? /^ref_([0-9a-z]{1,16})$/i.exec(startParam) : null;
+      if (m) {
+        const referrerId = parseInt(m[1], 36);
+        if (Number.isSafeInteger(referrerId) && referrerId > 0 && referrerId !== telegramId) {
+          await supabaseRPC(
+            'register_referral',
+            {
+              p_referrer_id: referrerId,
+              p_referred_id: telegramId,
+              p_referred_username: user?.username || null,
+            },
+            config
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [auth/check] referral:', err);
     }
 
     // ==========================================
@@ -246,6 +275,37 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
+    // 7b. Ежедневный вход (один раз в сутки): стрик + монеты daily_login.
+    //     Клиент только показывает результат.
+    // ==========================================
+    let checkin: any = null;
+    try {
+      const res = await supabaseRPC('daily_checkin', { p_user_id: telegramId }, config);
+      if (res?.success) {
+        checkin = {
+          claimed: res.claimed === true,
+          streak: res.streak || 0,
+          base: res.base || 0,
+          bonus: res.bonus || 0,
+          reward: res.reward || 0,
+          coins: res.new_balance ?? null,
+        };
+
+        // Приглашённый вернулся на следующий день — награда пригласившему
+        // (один раз; reward_referral сама проверяет, что награды ещё не было)
+        if (checkin.claimed) {
+          await supabaseRPC(
+            'reward_referral',
+            { p_referred_id: telegramId, p_min_age_hours: 20 },
+            config
+          ).catch(() => null);
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [auth/check] daily_checkin:', err);
+    }
+
+    // ==========================================
     // 8. Балансы
     // ==========================================
     let tokenBalance = { bonus: 0, permanent: 0 };
@@ -313,6 +373,7 @@ export default async function handler(request: Request): Promise<Response> {
           bypass: limits.bypass === true,
         },
         today_bonus_added: bonusAdded,
+        checkin,
         subscription_tier: subscriptionTier,
         premium_until: premiumUntil,
         trial_used: dbUser?.trial_used || false,
