@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/voice.ts
 // Голосовой ввод
-// Версия: 3.0.1 - FIXED TYPES
+// Версия: 3.1.0 - в streamAiResponse уходят chatId и агент чата (был объект чата)
+//          3.0.1 - FIXED TYPES
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -211,15 +212,24 @@ let globalVoiceStream: MediaStream | null = null;
           if (vBtn) vBtn.disabled = true;
           if (sendBtn) sendBtn.disabled = true;
 
-          if (typeof (window as any).streamAiResponse === 'function') {
-            const userLang = activeChatForStream?.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
+          if (typeof (window as any).streamAiResponse !== 'function') {
+            await import('./stream');
+          }
+          if (activeChatForStream) {
+            const userLang = activeChatForStream.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
+            // chatId и агент чата — как при обычной отправке (раньше уходил объект
+            // чата вместо id, и ответ не находил свой чат)
             await (window as any).streamAiResponse(
               cleanHist,
-              chatStore.currentTopic,
+              activeChatForStream.topic || chatStore.currentTopic,
               userLang,
               null,
-              activeChatForStream
+              activeChatForStream.id,
+              activeChatForStream.agent_id || null,
+              null
             );
+          } else {
+            uiRenderer.hideSkeleton();
           }
 
           (window as any).isSendingMessage = false;
