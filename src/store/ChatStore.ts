@@ -1,7 +1,11 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 6.3.0 — удаление чата запрещено, пока в нём идёт генерация
+// Версия: 6.4.0 — полная загрузка из облака: серверные поля (topic_id, max_context,
+//                  user_renamed), agent_id/modality, metadata сообщений; локальные
+//                  несинхронизированные чаты и активный чат сохраняются;
+//                  «удержание» чата (holdChat) — не удаляется как пустой, пока идёт запрос
+//          6.3.0 — удаление чата запрещено, пока в нём идёт генерация
 //          6.2.0 — metadata сообщений (генерации), upsertMessage
 //          6.1.0 — добавлены agent_id и modality
 // ============================================
@@ -26,6 +30,13 @@ const DEFAULT_TOPICS: TopicId[] = ['code', 'creative', 'fast', 'kitchen', 'analy
 const MAX_PINNED_CHATS = 10;
 
 export class ChatStore extends BaseStore<IChatStoreData> {
+  /**
+   * Чаты, которые нельзя удалять как «пустые», пока по ним идёт запрос
+   * (генерация: сообщения создаёт сервер и они появляются только в конце).
+   * Хранится в памяти: после перезапуска запрос всё равно уже не наш.
+   */
+  private _held: Set<string> = new Set();
+
   constructor() {
     super('chat');
     this.load();
@@ -90,8 +101,30 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return chat.messages.some(m =>
       (m.type === 'user-msg' || m.type === 'ai-msg') &&
       !m.deleted_at &&
-      m.text && m.text.trim().length > 0
+      ((m.text && m.text.trim().length > 0) || !!(m as any).metadata)
     );
+  }
+
+  /** Не удалять чат как пустой, пока по нему идёт запрос */
+  holdChat(chatId: UUID): void {
+    if (chatId) this._held.add(chatId);
+  }
+
+  releaseChat(chatId: UUID): void {
+    if (chatId) this._held.delete(chatId);
+  }
+
+  isChatHeld(chatId: UUID): boolean {
+    return !!chatId && this._held.has(chatId);
+  }
+
+  /** Чат можно удалить как пустой: нет сообщений, нет запроса, нет живой генерации */
+  isDisposableEmpty(chat: IChat): boolean {
+    if (!chat || chat.deleted_at) return false;
+    if (this.hasRealMessages(chat)) return false;
+    if (this._held.has(chat.id)) return false;
+    if (chatHasLiveGeneration(chat)) return false;
+    return true;
   }
 
   isEmpty(chat: IChat): boolean {
@@ -248,7 +281,7 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       const nonEmptyChats: IChat[] = [];
 
       for (const chat of chats) {
-        if (!this.hasRealMessages(chat) && !chat.deleted_at) {
+        if (this.isDisposableEmpty(chat)) {
           cleaned++;
           console.log(`🧹 [cleanupAllEmptyChats] Удаляем пустой чат ${chat.id} из темы ${topic}`);
         } else {
@@ -711,41 +744,61 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     return chat;
   }
 
-  updateAllChats(cloudChats: IChat[]): void {
+  /**
+   * Полная замена данных облачными (PRO, sync_token не совпал).
+   * Сервер присылает поля в формате БД: topic_id, max_context, user_renamed,
+   * msg_type, is_favorite. Локальные чаты, которых на сервере ещё нет
+   * (synced = false, например созданные без сети), и чаты с идущим запросом
+   * сохраняются — иначе полная загрузка стирала бы несохранённые данные.
+   */
+  updateAllChats(cloudChats: any[]): void {
     console.log(`📋 [updateAllChats] Полная замена данных: ${cloudChats?.length || 0} чатов...`);
-    
+
     if (!cloudChats || !Array.isArray(cloudChats)) {
       console.warn('⚠️ [updateAllChats] Нет данных для обновления');
       return;
     }
 
-    const filteredChats = cloudChats.filter(chat => {
-      const hasMessages = chat.messages?.some(m => 
-        !m.deleted_at && m.text && m.text.trim().length > 0
+    const hasContent = (chat: any): boolean =>
+      (chat.messages || []).some(
+        (m: any) => !m.deleted_at && ((m.text && m.text.trim().length > 0) || !!m.metadata)
       );
-      return hasMessages || chat.deleted_at;
-    });
+
+    const filteredChats = cloudChats.filter(chat => hasContent(chat) || chat.deleted_at);
 
     if (filteredChats.length !== cloudChats.length) {
       console.log(`🧹 [updateAllChats] Отфильтровано ${cloudChats.length - filteredChats.length} пустых чатов`);
     }
 
+    // Что сохранить из локальных данных
+    const previousActive = { ...this._data.activeIds };
+    const cloudIds = new Set(filteredChats.map(c => c.id));
+    const keepLocal: IChat[] = [];
+    for (const chats of Object.values(this._data.histories || {}) as IChat[][]) {
+      for (const chat of chats || []) {
+        if (cloudIds.has(chat.id)) continue;
+        const unsynced = !chat.synced && this.hasRealMessages(chat);
+        const busy = this._held.has(chat.id) || chatHasLiveGeneration(chat);
+        if (unsynced || busy) keepLocal.push(chat);
+      }
+    }
+
     const grouped: Record<TopicId, IChat[]> = {} as Record<TopicId, IChat[]>;
     let totalMessages = 0;
-    
+
     for (const chat of filteredChats) {
-      const chatTopic = chat.topic || 'fast';
+      const chatTopic = (chat.topic_id || chat.topic || 'fast') as TopicId;
       if (!grouped[chatTopic]) {
         grouped[chatTopic] = [];
       }
-      
+
       const localChat: IChat = {
         id: chat.id,
         title: chat.title || 'Без названия',
-        maxContext: chat.maxContext || 15,
+        maxContext: chat.max_context ?? chat.maxContext ?? 15,
         language: chat.language || 'ru',
         topic: chatTopic,
-        userRenamed: chat.userRenamed || false,
+        userRenamed: chat.user_renamed ?? chat.userRenamed ?? false,
         synced: true,
         pinned: chat.pinned || false,
         agent_id: chat.agent_id || null,
@@ -753,25 +806,33 @@ export class ChatStore extends BaseStore<IChatStoreData> {
         deleted_at: chat.deleted_at || null,
         created_at: chat.created_at || new Date().toISOString(),
         updated_at: chat.updated_at || new Date().toISOString(),
-        messages: (chat.messages || []).map(m => {
-          const msgType = (m as any).msg_type || m.type || 'user-msg';
+        messages: (chat.messages || []).map((m: any) => {
+          const msgType = m.msg_type || m.type || 'user-msg';
           return {
             id: m.id,
-            text: m.text,
+            text: m.text || '',
             type: msgType as MessageType,
-            isFavorite: (m as any).is_favorite || m.isFavorite || false,
+            isFavorite: m.is_favorite ?? m.isFavorite ?? false,
             deleted_at: m.deleted_at || null,
-            created_at: m.created_at || new Date().toISOString()
+            created_at: m.created_at || new Date().toISOString(),
+            metadata: m.metadata || null
           };
         })
       };
-      
+
       localChat.messages.sort((a, b) => {
         return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
       });
-      
+
       totalMessages += localChat.messages.length;
       grouped[chatTopic].push(localChat);
+    }
+
+    for (const chat of keepLocal) {
+      const topic = (chat.topic || 'fast') as TopicId;
+      if (!grouped[topic]) grouped[topic] = [];
+      grouped[topic].unshift(chat);
+      totalMessages += chat.messages?.length || 0;
     }
 
     const entries = Object.entries(grouped) as [TopicId, IChat[]][];
@@ -786,22 +847,25 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       }
     }
 
+    // Активный чат: прежний, если он ещё есть, иначе первый непустой
     const allTopics = Object.keys(this._data.histories) as TopicId[];
     for (const topicId of allTopics) {
       const chats = this._data.histories[topicId] || [];
-      const activeChat = chats.find(c => !c.deleted_at && c.messages && c.messages.length > 0);
-      if (activeChat) {
-        this._data.activeIds[topicId] = activeChat.id;
-      } else {
-        this._data.activeIds[topicId] = null;
+      const prevId = previousActive[topicId];
+      const prev = prevId ? chats.find(c => c.id === prevId && !c.deleted_at) : null;
+      if (prev) {
+        this._data.activeIds[topicId] = prev.id;
+        continue;
       }
+      const activeChat = chats.find(c => !c.deleted_at && c.messages && c.messages.length > 0);
+      this._data.activeIds[topicId] = activeChat ? activeChat.id : null;
     }
 
     this.save();
-    
-    console.log(`✅ [updateAllChats] Заменено ${filteredChats.length} чатов, ${totalMessages} сообщений`);
+
+    console.log(`✅ [updateAllChats] Заменено ${filteredChats.length} чатов (+${keepLocal.length} локальных), ${totalMessages} сообщений`);
     this._emitChange('chat:all_updated', {
-      totalChats: filteredChats.length,
+      totalChats: filteredChats.length + keepLocal.length,
       totalMessages: totalMessages
     });
   }
@@ -854,4 +918,4 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 }
 
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v6.1.0 загружен (agent_id + modality)');
+console.log('✅ ChatStore v6.4.0 загружен');
