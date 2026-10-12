@@ -1,7 +1,8 @@
 // ============================================
 // api/_lib/auth.ts
 // Описание: Единая аутентификация для всех Edge-функций
-// Версия: 4.0.0 - TypeScript
+// Версия: 4.1.0 - getVerifiedStartParam (start_param из подписанного initData)
+//          4.0.0 - TypeScript
 // ============================================
 
 import { getSupabaseConfig, supabaseFetch } from './supabase-client';
@@ -202,6 +203,25 @@ export async function authenticate(
       status: 500
     };
   }
+}
+
+/**
+ * start_param из подписанного initData (параметр startapp ссылки на Mini App).
+ * Возвращается только если подпись верна и initData принадлежит expectedUserId.
+ */
+export async function getVerifiedStartParam(
+  request: Request,
+  expectedUserId: number
+): Promise<string | null> {
+  const initData = request.headers.get('x-telegram-init-data');
+  const botToken = process.env.BOT_TOKEN?.trim();
+  if (!initData || !botToken) return null;
+
+  const tgUser = await validateTelegramInitData(initData, botToken);
+  if (!tgUser || Number(tgUser.id) !== Number(expectedUserId)) return null;
+
+  const startParam = new URLSearchParams(initData).get('start_param');
+  return startParam && startParam.length <= 512 ? startParam : null;
 }
 
 /**
