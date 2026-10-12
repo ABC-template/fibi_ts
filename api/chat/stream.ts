@@ -1,7 +1,12 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.4.0 — ответ открывается сразу, модель вызывается внутри потока с «пульсом»;
+// Версия: 3.5.0 — история от клиента ограничена (до 100 сообщений и 400 000 символов,
+//                  не больше окна контекста модели); без цены модели вход ограничен
+//                  16 000 токенов (раньше можно было отправить сколько угодно за min_charge);
+//                  роль сообщений только по типу (prompts.ts v5); проверка типов тела;
+//                  создатель — из CREATOR_ID
+//          3.4.0 — ответ открывается сразу, модель вызывается внутри потока с «пульсом»;
 //                  на каждом ключе ждём первое слово ≤45 с, потом следующий ключ (401/402/429/5xx/
 //                  таймаут/ошибка внутри потока); понятный текст ошибки вместо «ключи перегружены»
 //          3.3.1 — замок чата снимается до закрытия ответа (иначе второе сообщение → 409)
@@ -28,10 +33,12 @@ import {
   errorResponse,
   getSupabaseConfig,
   validateImageSize,
+  isCreator,
 } from '../_lib/index';
 
 import { getModelConfig, getRotatedKeysPool } from '../chats/index';
 import { buildSystemPrompt, buildMessages } from '../chat/prompts';
+import type { IHistoryMessage } from '../chat/prompts';
 import {
   checkTokenAvailability,
 } from '../_lib/tokens';
@@ -52,8 +59,6 @@ import type { IChatLock } from '../_lib/chat-lock';
 import { ENERGY_PER_USD, getModelPrices, textEnergyForUsd } from '../_lib/text-pricing';
 
 export const config = { runtime: 'edge' };
-
-const MY_TELEGRAM_ID = 1541531808;
 
 // ---------- Протокол потока с приложением ----------
 /** Невидимый «пульс», пока модель не начала отвечать (приложение вырезает) */
@@ -187,7 +192,7 @@ async function openUpstream(key: string, body: string, deadline: number): Promis
 }
 
 interface IStreamRequestBody {
-  historyMessages?: Array<{ type: string; text: string; role?: string }>;
+  historyMessages?: IHistoryMessage[];
   currentTopic?: string;
   userLang?: string;
   attachedImage?: string | null;
@@ -222,6 +227,12 @@ interface IAgent {
 const MAX_ATTACHED_FILE_CHARS = 3_000_000; // ~3 МБ текста — жёсткий потолок
 const RESPONSE_TOKEN_RESERVE = 4000; // запас под ответ модели
 const MIN_EXPECTED_COMPLETION_TOKENS = 500; // ответ, который заведомо должен поместиться в баланс
+/** История от клиента: не больше стольких последних сообщений */
+const MAX_HISTORY_MESSAGES = 100;
+/** История от клиента: не больше стольких символов всего */
+const MAX_HISTORY_CHARS = 400_000;
+/** Если цену модели узнать не удалось — вход не больше стольких токенов */
+const MAX_INPUT_TOKENS_WITHOUT_PRICE = 16_000;
 
 async function getAgentById(
   agentId: string,
@@ -409,18 +420,27 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const {
-      historyMessages = [],
-      currentTopic,
-      userLang,
-      attachedImage,
-      attachedFile,
-      agentId,
-      chatId,
-    } = body;
+    const { currentTopic, userLang, agentId, chatId } = body;
 
     if (!isValidChatId(chatId)) {
       return errorResponse('chatId is required', 400);
+    }
+
+    // ---------- Проверка тела запроса ----------
+    const attachedImage = typeof body.attachedImage === 'string' && body.attachedImage ? body.attachedImage : null;
+    const attachedFile =
+      body.attachedFile && typeof body.attachedFile.content === 'string' && body.attachedFile.content
+        ? { name: String(body.attachedFile.name || 'file').substring(0, 200), content: body.attachedFile.content }
+        : null;
+
+    const rawHistory = Array.isArray(body.historyMessages) ? body.historyMessages : [];
+    const historyMessages: IHistoryMessage[] = rawHistory
+      .slice(-MAX_HISTORY_MESSAGES)
+      .filter((m) => m && (m.type === 'user-msg' || m.type === 'ai-msg') && typeof m.text === 'string')
+      .map((m) => ({ type: m.type, text: m.text }));
+    const historyChars = historyMessages.reduce((n, m) => n + m.text.length, 0);
+    if (historyChars > MAX_HISTORY_CHARS) {
+      return errorResponse('История чата слишком длинная. Уменьшите контекст в настройках чата или начните новый чат.', 413);
     }
 
     console.log('📨 [stream] Запрос:', {
@@ -512,7 +532,7 @@ export default async function handler(request: Request): Promise<Response> {
         );
       }
 
-      if (userId !== MY_TELEGRAM_ID) {
+      if (!isCreator(userId)) {
         return errorResponse(
           '📸 Отправка изображений доступна только создателю приложения',
           403
@@ -522,7 +542,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     let attachedFileBlock = '';
     if (attachedFile?.content) {
-      if (userId !== MY_TELEGRAM_ID) {
+      if (!isCreator(userId)) {
         return errorResponse(
           '📎 Загрузка файлов пока доступна только создателю приложения',
           403
@@ -544,7 +564,7 @@ export default async function handler(request: Request): Promise<Response> {
       if (agent.context_length) {
         const usedTokens =
           estimateTokens(
-            historyMessages.map(m => ({ role: 'user', content: m.text || '' })),
+            historyMessages.map(m => ({ role: 'user', content: m.text })),
             agent.system_prompt || ''
           ) + RESPONSE_TOKEN_RESERVE;
         const fileTokens = estimateTokens([{ role: 'user', content: attachedFile.content }]);
@@ -583,8 +603,13 @@ export default async function handler(request: Request): Promise<Response> {
     console.log('📨 [stream] Модель:', model);
     console.log('📨 [stream] Количество сообщений:', messages.length);
 
-    const estimatedTokens = estimateTokens(messages, systemPrompt);
+    const estimatedTokens = estimateTokens(messages);
     console.log(`📊 [stream] Оценка токенов OpenRouter: ~${estimatedTokens}`);
+
+    // Вход должен помещаться в окно контекста модели вместе с запасом под ответ
+    if (agent.context_length && estimatedTokens + RESPONSE_TOKEN_RESERVE > agent.context_length) {
+      return errorResponse('История чата не помещается в контекст модели. Уменьшите контекст в настройках чата или начните новый чат.', 413);
+    }
 
     const openRouterCheck = await checkOpenRouterLimit(userId, estimatedTokens, config);
     if (!openRouterCheck.allowed) {
@@ -599,6 +624,10 @@ export default async function handler(request: Request): Promise<Response> {
     const minCharge = Math.max(1, Number(agent.min_charge) || 1);
     const safeMarkup = getMarkupForTier(agent, userProTier);
     const modelPrices = await getModelPrices(model, keysPool[0]);
+    if (!modelPrices && estimatedTokens > MAX_INPUT_TOKENS_WITHOUT_PRICE && !isCreator(userId)) {
+      // Без цены нельзя оценить стоимость большого запроса заранее
+      return errorResponse('Не удалось проверить стоимость длинного запроса. Попробуйте через минуту или начните новый чат.', 503);
+    }
     const promptUsd = modelPrices ? estimatedTokens * modelPrices.prompt : 0;
     const estimatedUsd = modelPrices ? promptUsd + MIN_EXPECTED_COMPLETION_TOKENS * modelPrices.completion : 0;
     const estimatedCharge = textEnergyForUsd(estimatedUsd, safeMarkup, minCharge);
