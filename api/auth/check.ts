@@ -1,7 +1,8 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 7.0.0 — канал=gate, expiry→trial, tier из subscription_tiers
+// Версия: 7.1.0 — sync_token отдаётся из БД без перегенерации
+//          7.0.0 — канал=gate, expiry→trial, tier из subscription_tiers
 // ============================================
 
 import {
@@ -54,21 +55,6 @@ export default async function handler(request: Request): Promise<Response> {
     const isNewUser = authResult.isNew;
 
     // ==========================================
-    // 2. sync_token
-    // ==========================================
-    const dbSyncToken = await getSyncToken(telegramId, config);
-    const clientSyncToken = request.headers.get('x-sync-token') || null;
-
-    let finalSyncToken: string | null;
-    if (clientSyncToken !== dbSyncToken) {
-      await updateSyncToken(telegramId, config);
-      finalSyncToken = crypto.randomUUID();
-      console.log(`🔄 [auth/check] sync_token обновлён`);
-    } else {
-      finalSyncToken = dbSyncToken;
-    }
-
-    // ==========================================
     // 3. public.users — создать если нет
     // ==========================================
     let dbUser: any = null;
@@ -115,6 +101,22 @@ export default async function handler(request: Request): Promise<Response> {
       dbUser = { role: 'trial', subscription_tier: 'trial' };
       role = 'trial';
       subscriptionTier = 'trial';
+    }
+
+    // ==========================================
+    // 3b. sync_token (после создания строки users)
+    // ==========================================
+    //    Токен меняют только действия с данными (создание/правка/удаление).
+    //    Здесь его НЕ перегенерируем: клиент сравнивает свой токен с этим и,
+    //    если они разные, делает полную загрузку и сохраняет именно этот токен.
+    //    Раньше здесь создавался новый токен, которого не было в БД, — и
+    //    полная перезагрузка шла при каждом запуске.
+    let finalSyncToken: string | null =
+      dbUser?.sync_token || (await getSyncToken(telegramId, config));
+    if (!finalSyncToken) {
+      // У пользователя ещё нет токена — заводим и сохраняем в БД
+      finalSyncToken = await updateSyncToken(telegramId, config);
+      console.log(`🔄 [auth/check] sync_token создан`);
     }
 
     // ==========================================
