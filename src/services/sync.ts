@@ -1,13 +1,20 @@
 // ============================================
 // src/services/sync.ts
 // Realtime синхронизация для PRO (с JWT)
-// Версия: 4.1.0 - metadata сообщений в Realtime (INSERT/UPDATE), patcher.updateMessage
+// Версия: 4.2.0 - тип события берётся из payload.eventType (supabase-js v2; поле event
+//                 не существует, из-за чего обработчики не срабатывали);
+//                 agent_id/modality чатов; сообщения — через chatStore.upsertMessage
+//                 (UI обновляет только открытый чат); сообщение в неизвестный
+//                 чат подтягивает чат с сервера
+//          4.1.0 - metadata сообщений в Realtime (INSERT/UPDATE), patcher.updateMessage
 //          4.0.1 - замена @types → @app-types
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
 import { chatStore } from '@/store/ChatStore';
-import type { IChat, IMessage, UUID } from '@app-types';
+import { eventBus } from '@/core/event-bus';
+import { chatService } from './chats';
+import type { IMessage, MessageType, TopicId, UUID } from '@app-types';
 
 export class SyncService {
   private channel: any = null;
@@ -449,140 +456,136 @@ export class SyncService {
   // ОБРАБОТЧИКИ СОБЫТИЙ
   // ==========================================
 
+  /** supabase-js v2 кладёт тип события в eventType */
+  private _eventOf(payload: any): string {
+    return payload?.eventType || payload?.event || '';
+  }
+
+  private _refreshLists(): void {
+    if ((window as any).chatUI) (window as any).chatUI.refreshUI();
+    if ((window as any).profileUI) (window as any).profileUI.renderHistoryChatsList((window as any).profileUI?.currentFilter || 'all');
+    if ((window as any).updateTrashCount) (window as any).updateTrashCount();
+    if ((window as any).renderChatsInDrawer) (window as any).renderChatsInDrawer();
+  }
+
   private handleChatChange(payload: any): void {
-    const { event, new: newData, old: oldData } = payload;
+    const event = this._eventOf(payload);
+    const newData = payload?.new;
+    const oldData = payload?.old;
 
     try {
       if (event === 'INSERT') {
         if (newData && !newData.deleted_at) {
           const found = chatStore.findChatById(newData.id);
           if (!found) {
-            chatStore.createChat(
-              newData.topic_id,
+            const activeBefore = chatStore.activeIds[(newData.topic_id || 'fast') as TopicId] ?? null;
+            const created = chatStore.createChat(
+              (newData.topic_id || 'fast') as TopicId,
               newData.title,
               {
                 id: newData.id,
                 maxContext: newData.max_context || 15,
                 userRenamed: newData.user_renamed || false,
                 pinned: newData.pinned || false,
+                agent_id: newData.agent_id || null,
+                modality: newData.modality || null,
                 synced: true,
                 messages: []
               }
             );
-            console.log(`📝 Добавлен новый чат ${newData.id}`);
-          } else if (newData.pinned !== undefined) {
-            found.chat.pinned = newData.pinned;
+            // createChat делает новый чат активным — с другого устройства это не нужно
+            chatStore.setActiveChat(created.topic, activeBefore);
+            console.log(`📝 Добавлен новый чат ${newData.id} (Realtime)`);
+          } else {
+            found.chat.synced = true;
+            if (newData.pinned !== undefined) found.chat.pinned = newData.pinned;
+            if (newData.agent_id !== undefined) found.chat.agent_id = newData.agent_id || null;
+            if (newData.modality !== undefined) found.chat.modality = newData.modality || null;
             chatStore.save();
           }
         }
       } else if (event === 'UPDATE') {
-        const found = chatStore.findChatById(newData.id);
+        const found = chatStore.findChatById(newData?.id);
         if (found) {
           const { chat } = found;
-          chat.title = newData.title;
-          chat.maxContext = newData.max_context;
-          chat.userRenamed = newData.user_renamed;
-          chat.pinned = newData.pinned !== undefined ? newData.pinned : chat.pinned;
-          chat.updated_at = newData.updated_at;
-          chat.deleted_at = newData.deleted_at;
+          if (newData.title !== undefined) chat.title = newData.title;
+          if (newData.max_context !== undefined) chat.maxContext = newData.max_context || 15;
+          if (newData.user_renamed !== undefined) chat.userRenamed = !!newData.user_renamed;
+          if (newData.pinned !== undefined) chat.pinned = !!newData.pinned;
+          if (newData.agent_id !== undefined) chat.agent_id = newData.agent_id || null;
+          if (newData.modality !== undefined) chat.modality = newData.modality || null;
+          if (newData.updated_at) chat.updated_at = newData.updated_at;
+          if (newData.deleted_at !== undefined) chat.deleted_at = newData.deleted_at || null;
           chatStore.save();
-          console.log(`📝 Обновлен чат ${newData.id}`);
-          
-          if (newData.pinned !== undefined) {
-            if ((window as any).renderChatsInDrawer) {
-              (window as any).renderChatsInDrawer();
-            }
-          }
+          console.log(`📝 Обновлен чат ${newData.id} (Realtime)`);
         }
       } else if (event === 'DELETE') {
-        const found = chatStore.findChatById(oldData.id);
-        if (found) {
-          const { chat, topic } = found;
-          chatStore.histories[topic] = chatStore.histories[topic].filter(c => c.id !== oldData.id);
-          chatStore.save();
-          console.log(`🗑️ Чат ${oldData.id} удален`);
+        if (oldData?.id && chatStore.findChatById(oldData.id)) {
+          chatStore.permanentDeleteChat(oldData.id);
+          console.log(`🗑️ Чат ${oldData.id} удален (Realtime)`);
         }
       }
 
-      if ((window as any).chatUI) (window as any).chatUI.refreshUI();
-      if ((window as any).profileUI) (window as any).profileUI.renderHistoryChatsList((window as any).profileUI?.currentFilter || 'all');
-      if ((window as any).updateTrashCount) (window as any).updateTrashCount();
+      this._refreshLists();
     } catch (err) {
       console.error('❌ Ошибка обработки чата:', err);
     }
   }
 
   private handleMessageChange(payload: any): void {
-    const { event, new: newData, old: oldData } = payload;
+    const event = this._eventOf(payload);
+    const newData = payload?.new;
+    const oldData = payload?.old;
 
     try {
-      if (event === 'INSERT') {
-        const found = chatStore.findChatById(newData.chat_id);
-        if (found) {
-          const { chat } = found;
-          const exists = chat.messages.some((m: IMessage) => m.id === newData.id);
-          if (!exists && !newData.deleted_at) {
-            const newMessage = {
-              id: newData.id,
-              text: newData.text,
-              type: newData.msg_type,
-              isFavorite: newData.is_favorite || false,
-              deleted_at: newData.deleted_at || null,
-              created_at: newData.created_at || new Date().toISOString(),
-              metadata: newData.metadata || null
-            };
-            chat.messages.push(newMessage);
-            chatStore.save();
-            console.log(`📝 Новое сообщение ${newData.id} (Realtime)`);
-            
-            const chatModule = (window as any).chatModule;
-            const patcher = chatModule?.getPatcher?.();
-            if (patcher) {
-              patcher.addMessage(newMessage);
-            }
+      if (event === 'INSERT' || event === 'UPDATE') {
+        if (!newData?.id || !newData.chat_id) return;
+        const chatId = newData.chat_id as UUID;
+        const found = chatStore.findChatById(chatId);
+
+        if (!found) {
+          // Чат ещё не пришёл (или был удалён локально как пустой) — берём с сервера
+          if (!newData.deleted_at) {
+            chatService.getChat(chatId).then(() => this._refreshLists()).catch(() => {});
           }
-        }
-      } else if (event === 'UPDATE') {
-        const found = chatStore.findChatById(newData.chat_id);
-        if (found) {
-          const { chat } = found;
-          const existingMsg = chat.messages.find((m: IMessage) => m.id === newData.id);
-          if (existingMsg) {
-            existingMsg.text = newData.text;
-            existingMsg.isFavorite = newData.is_favorite;
-            existingMsg.deleted_at = newData.deleted_at;
-            if (newData.metadata !== undefined) existingMsg.metadata = newData.metadata;
-            chatStore.save();
-            console.log(`📝 Обновлено сообщение ${newData.id} (Realtime)`);
-            
-            const chatModule = (window as any).chatModule;
-            const patcher = chatModule?.getPatcher?.();
-            if (patcher) {
-              if (newData.is_favorite !== undefined) {
-                patcher.updateFavorite(newData.id, newData.is_favorite);
-              }
-              patcher.updateMessage(existingMsg);
-            }
-          }
-        }
-      } else if (event === 'DELETE') {
-        const chatModule = (window as any).chatModule;
-        const patcher = chatModule?.getPatcher?.();
-        if (patcher) {
-          patcher.removeMessage(oldData.id);
+          return;
         }
 
-        for (const [topic, chats] of Object.entries(chatStore.histories || {})) {
-          if (!chats) continue;
-          for (const chat of chats) {
-            const msgIndex = chat.messages?.findIndex((m: IMessage) => m.id === oldData.id);
-            if (msgIndex !== -1 && msgIndex !== undefined) {
-              chat.messages.splice(msgIndex, 1);
-              chatStore.save();
-              console.log(`🗑️ Сообщение ${oldData.id} удалено (Realtime)`);
-              break;
-            }
-          }
+        const existing = found.chat.messages.find((m: IMessage) => m.id === newData.id);
+
+        if (newData.deleted_at) {
+          // На сервере сообщение удалено — локально сообщения удаляются полностью
+          if (existing) chatStore.deleteMessage(chatId, newData.id);
+          return;
+        }
+
+        const favoriteChanged =
+          !!existing && newData.is_favorite !== undefined && !!existing.isFavorite !== !!newData.is_favorite;
+
+        chatStore.upsertMessage(chatId, {
+          id: newData.id,
+          text: newData.text ?? existing?.text ?? '',
+          type: (newData.msg_type || existing?.type || 'ai-msg') as MessageType,
+          isFavorite: newData.is_favorite !== undefined ? !!newData.is_favorite : undefined,
+          created_at: newData.created_at,
+          deleted_at: null,
+          metadata: newData.metadata !== undefined ? newData.metadata : existing?.metadata
+        });
+
+        if (favoriteChanged) {
+          eventBus.emit('chat:favorite_toggled', {
+            chatId,
+            messageId: newData.id,
+            isFavorite: !!newData.is_favorite
+          });
+        }
+        console.log(`📝 Сообщение ${newData.id} (${event}, Realtime)`);
+      } else if (event === 'DELETE') {
+        if (!oldData?.id) return;
+        const found = chatStore.findChatByMessageId(oldData.id);
+        if (found) {
+          chatStore.deleteMessage(found.chat.id, oldData.id);
+          console.log(`🗑️ Сообщение ${oldData.id} удалено (Realtime)`);
         }
       }
 
@@ -594,4 +597,4 @@ export class SyncService {
 }
 
 export const syncService = new SyncService();
-console.log('✅ SyncService v4.1.0 загружен (pinned в Realtime)');
+console.log('✅ SyncService v4.2.0 загружен');
