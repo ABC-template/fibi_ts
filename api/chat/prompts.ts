@@ -1,7 +1,11 @@
 // ============================================
 // api/chat/prompts.ts
 // Описание: Системные промпты для ИИ
-// Версия: 4.0.0 - с использованием конфига
+// Версия: 5.0.0 - buildMessages: роль только по типу сообщения (роль от клиента не
+//                 принимается), склейка подряд идущих сообщений одной роли,
+//                 изображение прикрепляется к последнему сообщению пользователя
+//                 (раньше не отправлялось вовсе)
+//          4.0.0 - с использованием конфига
 // ============================================
 
 import { getSystemPrompt, getTopic, getTopicTemperature, getTopicModel } from '../../src/config/topics';
@@ -65,72 +69,59 @@ export function buildSystemPrompt(
   return finalPrompt;
 }
 
+export interface IHistoryMessage {
+  type: string;
+  text: string;
+}
+
 /**
- * Собрать сообщения для OpenRouter
- * @param systemPrompt - Системный промпт
- * @param historyMessages - История сообщений
- * @param attachedImage - Base64 изображение (опционально)
- * @param userMessage - Текущее сообщение пользователя (опционально)
- * @returns Массив сообщений для API
+ * Собрать сообщения для OpenRouter.
+ * Роль определяется только типом сообщения (user-msg → user, ai-msg → assistant):
+ * роль из запроса клиента не принимается — иначе можно подложить свой system.
+ * Подряд идущие сообщения одной роли склеиваются (раньше лишние отбрасывались,
+ * и после неудачного ответа модель получала старый вопрос вместо нового).
+ * Изображение прикрепляется к последнему сообщению пользователя.
  */
 export function buildMessages(
   systemPrompt: string,
-  historyMessages: Array<{ type: string; text: string; role?: string }> = [],
-  attachedImage?: string,
-  userMessage?: string
+  historyMessages: IHistoryMessage[] = [],
+  attachedImage?: string
 ): Array<{ role: string; content: string | any[] }> {
   const messages: Array<{ role: string; content: string | any[] }> = [];
 
-  // Добавляем системный промпт
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
   }
 
-  let lastRole: string | null = null;
-
-  // Добавляем историю
   for (const msg of historyMessages) {
-    let role: string;
-    if (msg.role) {
-      role = msg.role;
-    } else if (msg.type === 'user-msg') {
-      role = 'user';
-    } else {
-      role = 'assistant';
-    }
-    
-    const text = String(msg.text || '').trim();
+    const role = msg?.type === 'user-msg' ? 'user' : msg?.type === 'ai-msg' ? 'assistant' : null;
+    if (!role) continue;
 
+    const text = String(msg.text || '').trim();
     if (!text) continue;
 
-    // Пропускаем дублирующиеся роли
-    if (lastRole === role) continue;
-
-    messages.push({ role, content: text });
-    lastRole = role;
+    const last = messages[messages.length - 1];
+    if (last && last.role === role && typeof last.content === 'string') {
+      last.content += `\n\n${text}`;
+    } else {
+      messages.push({ role, content: text });
+    }
   }
 
-  // Добавляем текущее сообщение пользователя
-  if (userMessage) {
-    const hasImage = attachedImage && attachedImage.trim().length > 0;
-    const cleanedText = userMessage.replace('📸 [Прикреплено изображение]', '').trim() || 'Что изображено на фото?';
-
-    if (hasImage) {
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: cleanedText },
-          {
-            type: 'image_url',
-            image_url: {
-              url: attachedImage,
-              detail: 'high'
-            }
-          }
-        ]
-      });
+  if (attachedImage && attachedImage.trim().length > 0) {
+    let lastUser = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUser = i;
+        break;
+      }
+    }
+    const imagePart = { type: 'image_url', image_url: { url: attachedImage, detail: 'high' } };
+    if (lastUser >= 0) {
+      const text = String(messages[lastUser].content).replace('📸 [Прикреплено изображение]', '').trim();
+      messages[lastUser].content = [{ type: 'text', text: text || 'Что изображено на фото?' }, imagePart];
     } else {
-      messages.push({ role: 'user', content: cleanedText });
+      messages.push({ role: 'user', content: [{ type: 'text', text: 'Что изображено на фото?' }, imagePart] });
     }
   }
 
