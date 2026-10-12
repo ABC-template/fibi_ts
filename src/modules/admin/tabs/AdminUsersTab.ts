@@ -1,10 +1,26 @@
 // ============================================
 // src/modules/admin/tabs/AdminUsersTab.ts
-// Пользователи + смена ролей
+// Админ-панель → «Пользователи»: поиск, смена роли, монеты и энергия
+// Версия: 2.0.0
+//   - API /admin/users (список, роль, баланс, сброс входа) вместо несуществующих эндпоинтов
+//   - роль: trial / premium / admin; creator не меняется. Premium — тариф и срок
+//     (по умолчанию первый платный тариф и его срок)
+//   - монеты и постоянная энергия: сумма со знаком (+ начислить, − списать)
+//   - карточки вместо таблицы (удобно с телефона)
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+function fmtDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU');
+}
 
 export class AdminUsersTab implements IAdminTab {
   id = 'users';
@@ -13,24 +29,38 @@ export class AdminUsersTab implements IAdminTab {
   priority = 60;
 
   private users: any[] = [];
+  private tiers: any[] = [];
   private loading = false;
   private search = '';
+  private error: string | null = null;
 
   async init(): Promise<void> {
-    await this.loadData();
+    await Promise.all([this.loadData(this.search), this.loadTiers()]);
   }
 
   async loadData(query?: string): Promise<void> {
     if (this.loading) return;
     this.loading = true;
+    this.error = null;
+    this.search = (query ?? this.search ?? '').trim();
     try {
-      const url = query ? `/admin/users?search=${encodeURIComponent(query)}` : '/admin/users';
+      const url = this.search ? `/admin/users?search=${encodeURIComponent(this.search)}` : '/admin/users';
       const res = await apiClient.get(url);
-      if (res.success) this.users = res.users || [];
+      this.users = res?.success ? res.users || [] : [];
     } catch (e) {
+      this.error = (e as Error).message || 'Не удалось загрузить пользователей';
       console.error('[AdminUsersTab]', e);
     } finally {
       this.loading = false;
+    }
+  }
+
+  private async loadTiers(): Promise<void> {
+    try {
+      const res = await apiClient.get('/admin/economy/subscriptions');
+      this.tiers = (res?.tiers || []).filter((t: any) => t.is_active && t.tier_key !== 'trial' && !t.is_trial);
+    } catch {
+      this.tiers = [];
     }
   }
 
@@ -39,122 +69,164 @@ export class AdminUsersTab implements IAdminTab {
   }
 
   onShow(): void {
-    this.loadData();
+    void this.loadData(this.search);
+  }
+
+  private card(u: any): string {
+    const isCreator = u.role === 'creator';
+    const energy = (u.token_balance_bonus ?? 0) + (u.token_balance_permanent ?? 0);
+    const roleSelect = isCreator
+      ? `<span style="font-weight:600">👑 creator</span>`
+      : `<select onchange="window.adminModule.changeRole(${u.telegram_id}, this.value)"
+           style="padding:4px 8px;border-radius:6px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);font-size:12px">
+           <option value="trial" ${u.role === 'trial' ? 'selected' : ''}>trial</option>
+           <option value="premium" ${u.role === 'premium' ? 'selected' : ''}>premium</option>
+           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+         </select>`;
+
+    const btn = (label: string, action: string, title: string) =>
+      `<button onclick="${action}" title="${title}"
+         style="padding:6px 10px;font-size:12px;border:none;border-radius:8px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer">${label}</button>`;
+
+    return `
+      <div style="border:1px solid var(--app-border-color-light);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:600;color:var(--app-text-primary)">${u.username ? '@' + esc(u.username) : 'без username'}</div>
+            <div style="font-size:11px;color:var(--app-text-tertiary)">ID ${u.telegram_id} · с ${fmtDate(u.created_at)}</div>
+          </div>
+          ${roleSelect}
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--app-text-secondary)">
+          <span>Тариф: <b>${esc(u.subscription_tier || 'trial')}</b></span>
+          <span>До: <b>${fmtDate(u.premium_until)}</b></span>
+          <span>🪙 <b>${u.coin_balance ?? 0}</b></span>
+          <span>⚡ <b>${energy}</b> <span style="color:var(--app-text-tertiary)">(${u.token_balance_bonus ?? 0} бонус + ${u.token_balance_permanent ?? 0})</span></span>
+          <span>🔥 ${u.streak ?? 0}</span>
+          ${u.data_deadline ? `<span style="color:#e67e22">☁️ облако удалится ${fmtDate(u.data_deadline)}</span>` : ''}
+          ${u.economy_locked ? '<span style="color:#e74c3c">🔒 экономика заблокирована</span>' : ''}
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${btn('🪙 ±', `window.adminModule.adjustUserBalance(${u.telegram_id}, 'coins')`, 'Начислить или списать монеты')}
+          ${btn('⚡ ±', `window.adminModule.adjustUserBalance(${u.telegram_id}, 'tokens')`, 'Начислить или списать постоянную энергию')}
+          ${btn('🔄 Вход', `window.adminModule.resetUserCheckin(${u.telegram_id})`, 'Сбросить ежедневный вход (тест)')}
+        </div>
+      </div>`;
   }
 
   render(): string {
     return `
-      <div style="background:var(--app-bg-secondary);border-radius:12px;padding:20px;border:1px solid var(--app-border-color-light)">
-        <h3 style="margin:0 0 16px;color:var(--app-text-primary)">👤 Пользователи (${this.users.length})</h3>
+      <div style="background:var(--app-bg-secondary);border-radius:12px;padding:16px;border:1px solid var(--app-border-color-light)">
+        <h3 style="margin:0 0 12px;color:var(--app-text-primary)">👤 Пользователи (${this.users.length})</h3>
 
-        <div style="margin-bottom:16px">
-          <input type="text" id="users-search" placeholder="Поиск по ID или username..." 
-            value="${this.search}"
-            style="width:100%;max-width:320px;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);font-size:13px"
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input type="text" id="users-search" placeholder="ID или @username"
+            value="${esc(this.search)}"
+            style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);font-size:13px"
             onkeydown="if(event.key==='Enter') window.adminModule.searchUsers(this.value)">
+          <button class="btn btn-secondary" style="padding:8px 14px;font-size:13px"
+            onclick="window.adminModule.searchUsers(document.getElementById('users-search').value)">🔍</button>
         </div>
 
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12px">
-            <thead>
-              <tr style="border-bottom:2px solid var(--app-border-color)">
-                <th style="text-align:left;padding:6px 8px;color:var(--app-text-tertiary)">ID</th>
-                <th style="text-align:left;padding:6px 8px;color:var(--app-text-tertiary)">Username</th>
-                <th style="text-align:center;padding:6px 8px;color:var(--app-text-tertiary)">Роль</th>
-                <th style="text-align:center;padding:6px 8px;color:var(--app-text-tertiary)">🪙</th>
-                <th style="text-align:center;padding:6px 8px;color:var(--app-text-tertiary)">Токены</th>
-                <th style="text-align:center;padding:6px 8px;color:var(--app-text-tertiary)">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.users.length === 0 ? `
-                <tr><td colspan="6" style="text-align:center;padding:30px;color:var(--app-text-tertiary)">Нет пользователей</td></tr>
-              ` : this.users.slice(0, 100).map(u => `
-                <tr style="border-bottom:1px solid var(--app-border-color-light)">
-                  <td style="padding:6px 8px">${u.telegram_id}</td>
-                  <td style="padding:6px 8px">${u.username ? '@' + u.username : '—'}</td>
-                  <td style="text-align:center;padding:6px 8px">
-                    <select data-user="${u.telegram_id}" onchange="window.adminModule.changeRole(${u.telegram_id}, this.value)"
-                      style="padding:4px 8px;border-radius:6px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);font-size:12px">
-                      <option value="trial" ${u.role === 'trial' ? 'selected' : ''}>trial</option>
-                      <option value="premium" ${u.role === 'premium' ? 'selected' : ''}>premium</option>
-                      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
-                      <option value="creator" ${u.role === 'creator' ? 'selected' : ''}>creator</option>
-                    </select>
-                  </td>
-                  <td style="text-align:center;padding:6px 8px">${u.coin_balance ?? 0}</td>
-                  <td style="text-align:center;padding:6px 8px">${(u.token_balance_bonus ?? 0) + (u.token_balance_permanent ?? 0)}</td>
-                  <td style="text-align:center;padding:6px 8px">
-                    <button onclick="window.adminModule.addCoinsToUser(${u.telegram_id})" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px" title="Добавить монеты">🪙</button>
-                    <button onclick="window.adminModule.addTokensToUser(${u.telegram_id})" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px" title="Добавить токены">💎</button>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+        ${this.error ? `<div style="color:#e74c3c;font-size:13px;margin-bottom:10px">⚠️ ${esc(this.error)}</div>` : ''}
+        ${this.loading && this.users.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--app-text-tertiary)">⏳ Загрузка...</div>' : ''}
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${!this.loading && this.users.length === 0
+            ? '<div style="text-align:center;padding:24px;color:var(--app-text-tertiary)">Никого не найдено</div>'
+            : this.users.map((u) => this.card(u)).join('')}
         </div>
 
-        ${this.users.length > 100 ? `<div style="text-align:center;padding:10px;color:var(--app-text-tertiary);font-size:12px">Показано 100 из ${this.users.length}</div>` : ''}
-
-        <div style="margin-top:16px">
-          <button class="btn btn-secondary" onclick="window.adminModule.refreshTab('users')" style="padding:8px 16px;font-size:13px">🔄 Обновить</button>
+        <div style="margin-top:14px;font-size:11px;color:var(--app-text-tertiary)">
+          Показаны последние 100 (или результаты поиска). Изменения пишутся в журнал (system_logs).
+          После смены роли пользователю нужно перезапустить приложение.
         </div>
       </div>
     `;
   }
 
+  // ==========================================
+  // Действия
+  // ==========================================
+
   async changeRole(userId: number, role: string): Promise<void> {
-    try {
-      const res = await apiClient.post('/admin/users/role', { user_id: userId, role });
-      if (res.success) {
-        const u = this.users.find(x => x.telegram_id === userId);
-        if (u) u.role = role;
-      } else {
-        alert(res.error || 'Ошибка смены роли');
+    const user = this.users.find((x) => x.telegram_id === userId);
+    let tier: string | null = null;
+    let days: number | null = null;
+
+    if (role === 'premium') {
+      if (this.tiers.length === 0) await this.loadTiers();
+      const options = this.tiers.map((t) => `${t.tier_key} (${t.days || 30} дн.)`).join(', ');
+      const defaultTier = this.tiers[0]?.tier_key || '';
+      const tierAnswer = prompt(`Тариф (${options || 'нет активных платных'}):`, defaultTier);
+      if (tierAnswer === null) return this.refresh();
+      tier = tierAnswer.trim() || null;
+
+      const tierDays = this.tiers.find((t) => t.tier_key === tier)?.days || 30;
+      const daysAnswer = prompt('Срок, дней:', String(tierDays));
+      if (daysAnswer === null) return this.refresh();
+      days = parseInt(daysAnswer, 10);
+      if (!Number.isInteger(days) || days < 1) {
+        alert('Срок — целое число дней');
+        return this.refresh();
       }
+    } else if (role === 'trial' && user && user.role !== 'trial') {
+      const ok = confirm('Перевести в trial? Облачные чаты пользователя удалятся через 7 дней, если он не вернётся в PRO.');
+      if (!ok) return this.refresh();
+    }
+
+    try {
+      const res = await apiClient.post('/admin/users', { action: 'role', user_id: userId, role, tier, days });
+      if (res?.success && user) {
+        user.role = res.role;
+        user.subscription_tier = res.subscription_tier;
+        user.premium_until = res.premium_until;
+      }
+      await this.loadData(this.search);
     } catch (e) {
-      // Если эндпоинта нет — можно обновлять напрямую через RPC или другой путь
-      console.error(e);
-      alert('Ошибка смены роли (проверьте API)');
+      alert((e as Error).message || 'Ошибка смены роли');
+      await this.loadData(this.search);
     }
   }
 
-  async addCoins(userId: number): Promise<void> {
-    const amount = prompt('Сколько монет добавить?', '100');
-    if (!amount) return;
-    try {
-      const res = await apiClient.post('/admin/coins', {
-        user_id: userId,
-        amount: parseInt(amount, 10),
-        reason: 'Админское начисление',
-      });
-      if (res.success) {
-        alert('Монеты начислены');
-        await this.loadData(this.search);
-      }
-    } catch (e) {
-      alert('Ошибка начисления');
+  async adjustBalance(userId: number, currency: 'coins' | 'tokens'): Promise<void> {
+    const what = currency === 'tokens' ? 'постоянной энергии ⚡' : 'монет 🪙';
+    const answer = prompt(`Сколько ${what}? Со знаком минус — списать.`, currency === 'tokens' ? '10000' : '100');
+    if (answer === null) return;
+    const amount = parseInt(answer.replace(/\s/g, ''), 10);
+    if (!Number.isInteger(amount) || amount === 0) {
+      alert('Нужно целое число, не ноль');
+      return;
     }
+    const reason = prompt('Причина (необязательно):', '') || null;
+
+    try {
+      await apiClient.post('/admin/users', { action: 'balance', user_id: userId, currency, amount, reason });
+      await this.loadData(this.search);
+    } catch (e) {
+      alert((e as Error).message || 'Ошибка изменения баланса');
+    }
+  }
+
+  async resetCheckin(userId: number): Promise<void> {
+    if (!confirm('Сбросить ежедневный вход? При следующем запуске приложения снова начислятся бонус дня и монеты за вход.')) return;
+    try {
+      await apiClient.post('/admin/users', { action: 'reset_checkin', user_id: userId });
+      alert('Готово: перезапустите приложение у пользователя');
+    } catch (e) {
+      alert((e as Error).message || 'Ошибка сброса');
+    }
+  }
+
+  // Совместимость со старыми кнопками
+  async addCoins(userId: number): Promise<void> {
+    return this.adjustBalance(userId, 'coins');
   }
 
   async addTokens(userId: number): Promise<void> {
-    const amount = prompt('Сколько токенов добавить?', '50');
-    if (!amount) return;
-    try {
-      // Используем существующий эндпоинт или RPC
-      const res = await apiClient.post('/admin/coins', {
-        user_id: userId,
-        amount: parseInt(amount, 10),
-        currency: 'tokens',
-        reason: 'Админское начисление токенов',
-      });
-      if (res.success) {
-        alert('Токены начислены');
-        await this.loadData(this.search);
-      }
-    } catch (e) {
-      alert('Ошибка начисления токенов');
-    }
+    return this.adjustBalance(userId, 'tokens');
   }
 
   destroy(): void {}
