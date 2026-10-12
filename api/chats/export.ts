@@ -1,7 +1,9 @@
 // ============================================
 // api/chats/export.ts
 // Описание: Экспорт чатов (локальный и облачный)
-// Версия: 3.1.0 - исправлены импорты
+// Версия: 3.2.0 - облачный архив: агент/тип чата, запрос генерации и ссылки на медиа
+//                  (действуют до удаления облака или 7 дней)
+//          3.1.0 - исправлены импорты
 // ============================================
 
 import {
@@ -13,6 +15,7 @@ import {
   getSupabaseConfig,
   supabaseFetch
 } from '../_lib/index';
+import { getOwnedFiles, signUrls } from '../_lib/media';
 
 export const config = { runtime: 'edge' };
 
@@ -212,6 +215,28 @@ async function exportCloudArchive(userId: number, config: any): Promise<any> {
 
       totalMessages = allMessages.length;
 
+      // Ссылки на медиа генераций: живут до удаления облака (льготный период)
+      // или 7 дней у PRO. Подписываются только файлы пользователя.
+      const mediaPaths: string[] = [];
+      for (const m of allMessages) {
+        const media = m.metadata?.kind === 'generation' && Array.isArray(m.metadata.media) ? m.metadata.media : [];
+        for (const item of media) if (item?.storage_path) mediaPaths.push(item.storage_path);
+      }
+      const linkTtlSec = hasGracePeriod
+        ? Math.max(3600, Math.min(7 * 86400, Math.floor((new Date(currentUser.data_deadline).getTime() - Date.now()) / 1000)))
+        : 7 * 86400;
+      const linkExpiresAt = new Date(Date.now() + linkTtlSec * 1000).toISOString();
+      const mediaLinks: Record<string, string> = {};
+      try {
+        for (let i = 0; i < mediaPaths.length; i += 50) {
+          const chunk = mediaPaths.slice(i, i + 50);
+          const owned = await getOwnedFiles(userId, chunk, config);
+          Object.assign(mediaLinks, await signUrls(owned.map((f) => f.storage_path), linkTtlSec, config));
+        }
+      } catch (err) {
+        console.warn('⚠️ [export] Ссылки на медиа не получены:', (err as Error).message);
+      }
+
       for (const chat of chats) {
         const chatMessages = allMessages.filter((m: any) => m.chat_id === chat.id);
         compiledArchive.push({
@@ -220,15 +245,35 @@ async function exportCloudArchive(userId: number, config: any): Promise<any> {
           topic_id: chat.topic_id,
           max_context: chat.max_context,
           user_renamed: chat.user_renamed,
+          agent_id: chat.agent_id || null,
+          modality: chat.modality || null,
           created_at: chat.created_at,
           updated_at: chat.updated_at,
-          messages: chatMessages.map((m: any) => ({
-            id: m.id,
-            type: m.msg_type,
-            text: m.text,
-            is_favorite: m.is_favorite,
-            created_at: m.created_at
-          }))
+          messages: chatMessages.map((m: any) => {
+            const out: any = {
+              id: m.id,
+              type: m.msg_type,
+              text: m.text,
+              is_favorite: m.is_favorite,
+              created_at: m.created_at
+            };
+            const meta = m.metadata;
+            if (meta?.kind === 'generation') {
+              out.generation = {
+                role: meta.role || null,
+                status: meta.status || null,
+                modality: meta.modality || null,
+                prompt: meta.prompt || null,
+                media: (Array.isArray(meta.media) ? meta.media : []).map((item: any) => ({
+                  type: item.type,
+                  mime: item.mime,
+                  url: mediaLinks[item.storage_path] || null,
+                  url_expires_at: mediaLinks[item.storage_path] ? linkExpiresAt : null
+                }))
+              };
+            }
+            return out;
+          })
         });
       }
     }
