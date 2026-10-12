@@ -1,7 +1,12 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.1.0 — генеративные агенты вынесены в generation.ts (GenerationController):
+// Версия: 9.2.0 — ограничения доступа применяются к реальным кнопкам (.send-btn/.voice-btn/
+//                  .media-btn/.file-btn); полоска энергии показывает баланс без выдуманных
+//                  «токенов» (символы/4) и не блокирует отправку — цену проверяет сервер;
+//                  причины отказа auth/tier/inactive (вместо устаревшей role);
+//                  чат с идущей генерацией не удаляется как пустой при выходе
+//          9.1.0 — генеративные агенты вынесены в generation.ts (GenerationController):
 //                  форма с референсами и негативным промптом, карточки в сообщениях,
 //                  «Повторить», опрос незавершённых генераций; исправлен TS1308
 //          9.0.0 — единый open_chat через NavigationState — добавлена кнопка прикрепления текстового файла
@@ -389,8 +394,9 @@ export class ChatModule {
       title = '⏳ Агент временно недоступен';
       description = 'Этот агент отключён администратором. Попробуйте позже.';
       actionLabel = '🔄 Обновить';
-    } else if (this._agentReason === 'role') {
-      description = `Для использования агента "${agentName}" требуется роль: PRO, Admin или Creator.`;
+    } else if (this._agentReason === 'auth') {
+      description = `Чтобы пользоваться агентом "${agentName}", перезапустите приложение и войдите заново.`;
+      actionLabel = '🔄 Понятно';
     } else if (this._agentReason === 'tier') {
       description = `Для использования агента "${agentName}" требуется подписка: PRO (Plus или Ultra).`;
     } else if (this._agentReason === 'not_found') {
@@ -406,7 +412,7 @@ export class ChatModule {
         <div style="font-size: 14px; color: var(--app-text-secondary); margin-top: 8px; line-height: 1.6;">
           ${description}
         </div>
-        ${this._agentReason !== 'not_found' && this._agentReason !== 'inactive' ? `
+        ${this._agentReason === 'tier' ? `
           <div style="
             margin-top: 16px;
             background: var(--app-bg-tertiary);
@@ -418,9 +424,7 @@ export class ChatModule {
               💡 <strong>Как получить доступ?</strong>
             </div>
             <div style="font-size: 12px; color: var(--app-text-secondary); margin-top: 4px;">
-              ${this._agentReason === 'role' 
-                ? 'Оформите PRO-подписку в разделе "Экономика"' 
-                : 'Оформите PRO-подписку уровня Plus или Ultra'}
+              Оформите подходящую подписку в разделе «Экономика»
             </div>
           </div>
         ` : ''}
@@ -449,6 +453,8 @@ export class ChatModule {
             }
           } else if (this._agentReason === 'inactive') {
             this._checkAgentAccess();
+            modalManager.close();
+          } else if (this._agentReason === 'auth') {
             modalManager.close();
           } else {
             modalManager.close();
@@ -717,7 +723,7 @@ export class ChatModule {
             backdrop-filter: blur(8px);
             border-radius: 12px 12px 0 0;
           ">
-            ⚡ —  ·  запрос ~0  ·  ответ ~0  ·  контекст ~0 ?
+            ⚡ —
           </div>
           <div style="position:relative;width:100%;display:flex;align-items:flex-start;">
             <textarea id="user-input" placeholder="Ваш вопрос..." rows="1" style="
@@ -1080,8 +1086,9 @@ export class ChatModule {
     if (this._chatId) {
       const found = this.chatStore.findChatById(this._chatId);
       if (found) {
-        const hasMessages = this.chatStore.hasRealMessages(found.chat);
-        if (!hasMessages && !found.chat.deleted_at) {
+        // Чат генерации во время запроса пуст (сообщения создаст сервер в конце) —
+        // isDisposableEmpty его не считает пустым
+        if (this.chatStore.isDisposableEmpty(found.chat)) {
           console.log(`🧹 [hide] Удаляем пустой чат ${this._chatId}`);
           this.chatStore.permanentDeleteChat(this._chatId);
           
@@ -1108,53 +1115,51 @@ export class ChatModule {
 
 
   private _applyAccessRestrictions(): void {
-    if (this._agentAccess === false) {
-      const input = document.querySelector('#user-input') as HTMLTextAreaElement;
-      const sendBtn = document.querySelector('#send-btn') as HTMLButtonElement;
-      const micBtn = document.querySelector('#mic-btn') as HTMLButtonElement;
-      const attachBtn = document.querySelector('#attach-btn') as HTMLButtonElement;
+    const input = this.container.querySelector('#user-input') as HTMLTextAreaElement | null;
+    const buttons = ['.send-btn', '.voice-btn', '.media-btn', '.file-btn']
+      .map((sel) => this.container.querySelector(sel) as HTMLButtonElement | null);
+    const blocked = this._agentAccess === false;
 
-      if (input) {
-        input.disabled = true;
-        input.placeholder = 'Доступно на тарифе…';
+    if (input) {
+      input.disabled = blocked;
+      if (blocked) {
+        input.placeholder = 'Доступно на другом тарифе';
+      } else if (input.placeholder === 'Доступно на другом тарифе') {
+        input.placeholder = 'Ваш вопрос...';
       }
-      if (sendBtn) sendBtn.disabled = true;
-      if (micBtn) micBtn.disabled = true;
-      if (attachBtn) attachBtn.disabled = true;
+    }
+    for (const btn of buttons) {
+      if (!btn) continue;
+      btn.disabled = blocked;
+      btn.style.opacity = blocked ? '0.5' : '';
     }
   }
 
+  /**
+   * Полоска над полем ввода: баланс энергии и объём контекста.
+   * Стоимость текстового запроса зависит от модели и длины ответа и известна
+   * только после ответа (usage.cost), поэтому здесь её не угадываем: хватит ли
+   * энергии, проверяет сервер перед запросом.
+   */
   private _updateEnergyBar(): void {
-    const bar = document.getElementById('energy-bar');
+    const bar = this.container.querySelector('#energy-bar') as HTMLElement | null;
     if (!bar) return;
 
     const tokens = this.economyStore.getTokenBalances();
     const total = tokens.total ?? 0;
 
-    const input = document.getElementById('user-input') as HTMLTextAreaElement;
-    const text = input?.value?.trim() || '';
-    const textLen = text.length;
-
-    // Rough estimates (can be refined later with real estimateTokens)
-    const requestEst = textLen === 0 ? 0 : Math.max(8, Math.ceil(textLen / 4));
-    const responseEst = textLen === 0 ? 0 : Math.max(40, Math.ceil(requestEst * 2.2));
-    let contextEst = 0;
+    let contextCount = 0;
     if (this._chatId) {
       const found = this.chatStore.findChatById(this._chatId);
-      const messages = found?.chat?.messages || [];
-      const visible = messages.filter((m: any) => !m.deleted_at);
-      const totalChars = visible.reduce((sum: number, m: any) => sum + (m.text?.length || 0), 0);
-      contextEst = Math.ceil(totalChars / 4);
+      const visible = (found?.chat?.messages || []).filter((m: any) => !m.deleted_at);
+      const limit = found?.chat?.maxContext || 15;
+      contextCount = Math.min(visible.length, limit);
     }
 
-    const totalEst = requestEst + responseEst + contextEst;
-
-    bar.innerHTML = `⚡ ${total}  ·  запрос ~${requestEst}  ·  ответ ~${responseEst}  ·  контекст ~${contextEst} ?`;
-
-    const sendBtn = document.querySelector('#send-btn') as HTMLButtonElement;
-    if (sendBtn) {
-      sendBtn.disabled = (totalEst > total && totalEst > 0) || this._agentAccess === false;
-    }
+    const energy = tokens.bypass ? '∞' : String(total);
+    bar.textContent = contextCount > 0
+      ? `⚡ ${energy}  ·  в контексте ${contextCount} сообщ.`
+      : `⚡ ${energy}`;
   }
 
 
@@ -1165,7 +1170,7 @@ export class ChatModule {
     if (!found) return;
 
     const messages = (found.chat.messages || []).filter((m: any) => !m.deleted_at);
-    if (messages.length === 0) {
+    if (messages.length === 0 && this.chatStore.isDisposableEmpty(found.chat)) {
       console.log(`🧹 [empty] Чат ${this._chatId} стал пустым — редирект на агентов`);
       this.chatStore.permanentDeleteChat(this._chatId);
       this.eventBus.emit('navigation:open_module', { module: 'agents' });
