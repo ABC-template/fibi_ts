@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 2.1.0 - награду за реферала начисляет только сервер (убрано клиентское начисление),
+// Версия: 2.2.0 - ссылка и список приглашённых загружаются с сервера при открытии
+//          2.1.0 - награду за реферала начисляет только сервер (убрано клиентское начисление),
 //                 баланс — getCoinBalance
 //          2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
@@ -11,6 +12,7 @@ import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { apiClient } from '@/services/api';
 
 export class ReferralModule {
   private container: HTMLElement;
@@ -39,9 +41,28 @@ export class ReferralModule {
     this._render();
     this._subscribeToEvents();
     this._subscribeToBalance();
+    void this._syncFromServer();
 
     this.isInitialized = true;
     console.log('✅ ReferralModule v2.0.0 инициализирован (экономика через EventBus)');
+  }
+
+  /** Ссылка и список приглашённых — с сервера (источник правды) */
+  private async _syncFromServer(): Promise<void> {
+    try {
+      const [linkRes, statsRes] = await Promise.all([
+        apiClient.get('/referral/link').catch(() => null),
+        apiClient.get('/referral/stats').catch(() => null),
+      ]);
+      if (!linkRes?.link && !statsRes?.success) return;
+      this.referralStore.sync({
+        referrals: Array.isArray(statsRes?.referrals) ? statsRes.referrals : this.referralStore.getReferrals(),
+        total_reward: statsRes?.stats?.total_reward ?? this.referralStore.getStats().total_reward,
+        referral_link: linkRes?.link || this.referralStore.getReferralLink() || '',
+      });
+    } catch (err) {
+      console.warn('⚠️ [Referral] Не удалось синхронизировать:', err);
+    }
   }
 
   private _subscribeToBalance(): void {
