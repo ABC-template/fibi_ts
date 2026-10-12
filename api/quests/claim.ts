@@ -1,12 +1,14 @@
 // ============================================
 // api/quests/claim.ts
-// Забрать награду за задание (с бонусом за стрик)
-// Версия: 2.0.0 - с поддержкой бонуса
+// Забрать награду за задание
+// Версия: 3.0.0 - RPC claim_quest: проверка владельца, сумма только из квеста
+//                 (бонус от клиента больше не принимается); daily_login
+//                 начисляется через daily_checkin
+//          2.0.0 - с поддержкой бонуса
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -18,8 +20,9 @@ export const config = { runtime: 'edge' };
 
 interface IClaimRequest {
   userQuestId: string;
-  bonusAmount?: number;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
@@ -44,20 +47,19 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { userQuestId, bonusAmount = 0 } = body;
+    const { userQuestId } = body;
 
-    if (!userQuestId) {
+    if (!userQuestId || !UUID_RE.test(userQuestId)) {
       return errorResponse('userQuestId is required', 400);
     }
 
     const config = getSupabaseConfig('service');
 
-    // Используем новую функцию с бонусом
     const result = await supabaseRPC(
-      'claim_quest_with_bonus',
+      'claim_quest',
       {
+        p_user_id: userId,
         p_user_quest_id: userQuestId,
-        p_bonus_amount: bonusAmount,
       },
       config
     );
@@ -71,6 +73,8 @@ export default async function handler(request: Request): Promise<Response> {
       reward: result?.reward || 0,
       newBalance: result?.new_balance || 0,
       transactionId: result?.transaction_id || null,
+      streak: result?.streak,
+      bonus: result?.bonus,
     });
   } catch (err) {
     console.error('[quests/claim] Error:', err);
