@@ -1,11 +1,13 @@
 // ============================================
 // api/chats/get-all.ts
 // Описание: Получение ВСЕХ чатов с сообщениями для пользователя
-// Версия: 4.0.0 - добавлен pinned, сортировка по pinned + updated_at
+// Версия: 4.1.0 - agent_id/modality чатов и metadata сообщений (генерации);
+//                 sync_token не перегенерируется; убран ложный Content-Encoding: gzip
+//          4.0.0 - добавлен pinned, сортировка по pinned + updated_at
 // ============================================
 
 import { authenticate } from '../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, getUserUuid, updateSyncToken, getSyncToken } from '../_lib/supabase-client';
 
 export const config = {
@@ -58,7 +60,8 @@ async function getAllChatsWithMessages(userUuid: string, config: any): Promise<a
         msg_type: msg.msg_type,
         is_favorite: msg.is_favorite || false,
         created_at: msg.created_at,
-        deleted_at: msg.deleted_at
+        deleted_at: msg.deleted_at,
+        metadata: msg.metadata || null
       });
     }
   }
@@ -70,7 +73,9 @@ async function getAllChatsWithMessages(userUuid: string, config: any): Promise<a
     topic_id: chat.topic_id,
     max_context: chat.max_context || 15,
     user_renamed: chat.user_renamed || false,
-    pinned: chat.pinned || false,                    // ✅ НОВОЕ
+    pinned: chat.pinned || false,
+    agent_id: chat.agent_id || null,
+    modality: chat.modality || null,
     created_at: chat.created_at,
     updated_at: chat.updated_at,
     deleted_at: chat.deleted_at || null,
@@ -130,21 +135,13 @@ export default async function handler(request: Request): Promise<Response> {
 
     console.log(`✅ [get-all] Загружено ${chats.length} чатов (${totalDeletedChats} в корзине, ${totalPinnedChats} закреплено), ${totalMessages} сообщений за ${elapsed}ms`);
 
-    // ЕСЛИ sync=true → ПРОВЕРЯЕМ, НУЖНО ЛИ ОБНОВЛЯТЬ ТОКЕН
+    // Токен отдаём как есть: клиент сохранит его после полной загрузки.
+    // Перегенерация здесь заставила бы другие устройства зря перезагружаться.
     let syncToken: string | null = null;
     if (sync) {
-      // Получаем токен клиента из заголовка
-      const clientSyncToken = request.headers.get('x-sync-token') || null;
-      const dbSyncToken = await getSyncToken(telegramId, config);
-
-      if (clientSyncToken !== dbSyncToken) {
-        // НЕ СОВПАДАЮТ → ОБНОВЛЯЕМ!
+      syncToken = await getSyncToken(telegramId, config);
+      if (!syncToken) {
         syncToken = await updateSyncToken(telegramId, config);
-        console.log(`🔄 [get-all] sync_token обновлен (не совпадал): ${syncToken?.substring(0, 8)}...`);
-      } else {
-        // СОВПАДАЮТ → ОСТАВЛЯЕМ
-        syncToken = dbSyncToken;
-        console.log(`✅ [get-all] sync_token совпадает, обновление не требуется`);
       }
     }
 
@@ -154,13 +151,14 @@ export default async function handler(request: Request): Promise<Response> {
       total_chats: chats.length,
       total_messages: totalMessages,
       total_deleted_chats: totalDeletedChats,
-      total_pinned_chats: totalPinnedChats,      // ✅ НОВОЕ
+      total_pinned_chats: totalPinnedChats,
       loaded_at: new Date().toISOString(),
       syncToken: syncToken || null
     };
 
+    // Сжатие делает сама платформа; ручной Content-Encoding: gzip при
+    // несжатом теле ломает разбор ответа в части клиентов
     return jsonResponse(responseData, 200, {
-      'Content-Encoding': 'gzip',
       'Cache-Control': 'no-cache, no-store, must-revalidate'
     });
   } catch (err) {
