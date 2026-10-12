@@ -1,7 +1,8 @@
 // ============================================
 // src/store/UserStore.ts
 // Пользователь, настройки, лимиты, устройство
-// Версия: 6.0.0 — без usedToday/dailyLimit
+// Версия: 6.1.0 — хранится тариф (subscription_tier) и дата окончания с сервера
+//          6.0.0 — без usedToday/dailyLimit
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -150,9 +151,22 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return this._data.trialUsed || false;
   }
 
+  /** Тариф для цен: trial / ключ платного тарифа (для admin/creator — как пришёл с сервера) */
+  get subscriptionTier(): string {
+    return this._data.subscription_tier || 'trial';
+  }
+
   // ==========================================
   // СЕТТЕРЫ
   // ==========================================
+
+  /** Тариф, дата окончания и признак использованного trial — из ответа auth/check */
+  setSubscription(tier: string | null | undefined, premiumUntil: string | null | undefined, trialUsed?: boolean): void {
+    this._data.subscription_tier = tier || 'trial';
+    this._data.premium_until = premiumUntil || null;
+    if (trialUsed !== undefined) this._data.trialUsed = !!trialUsed;
+    this.save();
+  }
 
   setRole(role: UserRole, syncEnabled: boolean): void {
     const oldRole = this._data.role;
