@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/games/sudoku/SudokuGame.ts
 // Описание: Классическое Судоку
-// Версия: 4.2.1 - замена @types → @app-types
+// Версия: 4.3.0 - монеты за победу считает сервер (событие economy:game), баланс — getCoinBalance
+//          4.2.1 - замена @types → @app-types
 // ============================================
 
 import './sudoku.css';
@@ -215,10 +216,8 @@ export class SudokuGame {
       this.questsStore.setGameData(timeKey, time);
       
       if (this.userId) {
-        eventBus.emit('economy:earn', {
-          userId: this.userId,
-          source: 'game:sudoku:win',
-          amount: 30,
+        eventBus.emit('economy:game', {
+          event: 'sudoku:win',
           metadata: {
             difficulty: this.difficulty,
             time: time,
@@ -251,7 +250,7 @@ export class SudokuGame {
     
     const timeStr = this._formatTime(this.elapsedTime);
     const errorsStr = `${this.errors}/${this.maxErrors}`;
-    const currentBalance = (window as any).economyStore?.getBalance() || 0;
+    const currentBalance = (window as any).economyStore?.getCoinBalance?.() || 0;
     
     this.container.innerHTML = `
       <div class="sudoku-container" id="sudoku-container">
