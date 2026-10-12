@@ -1,7 +1,8 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 8.1.0 — добавлен AgentsModule
+// Версия: 8.2.0 — доступ к админке по Telegram ID (userStore.isCreator), не по роли
+//          8.1.0 — добавлен AgentsModule
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -86,8 +87,9 @@ export class ModuleLoader {
 
     // Проверяем доступ к админ-модулю
     if (moduleName === 'admin') {
+      // Доступ по Telegram ID, а не по роли (роль можно переключать для тестов)
       const role = (window as any).userStore?.role || 'trial';
-      if (role !== 'creator') {
+      if (!(window as any).userStore?.isCreator) {
         console.warn(`⛔ Доступ к админ-панели запрещён (роль: ${role})`);
         if (!silent) {
           this.eventBus.emit('notification:show', {
