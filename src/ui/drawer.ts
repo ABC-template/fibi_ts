@@ -1,7 +1,8 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 2.7.0 — пункт «Админ-панель» показывается по Telegram ID (не по роли)
+// Версия: 2.8.0 — очистка кэша без clearJWT (JWT больше нет); пункт «Админ-панель» — по флагу сервера
+//          2.7.0 — пункт «Админ-панель» показывается по Telegram ID (не по роли)
 //          2.6.1 — нельзя удалить чат, пока в нём идёт генерация
 //          2.6.0 — добавлен пункт "ИИ-агенты"
 // ============================================
@@ -651,22 +652,18 @@ export function appendDrawerNav(container: HTMLElement): void {
                     if (window.questsStore) {
                         window.questsStore._data = {};
                         window.questsStore.save();
-                        window.questsStore.clearJWT();
                     }
                     if (window.chatStore) {
                         window.chatStore._data = {};
                         window.chatStore.save();
-                        window.chatStore.clearJWT();
                     }
                     if (window.userStore) {
                         window.userStore._data = {};
                         window.userStore.save();
-                        window.userStore.clearJWT();
                     }
                     if (window.organizerStore) {
                         window.organizerStore._data = {};
                         window.organizerStore.save();
-                        window.organizerStore.clearJWT();
                     }
 
                     localStorage.removeItem('sync_token');
