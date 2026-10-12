@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.4.0 — chatId уходит на сервер (замок чата); обработка 409:
+// Версия: 4.5.0 — «пульс» сервера вырезается, ошибка до первого слова показывается
+//                  понятным текстом; обрыв, если 40 с не приходит ничего;
+//                  вместо «signal is aborted» — «Сервер не ответил вовремя»
+//          4.4.0 — chatId уходит на сервер (замок чата); обработка 409:
 //                  в чате уже идёт запрос
 //          4.3.0 — передача attachedFile в /api/chat/stream; починена
 //                  устаревшая причина отказа 'role' (теперь auth/tier/
@@ -16,6 +19,10 @@ import { eventBus } from '@/core/event-bus';
 import type { UUID, TopicId } from '@app-types';
 
 let streamCallCounter = 0;
+
+/** Протокол с api/chat/stream.ts: невидимый «пульс» и префикс ошибки */
+const STREAM_HEARTBEAT = '\u0000';
+const STREAM_ERROR_MARK = '\u0001';
 
 (window as any).streamAiResponse = async function(
   historyMessages: Array<{ type: string; text: string }>,
@@ -138,6 +145,21 @@ let streamCallCounter = 0;
     const reader = response.body!.getReader();
     const decoder = new TextDecoder('utf-8');
 
+    // Сервер открывает ответ сразу и, пока модель думает, шлёт невидимый «пульс»
+    // (\u0000). Если долго не приходит вообще ничего — соединение повисло.
+    const IDLE_TIMEOUT_MS = 40_000;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        console.warn(`⏰ [СТРИМ #${callId}] Нет данных ${IDLE_TIMEOUT_MS / 1000} с — обрываем`);
+        reader.cancel().catch(() => {});
+      }, IDLE_TIMEOUT_MS);
+    };
+    armIdle();
+    let serverError: string | null = null;
+    let controlBuf = '';
+
     console.log(`📡 [СТРИМ #${callId}] Начинаем чтение стрима...`);
 
     msgDiv = document.createElement('div');
@@ -156,12 +178,34 @@ let streamCallCounter = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
+        if (idleTimer) clearTimeout(idleTimer);
         console.log(`📡 [СТРИМ #${callId}] Стрим завершен, получено ${chunksReceived} чанков`);
         break;
       }
+      armIdle();
 
       chunksReceived++;
-      const chunk = decoder.decode(value, { stream: true });
+      let chunk = decoder.decode(value, { stream: true });
+
+      // Ошибка сервера до первого слова: \u0000\u0001 + JSON (может прийти частями)
+      // Маркер — символ \u0001 (в тексте модели его не бывает); «пульс» \u0000 перед ним
+      // мог прийти отдельным куском
+      if (chunk.indexOf(STREAM_ERROR_MARK) !== -1 || controlBuf) {
+        controlBuf += chunk;
+        const at = controlBuf.indexOf(STREAM_ERROR_MARK);
+        if (at !== -1) {
+          try {
+            const parsed = JSON.parse(controlBuf.slice(at + 1));
+            serverError = parsed?.error || 'Ошибка сервера';
+          } catch {
+            // JSON ещё не дошёл целиком — ждём следующий кусок
+          }
+        }
+        continue;
+      }
+
+      chunk = chunk.split(STREAM_HEARTBEAT).join('');
+      if (!chunk) continue;
       accumulatedText += chunk;
 
       if (isFirstChunk && accumulatedText.trim().length > 0) {
@@ -234,6 +278,17 @@ let streamCallCounter = 0;
     }
 
     console.log(`📊 [СТРИМ #${callId}] Итог: ${chunksReceived} чанков, ${accumulatedText.length} символов`);
+
+    if (serverError && accumulatedText.trim().length === 0) {
+      uiRendererInstance.hideSkeleton();
+      uiRendererInstance.renderMessage(`⚠️ ${serverError}`, 'ai-msg');
+      return false;
+    }
+    if (controlBuf && !serverError && accumulatedText.trim().length === 0) {
+      uiRendererInstance.hideSkeleton();
+      uiRendererInstance.renderMessage('⚠️ Не удалось получить ответ модели. Энергия не списана — попробуйте ещё раз.', 'ai-msg');
+      return false;
+    }
 
     if (accumulatedText.trim().length > 0) {
       console.log(`🟢 [СТРИМ #${callId}] НАЧАЛО ФИНАЛИЗАЦИИ`);
@@ -430,7 +485,13 @@ let streamCallCounter = 0;
         console.error(`❌ [СТРИМ #${callId}] Не удалось найти чат ${chatId} для сохранения частичного ответа`);
       }
     } else if (!finalizeCalled) {
-      uiRendererInstance.renderMessage(`⚠️ Ошибка: ${(err as Error).message || 'Неизвестная ошибка'}`, 'ai-msg');
+      const isAbort = (err as Error)?.name === 'AbortError' || (err as Error)?.name === 'TimeoutError';
+      uiRendererInstance.renderMessage(
+        isAbort
+          ? '⚠️ Сервер не ответил вовремя. Энергия не списана — попробуйте ещё раз.'
+          : `⚠️ Ошибка: ${(err as Error).message || 'Неизвестная ошибка'}`,
+        'ai-msg'
+      );
     }
     return false;
   }
