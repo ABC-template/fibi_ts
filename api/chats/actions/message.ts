@@ -1,7 +1,9 @@
 // ============================================
 // api/chats/actions/message.ts
 // Описание: Работа с сообщениями (создание, удаление) с sync_token
-// Версия: 3.0.0 - TypeScript
+// Версия: 3.1.0 - нельзя перезаписать сообщение из чужого чата по его id;
+//                 metadata (генерации) при выгрузке локальных чатов; isFavorite
+//          3.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
@@ -19,8 +21,30 @@ interface IMessageRequest {
     text: string;
     type?: string;
     is_favorite?: boolean;
+    isFavorite?: boolean;
+    metadata?: Record<string, any> | null;
   };
   messageId?: string;
+}
+
+/** Максимальный размер metadata сообщения (байт JSON) */
+const MAX_METADATA_BYTES = 20_000;
+
+const ALLOWED_TYPES = new Set(['user-msg', 'ai-msg']);
+
+/**
+ * metadata принимаем только как объект разумного размера. Подделать чужие файлы
+ * через неё нельзя: ссылки на медиа выдаёт /media/sign только владельцу файла.
+ */
+function sanitizeMetadata(raw: unknown): Record<string, any> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  try {
+    const json = JSON.stringify(raw);
+    if (json.length > MAX_METADATA_BYTES) return null;
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -50,27 +74,48 @@ async function addMessage(
       return { success: false, error: validation.error };
     }
 
-    const msgId = messageData.id || crypto.randomUUID();
-    const msgType = messageData.type || 'user-msg';
+    const msgId = messageData.id && isValidUUID(messageData.id) ? messageData.id : crypto.randomUUID();
+    const msgType = ALLOWED_TYPES.has(messageData.type) ? messageData.type : 'user-msg';
+    const isFavorite = messageData.is_favorite === true || messageData.isFavorite === true;
+    const metadata = sanitizeMetadata(messageData.metadata);
 
     const existingCheck = await supabaseFetch(
-      `messages?id=eq.${msgId}&select=id`,
+      `messages?id=eq.${msgId}&select=id,chat_id`,
       { method: 'GET' },
       config
     );
 
     if (existingCheck && Array.isArray(existingCheck) && existingCheck.length > 0) {
+      // Сообщение с таким id уже есть. Переписать его можно, только если оно
+      // лежит в чате этого же пользователя (иначе это чужое сообщение).
+      const existingChatId = existingCheck[0].chat_id;
+      if (existingChatId !== chatId) {
+        const ownerCheck = existingChatId
+          ? await supabaseFetch(
+              `chats?id=eq.${existingChatId}&user_id=eq.${userId}&select=id`,
+              { method: 'GET' },
+              config
+            )
+          : [];
+        if (!ownerCheck || !Array.isArray(ownerCheck) || ownerCheck.length === 0) {
+          return { success: false, error: 'Message id conflict' };
+        }
+      }
+
+      const patch: Record<string, any> = {
+        chat_id: chatId,
+        msg_type: msgType,
+        text: messageData.text,
+        is_favorite: isFavorite,
+        deleted_at: null
+      };
+      if (metadata) patch.metadata = metadata;
+
       await supabaseFetch(
         `messages?id=eq.${msgId}`,
         {
           method: 'PATCH',
-          body: JSON.stringify({
-            chat_id: chatId,
-            msg_type: msgType,
-            text: messageData.text,
-            is_favorite: messageData.is_favorite || false,
-            deleted_at: null
-          })
+          body: JSON.stringify(patch)
         },
         config
       );
@@ -84,7 +129,8 @@ async function addMessage(
             chat_id: chatId,
             msg_type: msgType,
             text: messageData.text,
-            is_favorite: messageData.is_favorite || false,
+            is_favorite: isFavorite,
+            metadata: metadata
           })
         },
         config
