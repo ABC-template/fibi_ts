@@ -4,7 +4,8 @@
 // списание энергии, обновление сообщений и завершение видео-задания.
 // finalizeVideoJob идемпотентна: вебхук OpenRouter и опрос статуса из приложения
 // могут прийти одновременно — результат сохранится и будет оплачен ровно один раз.
-// Версия: 1.0.0
+// Версия: 1.1.0 — списание за генерацию «до нуля» (p_allow_partial), возвращается факт
+//          1.0.0
 // ============================================
 
 import { supabaseFetch, supabaseRPC } from './supabase-client';
@@ -218,12 +219,15 @@ export async function chargeForGeneration(
         p_amount: amount,
         p_source: 'generation',
         p_description: `Генерация (${modality})`,
+        // Результат уже получен: списываем сколько есть, недоплату пишет БД
+        p_allow_partial: true,
       },
       config
     );
 
     if (spend?.success) {
-      return spend.bypass ? 0 : amount;
+      if (spend.bypass) return 0;
+      return typeof spend.charged === 'number' ? spend.charged : amount;
     }
 
     await logGenerationIssue(userId, 'generation_charge_failed', `Не удалось списать ${amount} за успешную генерацию: ${spend?.error || 'unknown'}`, { amount, chat_id: chatId }, config);
