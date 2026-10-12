@@ -1,7 +1,11 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 7.2.0 — ежедневный вход на сервере (daily_checkin: стрик + монеты) и награда
+// Версия: 8.0.0 — без Supabase Auth: пользователь создаётся в public.users (getOrCreateUser),
+//                  JWT/authUserId/пароль больше не выдаются; для синхронизации отдаётся
+//                  токен Realtime (realtime: { token, expiresAt }); adminPanel — доступ к
+//                  админке по Telegram ID; заблокированным не начисляются бонус и вход дня
+//          7.2.0 — ежедневный вход на сервере (daily_checkin: стрик + монеты) и награда
 //                  пригласившему, когда приглашённый вернулся на следующий день
 //          7.1.0 — sync_token отдаётся из БД без перегенерации
 //          7.0.0 — канал=gate, expiry→trial, tier из subscription_tiers
@@ -14,11 +18,13 @@ import {
   errorResponse,
   getSupabaseConfig,
   supabaseFetch,
-  getOrCreateAuthUser,
-  getSyncToken,
+  getOrCreateUser,
   updateSyncToken,
   supabaseRPC,
   getVerifiedStartParam,
+  canUserSync,
+  isAdminTelegramId,
+  signRealtimeToken,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
@@ -42,72 +48,35 @@ export default async function handler(request: Request): Promise<Response> {
     const config = getSupabaseConfig('service');
 
     // ==========================================
-    // 1. Auth user (JWT)
+    // 1. Пользователь (создаётся при первом входе)
     // ==========================================
-    let authResult;
+    let dbUser: any;
+    let isNewUser = false;
     try {
-      authResult = await getOrCreateAuthUser(telegramId, user, config);
+      const res = await getOrCreateUser(telegramId, user, config);
+      dbUser = res.user;
+      isNewUser = res.isNew;
     } catch (err) {
-      console.error('Ошибка Auth:', err);
-      return errorResponse('Ошибка авторизации: ' + (err as Error).message, 500);
+      console.error('❌ [auth/check] user:', (err as Error).message);
+      return errorResponse('Ошибка авторизации', 500);
     }
 
-    const userId = authResult.userId;
-    const userUuid = authResult.userUuid || userId;
-    const jwtToken = authResult.jwtToken;
-    const isNewUser = authResult.isNew;
+    const userUuid: string = dbUser.id;
+    let role: string = dbUser.role || 'trial';
+    let subscriptionTier: string | null = dbUser.subscription_tier || 'trial';
+    const premiumUntil: string | null = dbUser.premium_until || null;
 
-    // ==========================================
-    // 3. public.users — создать если нет
-    // ==========================================
-    let dbUser: any = null;
-    let role = 'trial';
-    let subscriptionTier: string | null = 'trial';
-    let premiumUntil: string | null = null;
-
+    // Блокировка: вход разрешён (данные доступны), но бонусы дня не начисляются
+    let blocked = false;
     try {
-      const userRes = await supabaseFetch(
-        `users?telegram_id=eq.${telegramId}&select=telegram_id,role,premium_until,username,data_deadline,sync_token,subscription_tier,trial_used,token_balance_bonus,token_balance_permanent,last_bonus_tokens_date,tokens_spent_today,last_spend_date`,
-        { method: 'GET' },
-        config
-      );
-
-      if (userRes && Array.isArray(userRes) && userRes.length > 0) {
-        dbUser = userRes[0];
-        role = dbUser.role || 'trial';
-        subscriptionTier = dbUser.subscription_tier || 'trial';
-        premiumUntil = dbUser.premium_until || null;
-      } else {
-        await supabaseFetch(
-          'users',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              id: userId,
-              telegram_id: telegramId,
-              username: user?.username || null,
-              role: 'trial',
-              subscription_tier: 'trial',
-              user_lang: user?.language_code || 'ru',
-              sync_token: crypto.randomUUID(),
-              trial_used: false,
-            }),
-          },
-          config
-        );
-        dbUser = { role: 'trial', subscription_tier: 'trial', trial_used: false };
-        role = 'trial';
-        subscriptionTier = 'trial';
-      }
+      const r = await supabaseRPC('is_user_blocked', { p_user_id: telegramId }, config);
+      blocked = r === true || r === 'true';
     } catch (err) {
-      console.error('Error user:', (err as Error).message);
-      dbUser = { role: 'trial', subscription_tier: 'trial' };
-      role = 'trial';
-      subscriptionTier = 'trial';
+      console.warn('⚠️ [auth/check] is_user_blocked:', err);
     }
 
     // ==========================================
-    // 3a. Приглашение: ссылка t.me/<бот>?startapp=ref_<код>. start_param берётся
+    // 2. Приглашение: ссылка t.me/<бот>?startapp=ref_<код>. start_param берётся
     //     из подписанного initData, запись создаёт БД (только для новых пользователей,
     //     один пригласивший). Награда — позже, когда приглашённый вернётся.
     // ==========================================
@@ -133,15 +102,14 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 3b. sync_token (после создания строки users)
+    // 3. sync_token
     // ==========================================
     //    Токен меняют только действия с данными (создание/правка/удаление).
     //    Здесь его НЕ перегенерируем: клиент сравнивает свой токен с этим и,
     //    если они разные, делает полную загрузку и сохраняет именно этот токен.
     //    Раньше здесь создавался новый токен, которого не было в БД, — и
     //    полная перезагрузка шла при каждом запуске.
-    let finalSyncToken: string | null =
-      dbUser?.sync_token || (await getSyncToken(telegramId, config));
+    let finalSyncToken: string | null = dbUser.sync_token || null;
     if (!finalSyncToken) {
       // У пользователя ещё нет токена — заводим и сохраняем в БД
       finalSyncToken = await updateSyncToken(telegramId, config);
@@ -253,7 +221,7 @@ export default async function handler(request: Request): Promise<Response> {
     // 7. Ежедневный бонус (сброс на значение тарифа)
     // ==========================================
     let bonusAdded = 0;
-    if (!limits.bypass && !['admin', 'creator'].includes(role)) {
+    if (!blocked && !limits.bypass && !['admin', 'creator'].includes(role)) {
       const amount = limits.bonus_tokens_per_day || 0;
       if (amount > 0) {
         try {
@@ -279,30 +247,32 @@ export default async function handler(request: Request): Promise<Response> {
     //     Клиент только показывает результат.
     // ==========================================
     let checkin: any = null;
-    try {
-      const res = await supabaseRPC('daily_checkin', { p_user_id: telegramId }, config);
-      if (res?.success) {
-        checkin = {
-          claimed: res.claimed === true,
-          streak: res.streak || 0,
-          base: res.base || 0,
-          bonus: res.bonus || 0,
-          reward: res.reward || 0,
-          coins: res.new_balance ?? null,
-        };
+    if (!blocked) {
+      try {
+        const res = await supabaseRPC('daily_checkin', { p_user_id: telegramId }, config);
+        if (res?.success) {
+          checkin = {
+            claimed: res.claimed === true,
+            streak: res.streak || 0,
+            base: res.base || 0,
+            bonus: res.bonus || 0,
+            reward: res.reward || 0,
+            coins: res.new_balance ?? null,
+          };
 
-        // Приглашённый вернулся на следующий день — награда пригласившему
-        // (один раз; reward_referral сама проверяет, что награды ещё не было)
-        if (checkin.claimed) {
-          await supabaseRPC(
-            'reward_referral',
-            { p_referred_id: telegramId, p_min_age_hours: 20 },
-            config
-          ).catch(() => null);
+          // Приглашённый вернулся на следующий день — награда пригласившему
+          // (один раз; reward_referral сама проверяет, что награды ещё не было)
+          if (checkin.claimed) {
+            await supabaseRPC(
+              'reward_referral',
+              { p_referred_id: telegramId, p_min_age_hours: 20 },
+              config
+            ).catch(() => null);
+          }
         }
+      } catch (err) {
+        console.warn('⚠️ [auth/check] daily_checkin:', err);
       }
-    } catch (err) {
-      console.warn('⚠️ [auth/check] daily_checkin:', err);
     }
 
     // ==========================================
@@ -326,31 +296,35 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 9. Ответ
+    // 9. Синхронизация и токен Realtime
+    //    can_sync — то же правило, что и в API синхронизации (batch, sync-metadata)
     // ==========================================
-    // role для UI: trial / premium (если есть активный платный tier) / admin / creator
-    let responseRole = role;
-    if (
-      !['admin', 'creator'].includes(role) &&
-      subscriptionTier &&
-      subscriptionTier !== 'trial'
-    ) {
-      responseRole = role === 'premium' ? 'premium' : role;
+    const syncEnabled = await canUserSync(telegramId, config);
+    let realtime: { token: string; expiresAt: number } | null = null;
+    if (syncEnabled) {
+      try {
+        realtime = await signRealtimeToken(userUuid, telegramId);
+      } catch (err) {
+        console.error('❌ [auth/check] realtime token:', (err as Error).message);
+      }
     }
 
+    // ==========================================
+    // 10. Ответ
+    // ==========================================
     return jsonResponse(
       {
         isMember,
-        role: responseRole,
+        role,
         dailyLimit: limits.bonus_tokens_per_day || 0,
         usedToday: 0,
-        syncEnabled: ['admin', 'creator', 'premium'].includes(responseRole),
+        syncEnabled,
         syncToken: finalSyncToken,
+        realtime,
+        adminPanel: isAdminTelegramId(telegramId),
+        blocked,
         userId: telegramId,
-        authUserId: userId,
         userUuid,
-        jwtToken,
-        expiresIn: 3600,
         isNewUser,
         dataDeadline: dbUser?.data_deadline || null,
         serverModels: {
@@ -378,8 +352,7 @@ export default async function handler(request: Request): Promise<Response> {
         premium_until: premiumUntil,
         trial_used: dbUser?.trial_used || false,
       },
-      200,
-      { Authorization: `Bearer ${jwtToken}` }
+      200
     );
   } catch (err) {
     console.error('Check auth error:', (err as Error).message);
