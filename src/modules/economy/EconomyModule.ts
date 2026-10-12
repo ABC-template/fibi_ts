@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.0.1 — исправлен subscription_tier
+// Версия: 2.1.0 — window.economyModule указывает на настоящий экземпляр (тот, что
+//                 создаёт загрузчик модулей); фантомный экземпляр с пустым div удалён —
+//                 кнопки вкладок/обмена в разметке вызывали его и ничего не происходило
+//          2.0.1 — исправлен subscription_tier
 // ============================================
 
 import './economy.css';
@@ -34,9 +37,12 @@ export class EconomyModule {
 
   constructor(container: HTMLElement) {
     this.container = container;
+    // Разметка вызывает методы через window.economyModule.* (onclick)
+    (window as any).economyModule = this;
   }
 
   async init(): Promise<void> {
+    (window as any).economyModule = this;
     if (this.isInitialized) return;
 
     this.headerManager.setTitle('💰 Экономика');
@@ -56,7 +62,7 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v2.0.1 инициализирован');
+    console.log('✅ EconomyModule v2.1.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -443,7 +449,7 @@ export class EconomyModule {
     }
 
     // ✅ ИСПРАВЛЕНО: используем (this.userStore as any)
-    const currentTier = (this.userStore as any)._data?.subscription_tier || null;
+    const currentTier = this.userStore.subscriptionTier || null;
 
     const content = `
       <div style="padding: 4px 0;">
@@ -649,11 +655,5 @@ export class EconomyModule {
 
 // Привязываем к window
 (window as any).EconomyModule = EconomyModule;
-(window as any).economyModule = new EconomyModule(document.createElement('div'));
 
-// Метод для вызова из HTML
-(window as any).economyModule.purchaseSubscription = (window as any).economyModule.purchaseSubscription.bind(
-  (window as any).economyModule
-);
-
-console.log('✅ EconomyModule v2.0.1 загружен');
+console.log('✅ EconomyModule v2.1.0 загружен');
