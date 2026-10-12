@@ -1,7 +1,12 @@
 // ============================================
 // api/chats/actions/message.ts
 // Описание: Работа с сообщениями (создание, удаление) с sync_token
-// Версия: 3.1.0 - нельзя перезаписать сообщение из чужого чата по его id;
+// Версия: 3.2.0 - служебные поля генерации в metadata (job_id, key_index, lock_token,
+//                 charged, finalizing и др.) от клиента не принимаются; metadata
+//                 существующего сообщения-генерации клиент не перезаписывает (раньше
+//                 можно было поставить charged и не заплатить за видео); незавершённый
+//                 статус генерации из клиента сохраняется как failed
+//          3.1.0 - нельзя перезаписать сообщение из чужого чата по его id;
 //                 metadata (генерации) при выгрузке локальных чатов; isFavorite
 //          3.0.0 - TypeScript
 // ============================================
@@ -32,16 +37,39 @@ const MAX_METADATA_BYTES = 20_000;
 
 const ALLOWED_TYPES = new Set(['user-msg', 'ai-msg']);
 
+/** Поля metadata, которые пишет только сервер (генерации: задание, ключ, замок, оплата) */
+const SERVER_METADATA_KEYS = [
+  'job_id',
+  'key_index',
+  'lock_token',
+  'charged',
+  'charge',
+  'finalizing',
+  'finalize_attempts',
+  'finalize_error',
+  'usage',
+  'cost_usd',
+];
+
+/** Незавершённые статусы генерации: из клиента такое сообщение не может быть «в работе» */
+const ACTIVE_GENERATION_STATUSES = new Set(['pending', 'processing', 'running', 'in_progress', 'queued']);
+
 /**
- * metadata принимаем только как объект разумного размера. Подделать чужие файлы
- * через неё нельзя: ссылки на медиа выдаёт /media/sign только владельцу файла.
+ * metadata принимаем только как объект разумного размера, без служебных полей.
+ * Подделать чужие файлы через неё нельзя: ссылки на медиа выдаёт /media/sign
+ * только владельцу файла.
  */
 function sanitizeMetadata(raw: unknown): Record<string, any> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   try {
     const json = JSON.stringify(raw);
     if (json.length > MAX_METADATA_BYTES) return null;
-    return JSON.parse(json);
+    const meta: Record<string, any> = JSON.parse(json);
+    for (const key of SERVER_METADATA_KEYS) delete meta[key];
+    if (meta.kind === 'generation' && ACTIVE_GENERATION_STATUSES.has(String(meta.status))) {
+      meta.status = 'failed';
+    }
+    return Object.keys(meta).length > 0 ? meta : null;
   } catch {
     return null;
   }
@@ -80,7 +108,7 @@ async function addMessage(
     const metadata = sanitizeMetadata(messageData.metadata);
 
     const existingCheck = await supabaseFetch(
-      `messages?id=eq.${msgId}&select=id,chat_id`,
+      `messages?id=eq.${msgId}&select=id,chat_id,metadata`,
       { method: 'GET' },
       config
     );
@@ -109,7 +137,10 @@ async function addMessage(
         is_favorite: isFavorite,
         deleted_at: null
       };
-      if (metadata) patch.metadata = metadata;
+      // metadata генерации ведёт сервер (статус, оплата, файлы) — клиент её не меняет
+      const serverMeta = existingCheck[0].metadata;
+      const isGeneration = serverMeta && typeof serverMeta === 'object' && serverMeta.kind === 'generation';
+      if (metadata && !isGeneration) patch.metadata = metadata;
 
       await supabaseFetch(
         `messages?id=eq.${msgId}`,
