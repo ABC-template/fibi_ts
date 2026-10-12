@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/economy/blocks.ts
 // Управление блокировками пользователей (админ)
-// Версия: 1.0.0
+// Версия: 1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+//          1.0.0
 // ============================================
 
 import {
@@ -12,19 +13,18 @@ import {
   errorResponse,
   getSupabaseConfig,
   supabaseFetch,
+  isAdminTelegramId,
 } from '../../_lib/index';
 
 export const config = { runtime: 'edge' };
-
-const CREATOR_ID = 1541531808;
 
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
-  // Только для создателя
+  // Только для админов
   const auth = await authenticate(request);
-  if (auth.error || auth.userId !== CREATOR_ID) {
+  if (auth.error || !isAdminTelegramId(auth.userId)) {
     return errorResponse('Доступ запрещён', 403);
   }
 
@@ -99,7 +99,7 @@ export default async function handler(request: Request): Promise<Response> {
           body: JSON.stringify({
             user_id,
             reason: reason || null,
-            blocked_by: CREATOR_ID,
+            blocked_by: auth.userId,
             expires_at: expires_at || null,
             blocked_at: new Date().toISOString(),
             is_active: true,
@@ -119,7 +119,7 @@ export default async function handler(request: Request): Promise<Response> {
             event_type: 'user_blocked',
             message: `Пользователь ${user_id} заблокирован`,
             user_id,
-            metadata: { reason, blocked_by: CREATOR_ID },
+            metadata: { reason, blocked_by: auth.userId },
           }),
         },
         config
