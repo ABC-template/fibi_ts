@@ -1,7 +1,10 @@
 // ============================================
 // src/services/auth.ts
-// Сервис авторизации (с JWT и авто-рефрешем)
-// Версия: 5.3.0 - в результат входа передаются баланс, бонус дня и ежедневный вход (checkin)
+// Сервис авторизации (Telegram initData; без JWT)
+// Версия: 7.0.0 - JWT и его таймер обновления убраны; токен Realtime из ответа передаётся
+//                 в syncService; флаг админки (adminPanel) — с сервера; офлайн-режим
+//                 берёт роль из последнего успешного входа
+//          5.3.0 - в результат входа передаются баланс, бонус дня и ежедневный вход (checkin)
 //          5.2.0 - тариф и дата окончания подписки сохраняются в UserStore
 //          5.1.1 - замена @types → @app-types
 // ============================================
@@ -17,8 +20,6 @@ export interface IAuthResult {
   syncEnabled: boolean;
   syncToken: string | null;
   dataDeadline: string | null;
-  jwtToken: string | null;
-  authUserId: string | null;
   isNewUser: boolean;
   serverModels: Record<string, boolean>;
   /** Баланс энергии на момент входа */
@@ -37,55 +38,11 @@ export interface IAuthResult {
 }
 
 export class AuthService {
-  private jwtToken: string | null = null;
-  private authUserId: string | null = null;
-  private syncToken: string | null = null;
-  private refreshTimeout: ReturnType<typeof setTimeout> | null = null;
   private readonly SESSION_TIMEOUT = 25 * 60 * 1000;
-  private readonly REFRESH_INTERVAL = 55 * 60 * 1000;
-
-  constructor() {
-    this.startRefreshTimer();
-  }
 
   getUserId(): number | null {
     const user = (window as any).Telegram?.WebApp?.initDataUnsafe?.user;
     return user?.id || null;
-  }
-
-  // ==========================================
-  // ТАЙМЕР РЕФРЕША JWT
-  // ==========================================
-
-  private startRefreshTimer(): void {
-    if (this.refreshTimeout) {
-      clearTimeout(this.refreshTimeout);
-    }
-    this.refreshTimeout = setTimeout(() => {
-      this.refreshJWT();
-    }, this.REFRESH_INTERVAL);
-  }
-
-  async refreshJWT(): Promise<void> {
-    try {
-      console.log('🔄 Автоматический рефреш JWT...');
-      const result = await this.checkSubscription();
-      if (result.jwtToken) {
-        this.jwtToken = result.jwtToken;
-        this.authUserId = result.authUserId;
-        const tempStore = new BaseStore('temp');
-        tempStore.saveJWT(result.jwtToken);
-        console.log('✅ JWT обновлен');
-        
-        if ((window as any).syncService) {
-          (window as any).syncService.reconnect();
-        }
-      }
-      this.startRefreshTimer();
-    } catch (err) {
-      console.error('❌ Ошибка рефреша JWT:', err);
-      this.startRefreshTimer();
-    }
   }
 
   // ==========================================
@@ -103,16 +60,10 @@ export class AuthService {
 
       const newSyncToken = data.syncToken;
 
-      if (data.jwtToken) {
-        this.jwtToken = data.jwtToken;
-        const tempStore = new BaseStore('temp');
-        tempStore.saveJWT(data.jwtToken);
-        console.log('✅ JWT токен сохранен');
-      }
-
-      if (data.authUserId) {
-        this.authUserId = data.authUserId;
-        localStorage.setItem('auth_user_id', data.authUserId);
+      // Токен Realtime (только при разрешённой синхронизации)
+      const syncService = (window as any).syncService;
+      if (syncService?.setRealtimeToken) {
+        syncService.setRealtimeToken(data.syncEnabled === true ? data.realtime || null : null);
       }
 
       if (newSyncToken) {
@@ -126,10 +77,12 @@ export class AuthService {
       );
 
       userStore.setSubscription(
-        (data as any).subscription_tier,
-        (data as any).premium_until,
-        (data as any).trial_used
+        data.subscription_tier,
+        data.premium_until,
+        data.trial_used
       );
+
+      userStore.setAdminPanel(data.adminPanel === true);
 
       if (data.userId) {
         userStore.userId = data.userId;
@@ -153,13 +106,11 @@ export class AuthService {
         syncEnabled: data.syncEnabled === true,
         syncToken: newSyncToken || null,
         dataDeadline: data.dataDeadline || null,
-        jwtToken: data.jwtToken || null,
-        authUserId: data.authUserId || null,
         isNewUser: data.isNewUser || false,
         serverModels: data.serverModels || {},
-        tokens: (data as any).tokens,
-        today_bonus_added: (data as any).today_bonus_added || 0,
-        checkin: (data as any).checkin ?? null
+        tokens: data.tokens,
+        today_bonus_added: data.today_bonus_added || 0,
+        checkin: data.checkin ?? null
       };
 
     } catch (err) {
@@ -171,15 +122,6 @@ export class AuthService {
   // ==========================================
   // ПОЛУЧЕНИЕ ТОКЕНОВ
   // ==========================================
-
-  getJWT(): string | null {
-    const tempStore = new BaseStore('temp');
-    return tempStore.getJWT();
-  }
-
-  getAuthUserId(): string | null {
-    return this.authUserId || localStorage.getItem('auth_user_id') || null;
-  }
 
   getSyncToken(): string | null {
     const tempStore = new BaseStore('temp');
@@ -237,25 +179,15 @@ export class AuthService {
   // ==========================================
 
   logout(): void {
-    this.jwtToken = null;
-    this.authUserId = null;
-    this.syncToken = null;
-    
     const tempStore = new BaseStore('temp');
-    tempStore.clearJWT();
     tempStore.clearSyncToken();
-    
-    localStorage.removeItem('auth_user_id');
     localStorage.removeItem('session_active');
-    
-    if (this.refreshTimeout) {
-      clearTimeout(this.refreshTimeout);
-    }
-    
+
     if ((window as any).syncService) {
+      (window as any).syncService.setRealtimeToken(null);
       (window as any).syncService.unsubscribe();
     }
-    
+
     console.log('👋 Выход выполнен');
   }
 
@@ -263,50 +195,20 @@ export class AuthService {
   // ОФЛАЙН-РЕЖИМ
   // ==========================================
 
+  /**
+   * Сервер недоступен: работаем локально с ролью последнего успешного входа.
+   * Синхронизация без сервера невозможна — выключена.
+   */
   private fallbackToOffline(): IAuthResult {
-    if (userStore.isCreator) {
-      userStore.setRole('creator', true);
-      userStore.save();
-      return {
-        isMember: true,
-        role: 'creator',
-        syncEnabled: true,
-        syncToken: this.getSyncToken() || null,
-        dataDeadline: localStorage.getItem('data_deadline') || null,
-        jwtToken: this.getJWT() || null,
-        authUserId: localStorage.getItem('auth_user_id') || null,
-        isNewUser: false,
-        serverModels: {}
-      };
-    }
+    const savedRole = localStorage.getItem('user_role') || 'trial';
+    const known = ['trial', 'premium', 'admin', 'creator'].includes(savedRole);
 
-    const savedRole = localStorage.getItem('user_role');
-    if (savedRole === 'admin' || savedRole === 'creator') {
-      userStore.setRole(savedRole as any, true);
-      userStore.save();
-      return {
-        isMember: true,
-        role: savedRole,
-        syncEnabled: true,
-        syncToken: this.getSyncToken() || null,
-        dataDeadline: localStorage.getItem('data_deadline') || null,
-        jwtToken: this.getJWT() || null,
-        authUserId: localStorage.getItem('auth_user_id') || null,
-        isNewUser: false,
-        serverModels: {}
-      };
-    }
-
-    userStore.setRole('trial', false);
-    userStore.save();
     return {
-      isMember: false,
-      role: 'guest',
+      isMember: known,
+      role: known ? savedRole : 'guest',
       syncEnabled: false,
-      syncToken: null,
-      dataDeadline: null,
-      jwtToken: null,
-      authUserId: null,
+      syncToken: this.getSyncToken() || null,
+      dataDeadline: localStorage.getItem('data_deadline') || null,
       isNewUser: false,
       serverModels: {}
     };
@@ -331,4 +233,4 @@ export class AuthService {
 }
 
 export const authService = new AuthService();
-console.log('✅ AuthService v6.0.0 загружен (без request-quota)');
+console.log('✅ AuthService v7.0.0 загружен');
