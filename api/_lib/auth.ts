@@ -1,9 +1,12 @@
 // ============================================
 // api/_lib/auth.ts
 // Описание: Единая аутентификация для всех Edge-функций
-// Версия: 4.2.0 - админ по Telegram ID (ADMIN_TELEGRAM_IDS), не зависит от роли
+// Версия: 5.0.0 - Telegram ID для JWT берётся из public.users по id пользователя (sub токена),
+//                 а не из user_metadata (его пользователь может изменить сам);
+//                 initData старше 24 часов не принимается;
+//                 ID создателя и админов — из переменных CREATOR_ID / ADMIN_TELEGRAM_IDS
+//          4.2.0 - админ по Telegram ID (ADMIN_TELEGRAM_IDS), не зависит от роли
 //          4.1.0 - getVerifiedStartParam (start_param из подписанного initData)
-//          4.0.0 - TypeScript
 // ============================================
 
 import { getSupabaseConfig, supabaseFetch } from './supabase-client';
@@ -11,9 +14,16 @@ import { getSupabaseConfig, supabaseFetch } from './supabase-client';
 declare const process: {
   env: {
     BOT_TOKEN?: string;
+    CREATOR_ID?: string;
+    ADMIN_TELEGRAM_IDS?: string;
     [key: string]: string | undefined;
   };
 };
+
+/** Сколько живёт initData от Telegram (секунды) */
+const INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ITelegramUser {
   id: number;
@@ -34,7 +44,7 @@ export interface IAuthResult {
 }
 
 /**
- * Валидация Telegram Init Data
+ * Валидация Telegram Init Data: подпись и срок (auth_date)
  */
 async function validateTelegramInitData(
   initData: string,
@@ -89,6 +99,11 @@ async function validateTelegramInitData(
 
     if (calculatedHash !== hash) return null;
 
+    // Подпись верна — проверяем срок: утёкший initData не должен работать вечно
+    const authDate = Number(urlParams.get('auth_date'));
+    if (!Number.isFinite(authDate) || authDate <= 0) return null;
+    if (Date.now() / 1000 - authDate > INIT_DATA_MAX_AGE_SEC) return null;
+
     const user = JSON.parse(urlParams.get('user') || '{}');
     return user.id ? user : null;
   } catch (e) {
@@ -117,10 +132,30 @@ async function validateJWT(token: string): Promise<any> {
       return null;
     }
 
-    const user = await response.json();
-    return user;
+    return await response.json();
   } catch (err) {
     console.error('JWT validation error:', (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Telegram ID владельца аккаунта Supabase Auth.
+ * Источник — public.users (id = id пользователя в auth.users). user_metadata
+ * не используется: его пользователь меняет сам своим токеном.
+ */
+async function telegramIdByAuthUser(authUserId: string): Promise<number | null> {
+  if (!UUID_RE.test(authUserId)) return null;
+  try {
+    const rows = await supabaseFetch(
+      `users?id=eq.${authUserId}&select=telegram_id`,
+      { method: 'GET' },
+      getSupabaseConfig('service')
+    );
+    const id = Array.isArray(rows) && rows[0] ? Number(rows[0].telegram_id) : NaN;
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch (err) {
+    console.error('telegramIdByAuthUser error:', (err as Error).message);
     return null;
   }
 }
@@ -133,23 +168,24 @@ export async function authenticate(
   requireUser: boolean = true
 ): Promise<IAuthResult> {
   try {
-    // 1. Пытаемся получить JWT из заголовка Authorization
+    // 1. JWT из заголовка Authorization
     const authHeader = request.headers.get('Authorization');
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
       const user = await validateJWT(token);
 
-      if (user) {
-        const telegramId = user.user_metadata?.telegram_id ||
-          parseInt(user.email?.split('@')[0], 10);
-
-        return {
-          user: user,
-          userId: telegramId,
-          authUserId: user.id,
-          jwtToken: token,
-          error: null
-        };
+      if (user?.id) {
+        const telegramId = await telegramIdByAuthUser(String(user.id));
+        if (telegramId) {
+          return {
+            user: user,
+            userId: telegramId,
+            authUserId: user.id,
+            jwtToken: token,
+            error: null
+          };
+        }
+        // Токен валиден, но привязки к public.users нет — пробуем initData
       }
     }
 
@@ -160,10 +196,9 @@ export async function authenticate(
       if (botToken) {
         const tgUser = await validateTelegramInitData(initData, botToken);
         if (tgUser && tgUser.id) {
-          // Ищем пользователя в public.users по telegram_id
           const config = getSupabaseConfig('service');
           const userRes = await supabaseFetch(
-            `users?telegram_id=eq.${tgUser.id}&select=id`,
+            `users?telegram_id=eq.${Number(tgUser.id)}&select=id`,
             { method: 'GET' },
             config
           );
@@ -225,13 +260,19 @@ export async function getVerifiedStartParam(
   return startParam && startParam.length <= 512 ? startParam : null;
 }
 
+/** Telegram ID создателя из переменной CREATOR_ID (null, если не задана) */
+export function getCreatorId(): number | null {
+  const n = Number(process.env.CREATOR_ID?.trim());
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
 /**
  * Telegram ID, которым открыта админ-панель. Доступ не зависит от роли:
  * владелец может переключать себе роль (trial/premium) для тестов и не терять админку.
- * Список — переменная ADMIN_TELEGRAM_IDS (через запятую), по умолчанию создатель.
+ * Список — ADMIN_TELEGRAM_IDS (через запятую), если не задан — CREATOR_ID.
  */
 export function getAdminTelegramIds(): number[] {
-  const raw = process.env.ADMIN_TELEGRAM_IDS?.trim() || '1541531808';
+  const raw = process.env.ADMIN_TELEGRAM_IDS?.trim() || process.env.CREATOR_ID?.trim() || '';
   return raw
     .split(',')
     .map((x) => Number(x.trim()))
@@ -254,7 +295,7 @@ export async function isAdmin(
   try {
     const cfg = config || getSupabaseConfig('service');
     const result = await supabaseFetch(
-      `users?telegram_id=eq.${userId}&select=role`,
+      `users?telegram_id=eq.${Number(userId)}&select=role`,
       { method: 'GET' },
       cfg
     );
@@ -263,8 +304,7 @@ export async function isAdmin(
       return false;
     }
 
-    const user = result[0];
-    return ['admin', 'creator'].includes(user.role);
+    return ['admin', 'creator'].includes(result[0].role);
   } catch (err) {
     console.error('Failed to check admin status:', (err as Error).message);
     return false;
@@ -274,6 +314,7 @@ export async function isAdmin(
 /**
  * Проверить, является ли пользователь создателем (владельцем)
  */
-export function isCreator(userId: number, creatorId: number = 1541531808): boolean {
-  return userId === creatorId;
+export function isCreator(userId: number | null | undefined): boolean {
+  const creatorId = getCreatorId();
+  return !!creatorId && Number(userId) === creatorId;
 }
