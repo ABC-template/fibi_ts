@@ -4,10 +4,12 @@
 // режим, валидация параметров и промптов по generation_config.
 // Используется в api/generations/create.ts и api/media/upload-url.ts,
 // чтобы правила не расходились.
-// Версия: 1.0.0
+// Версия: 1.1.0 — заблокированный пользователь и тариф trial (в т.ч. истёкшая
+//                 подписка) к генерации не допускаются
+//          1.0.0
 // ============================================
 
-import { supabaseFetch } from './supabase-client';
+import { supabaseFetch, supabaseRPC } from './supabase-client';
 import type { ISupabaseConfig } from './supabase-client';
 import { checkAgentAccess } from './agent-access';
 import { HttpError } from './http-error';
@@ -47,7 +49,19 @@ export async function loadGenerativeAgent(
   );
   const user = Array.isArray(userRes) ? userRes[0] : null;
 
-  const access = checkAgentAccess(agent, user?.role, user?.subscription_tier || null);
+  const blocked = await supabaseRPC('is_user_blocked', { p_user_id: userId }, config).catch(() => false);
+  if (blocked === true) {
+    throw new HttpError(403, 'Доступ к приложению ограничен администратором');
+  }
+
+  // Подписка истекла, а роль в БД ещё не обновлена (обновится при входе) — считаем trial
+  const expired = user?.premium_until && new Date(user.premium_until).getTime() < Date.now();
+  const tier = expired ? 'trial' : (user?.subscription_tier || null);
+
+  const access = checkAgentAccess(agent, user?.role, tier);
+  if (!access.hasAccess && access.reason === 'tier') {
+    throw new HttpError(403, 'Генерация доступна на платном тарифе');
+  }
   if (!access.hasAccess) {
     throw new HttpError(403, `Access denied: ${access.reason}`);
   }
