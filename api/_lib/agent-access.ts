@@ -5,7 +5,9 @@
 // и в api/chat/stream.ts (финальная проверка перед запросом к ИИ),
 // чтобы обе точки не расходились в правилах доступа.
 //
-// Версия: 3.0.0 — multi-tier access (allowed_tiers)
+// Версия: 3.1.0 — генеративные агенты (image/video/audio) недоступны тарифу trial
+//                  при любых allowed_tiers (защита от ухода в минус)
+//          3.0.0 — multi-tier access (allowed_tiers)
 //   Вместо одного min_pro_tier теперь массив allowed_tiers.
 //   Доступ: user.tier ∈ allowed_tiers.
 //   NULL / пустой массив = доступен всем авторизованным.
@@ -19,6 +21,8 @@
  */
 export interface IAgentAccessCheckable {
   is_active: boolean;
+  /** text / image / video / audio */
+  modality?: string | null;
   /** @deprecated используйте allowed_tiers */
   min_pro_tier?: string | null;
   /** Массив tier_key. NULL или [] = всем авторизованным */
@@ -57,19 +61,30 @@ export function checkAgentAccess(
     return { hasAccess: false, reason: 'auth' };
   }
 
+  const userTier = userProTier || 'trial';
+
+  // Генерация медиа стоит дорого: trial не допускается никогда,
+  // даже если в allowed_tiers агента trial отмечен по ошибке
+  if (isGenerativeModality(agent.modality) && userTier === 'trial') {
+    return { hasAccess: false, reason: 'tier' };
+  }
+
   // NULL или пустой массив = доступен любому авторизованному
   const allowed = agent.allowed_tiers;
   if (!allowed || allowed.length === 0) {
     return { hasAccess: true, reason: null };
   }
 
-  const userTier = userProTier || 'trial';
-
   if (allowed.includes(userTier)) {
     return { hasAccess: true, reason: null };
   }
 
   return { hasAccess: false, reason: 'tier' };
+}
+
+/** Генеративный агент (медиа): trial к нему не допускается */
+export function isGenerativeModality(modality: string | null | undefined): boolean {
+  return !!modality && modality !== 'text';
 }
 
 /**
