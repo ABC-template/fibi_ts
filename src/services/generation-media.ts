@@ -4,7 +4,8 @@
 // (напрямую по одноразовой ссылке) и получение подписанных ссылок для показа.
 // В сообщениях и в localStorage хранятся только storage_path — ссылки живут
 // только в памяти и перевыпрашиваются при необходимости.
-// Версия: 1.0.0
+// Версия: 1.1.0 — запоминаются файлы, которых больше нет в облаке (isMediaDeleted)
+//          1.0.0
 // ============================================
 
 import { apiClient } from './api';
@@ -32,6 +33,13 @@ interface ISignedEntry {
 }
 
 const signedCache = new Map<string, ISignedEntry>();
+/** Файлы, которые сервер больше не знает (удалены из облака) */
+const deletedPaths = new Set<string>();
+
+/** Файл удалён из облака (сервер вернул его в missing) */
+export function isMediaDeleted(path: string): boolean {
+  return deletedPaths.has(path);
+}
 const inflight = new Map<string, Promise<string | null>>();
 
 /** Загруженный и подтверждённый референс */
@@ -164,6 +172,8 @@ async function signChunk(chunk: string[]): Promise<Record<string, string>> {
   try {
     const res = await apiClient.post<IMediaSignResponse>('/media/sign', { paths: chunk });
     if (!res?.success || !res.urls) return {};
+
+    for (const path of res.missing || []) deletedPaths.add(path);
 
     const ttlMs = (Number(res.expires_in) || 3600) * 1000;
     const expiresAt = Date.now() + ttlMs;
