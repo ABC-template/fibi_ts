@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/voice.ts
 // Голосовой ввод
-// Версия: 3.1.0 - в streamAiResponse уходят chatId и агент чата (был объект чата)
+// Версия: 3.2.0 - формат записи — первый поддерживаемый браузером (webm/ogg/mp4);
+//                 раньше на iOS Safari new MediaRecorder({ mimeType: 'audio/webm' }) падал;
+//                 тип Blob — фактический тип записи
+//          3.1.0 - в streamAiResponse уходят chatId и агент чата (был объект чата)
 //          3.0.1 - FIXED TYPES
 // ============================================
 
@@ -17,6 +20,21 @@ let voiceTimeout: ReturnType<typeof setTimeout> | null = null;
 let maxVolumeDetected = -100;
 let audioContext: AudioContext | null = null;
 let globalVoiceStream: MediaStream | null = null;
+
+/** Первый формат записи, который поддерживает браузер (null — пусть выберет сам) */
+function pickRecorderMime(): string | null {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+    'audio/aac',
+  ];
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return null;
+  }
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || null;
+}
 
 (window as any).isVoiceRecording = false;
 (window as any).isExpressVoiceTarget = false;
@@ -56,7 +74,7 @@ let globalVoiceStream: MediaStream | null = null;
   }
 
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
       if (tg && tg.showAlert) tg.showAlert('Голосовой ввод не поддерживается устройством.');
       return;
     }
@@ -116,14 +134,10 @@ let globalVoiceStream: MediaStream | null = null;
     }
     btn.classList.add('recording-active');
 
-    let options: MediaRecorderOptions = { mimeType: 'audio/wav' };
-    if (!MediaRecorder.isTypeSupported('audio/wav')) {
-      options = { mimeType: 'audio/webm' };
-      console.warn('⚠️ WAV не поддерживается, используем WebM');
-    }
-
-    mediaRecorder = new MediaRecorder(stream, options);
-    console.log('🎙️ MediaRecorder создан с типом:', options.mimeType);
+    const mime = pickRecorderMime();
+    mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const recorder = mediaRecorder;
+    console.log('🎙️ MediaRecorder создан с типом:', recorder.mimeType || mime || 'по умолчанию');
 
     mediaRecorder.ondataavailable = (e: BlobEvent) => {
       if (e.data && e.data.size > 0) audioChunks.push(e.data);
@@ -155,7 +169,7 @@ let globalVoiceStream: MediaStream | null = null;
         if ((window as any).collapseInputArea) (window as any).collapseInputArea();
       }
 
-      const audioBlob = new Blob(audioChunks, { type: options.mimeType });
+      const audioBlob = new Blob(audioChunks, { type: recorder.mimeType || mime || 'application/octet-stream' });
 
       try {
         const response = await fetch('/api/chat/whisper', {
@@ -163,7 +177,7 @@ let globalVoiceStream: MediaStream | null = null;
           body: audioBlob,
           headers: {
             'Content-Type': 'application/octet-stream',
-            'X-Audio-Type': audioBlob.type || 'audio/wav',
+            'X-Audio-Type': audioBlob.type,
             'X-Telegram-Init-Data': (window as any).Telegram?.WebApp?.initData || ''
           }
         });
@@ -262,7 +276,15 @@ let globalVoiceStream: MediaStream | null = null;
     console.error('Ошибка микрофона:', err);
     isVoiceRecording = false;
     (window as any).isVoiceRecording = false;
-    if ((window as any).tg?.showAlert) (window as any).tg.showAlert('Доступ к микрофону отклонен.');
+    if (voiceInterval) clearInterval(voiceInterval);
+    if (voiceTimeout) clearTimeout(voiceTimeout);
+    try {
+      if (audioContext && audioContext.state !== 'closed') audioContext.close();
+    } catch (e) {}
+    const timer = document.getElementById('voice-timer');
+    if (timer) timer.classList.add('hidden');
+    const tgApp = (window as any).Telegram?.WebApp;
+    if (tgApp?.showAlert) tgApp.showAlert('Не удалось включить микрофон. Проверьте доступ к нему.');
 
     const btn = document.querySelector('.voice-btn');
     if (btn) {
@@ -277,4 +299,4 @@ let globalVoiceStream: MediaStream | null = null;
   }
 };
 
-console.log('✅ ChatVoice v3.0.1 загружен');
+console.log('✅ ChatVoice v3.2.0 загружен');
