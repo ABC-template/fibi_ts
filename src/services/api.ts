@@ -300,22 +300,6 @@ export class ApiClient {
   // МЕТОДЫ ДЛЯ ЭКОНОМИКИ
   // ==========================================
 
-  async earnCoins(
-    userId: number,
-    amount: number,
-    source: string,
-    description: string,
-    metadata?: Record<string, any>
-  ): Promise<any> {
-    return this.post('/economy/earn', {
-      userId,
-      amount,
-      source,
-      description,
-      metadata: metadata || {},
-    });
-  }
-
   async spendCoins(
     userId: number,
     amount: number,
