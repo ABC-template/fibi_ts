@@ -1,7 +1,9 @@
 // ============================================
 // src/services/api.ts
 // Базовый API-клиент с JWT и sync_token
-// Версия: 9.1.0 - добавлен updateStreak
+// Версия: 9.2.0 - JWT обновляется только на 401 и только один раз (403 больше не
+//                 зацикливает запросы); одновременные обновления склеиваются
+//          9.1.0 - добавлен updateStreak
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -106,6 +108,35 @@ export class ApiClient {
   // БАЗОВЫЙ ЗАПРОС
   // ==========================================
 
+  private _refreshPromise: Promise<boolean> | null = null;
+
+  /** Обновить JWT через /auth/check. Одновременные вызовы склеиваются в один. */
+  private _refreshJwt(): Promise<boolean> {
+    if (this._refreshPromise) return this._refreshPromise;
+    this._refreshPromise = (async () => {
+      const authService = (window as any).authService;
+      if (!authService) return false;
+      try {
+        const result = await authService.checkSubscription();
+        if (!result?.jwtToken) return false;
+        const tempStore = new BaseStore('temp');
+        tempStore.saveJWT(result.jwtToken);
+        this.jwtToken = result.jwtToken;
+        if (result.syncToken) {
+          tempStore.saveSyncToken(result.syncToken);
+          this.syncToken = result.syncToken;
+        }
+        return true;
+      } catch (err) {
+        console.error('❌ Не удалось обновить JWT:', err);
+        return false;
+      }
+    })().finally(() => {
+      setTimeout(() => { this._refreshPromise = null; }, 0);
+    });
+    return this._refreshPromise;
+  }
+
   async request<T = any>(endpoint: string, options: IApiRequestOptions = {}): Promise<T> {
     this.loadTokens();
 
@@ -157,40 +188,21 @@ export class ApiClient {
           return { success: true, cached: true, status: 304 } as T;
         }
 
-        if (response.status === 401 || response.status === 403) {
-          console.warn(`⚠️ Ошибка аутентификации ${response.status}, пробуем обновить JWT...`);
-
-          const authService = (window as any).authService;
-          if (authService) {
-            try {
-              const result = await authService.checkSubscription();
-              if (result.jwtToken) {
-                const tempStore = new BaseStore('temp');
-                tempStore.saveJWT(result.jwtToken);
-                this.jwtToken = result.jwtToken;
-
-                if (result.syncToken) {
-                  tempStore.saveSyncToken(result.syncToken);
-                  this.syncToken = result.syncToken;
-                }
-
-                const newHeaders = { ...headers };
-                newHeaders['Authorization'] = `Bearer ${result.jwtToken}`;
-                if (this.syncToken) {
-                  newHeaders['x-sync-token'] = this.syncToken;
-                }
-
-                const newOptions = { ...mergedOptions };
-                (newOptions as any).headers = newHeaders;
-
-                return this.request(endpoint, options);
-              }
-            } catch (refreshErr) {
-              console.error('❌ Не удалось обновить JWT:', refreshErr);
-            }
+        // 401 — токен недействителен: обновляем JWT один раз и повторяем запрос.
+        // 403 — это «запрещено» (нет доступа, блокировка, «оплата скоро»), а не
+        // протухший токен: обновление не поможет. Раньше 403 тоже уходил в
+        // обновление и повтор без ограничения — бесконечный цикл запросов.
+        if (
+          response.status === 401 &&
+          !(options as any)._authRetried &&
+          !endpoint.startsWith('/auth/check')
+        ) {
+          console.warn('⚠️ Ошибка аутентификации 401, обновляем JWT (один раз)...');
+          const refreshed = await this._refreshJwt();
+          if (refreshed) {
+            return this.request<T>(endpoint, { ...options, _authRetried: true } as any);
           }
-
-          throw new ApiError('Authentication failed', response.status);
+          throw new ApiError('Authentication failed', 401);
         }
 
         const contentType = response.headers.get('content-type') || '';
