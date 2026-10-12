@@ -3,7 +3,9 @@
 // Пакетная выдача подписанных ссылок на файлы пользователя.
 // Клиент хранит/получает из БД только storage_path и просит ссылки здесь
 // (показ в чате, просмотрщик, «Повторить»). Ссылки живут signTtlSec.
-// Версия: 1.0.0
+// Версия: 1.1.0 — в ответе missing: пути, которых больше нет у пользователя
+//                  (файл удалён из облака) — приложение показывает «Файл удалён»
+//          1.0.0
 // ============================================
 
 import { authenticate } from '../_lib/auth';
@@ -41,10 +43,13 @@ export default async function handler(request: Request): Promise<Response> {
     const ownedPaths = owned.map((f) => f.storage_path);
 
     const urls = await signUrls(ownedPaths, MEDIA_LIMITS.signTtlSec, config);
+    const ownedSet = new Set(ownedPaths);
+    const missing = paths.filter((p) => !ownedSet.has(p));
 
     return jsonResponse({
       success: true,
       urls,
+      missing,
       expires_in: MEDIA_LIMITS.signTtlSec,
     });
   } catch (err) {
