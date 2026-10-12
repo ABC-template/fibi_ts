@@ -18,6 +18,15 @@ export interface IEconomyEarnEvent {
 }
 
 /**
+ * Событие игры. Сумму монет и суточный потолок определяет сервер
+ * (economy_rules: source = 'game:' + event).
+ */
+export interface IEconomyGameEvent {
+  event: string;            // 'tetris:high_score', 'tetris:achievement:line10', 'sudoku:win'
+  metadata?: Record<string, any>;
+}
+
+/**
  * Событие: запрос на списание монет
  */
 export interface IEconomySpendEvent {
