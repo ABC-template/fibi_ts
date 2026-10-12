@@ -1,7 +1,8 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (с JWT и авто-рефрешем)
-// Версия: 5.1.1 - замена @types → @app-types
+// Версия: 5.2.0 - тариф и дата окончания подписки сохраняются в UserStore
+//          5.1.1 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
@@ -108,6 +109,12 @@ export class AuthService {
       userStore.setRole(
         data.role || 'trial',
         data.syncEnabled === true
+      );
+
+      userStore.setSubscription(
+        (data as any).subscription_tier,
+        (data as any).premium_until,
+        (data as any).trial_used
       );
 
       if (data.userId) {
