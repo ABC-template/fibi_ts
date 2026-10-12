@@ -4,7 +4,8 @@
 // энергия = доллары OpenRouter × ENERGY_PER_USD × коэффициент агента.
 // Факт списания берётся из usage.cost ответа OpenRouter; цена модели за токен
 // нужна только для предварительной проверки баланса и лимита max_tokens.
-// Версия: 1.0.0
+// Версия: 1.0.1 — запрос цены модели не дольше 3 с (иначе — запасная оценка)
+//          1.0.0
 // ============================================
 
 /** Сколько энергии стоит $1 (шкала всего проекта: фото, видео, текст) */
@@ -35,7 +36,8 @@ export async function getModelPrices(
   try {
     const res = await fetch(
       `https://openrouter.ai/api/v1/models/${modelId}/endpoints`,
-      { headers: { Authorization: `Bearer ${apiKey}` } }
+      // Цена нужна только для предварительной оценки — не задерживаем старт ответа
+      { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(3000) }
     );
     if (res.ok) {
       const json: any = await res.json();
@@ -53,7 +55,8 @@ export async function getModelPrices(
     console.warn('getModelPrices failed:', (err as Error).message);
   }
 
-  priceCache.set(modelId, { at: Date.now(), prices });
+  // Неудачу помним недолго (минуту), удачу — час
+  priceCache.set(modelId, { at: prices ? Date.now() : Date.now() - CACHE_TTL_MS + 60_000, prices });
   return prices;
 }
 
