@@ -1,7 +1,11 @@
 // ============================================
 // src/services/sync.ts
-// Realtime синхронизация для PRO (с JWT)
-// Версия: 4.2.0 - тип события берётся из payload.eventType (supabase-js v2; поле event
+// Realtime синхронизация для PRO
+// Версия: 5.0.0 - свой токен Realtime (auth/check или /auth/realtime-token) передаётся
+//                 в websocket через realtime.setAuth: раньше токен уходил только в
+//                 REST-заголовки, канал подключался анонимно и RLS не пропускал события;
+//                 токен обновляется заранее (таймер) и после ошибки канала
+//          4.2.0 - тип события берётся из payload.eventType (supabase-js v2; поле event
 //                 не существует, из-за чего обработчики не срабатывали);
 //                 agent_id/modality чатов; сообщения — через chatStore.upsertMessage
 //                 (UI обновляет только открытый чат); сообщение в неизвестный
@@ -10,7 +14,7 @@
 //          4.0.1 - замена @types → @app-types
 // ============================================
 
-import { BaseStore } from '@/store/BaseStore';
+import { apiClient } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
 import { chatService } from './chats';
@@ -25,7 +29,13 @@ export class SyncService {
   private _maxReconnectAttempts: number = 10;
   private _configLoaded: boolean = false;
   private _config: { supabaseUrl: string; supabaseAnonKey: string } | null = null;
-  private _jwtToken: string | null = null;
+  /** Токен Realtime и время истечения (unix, сек) */
+  private _token: string | null = null;
+  private _tokenExp: number = 0;
+  private _tokenPromise: Promise<string | null> | null = null;
+  private _tokenTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Обновлять токен за столько секунд до истечения */
+  private readonly TOKEN_REFRESH_MARGIN_SEC = 5 * 60;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _isConnecting: boolean = false;
   private _showTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -175,9 +185,88 @@ export class SyncService {
     }
   }
 
-  private getJWT(): string | null {
-    const tempStore = new BaseStore('temp');
-    return tempStore.getJWT();
+  // ==========================================
+  // ТОКЕН REALTIME
+  // ==========================================
+
+  /** Токен из ответа auth/check (null — синхронизация недоступна) */
+  setRealtimeToken(realtime: { token: string; expiresAt: number } | null): void {
+    if (!realtime?.token) {
+      this._token = null;
+      this._tokenExp = 0;
+      this._clearTokenTimer();
+      return;
+    }
+    this._applyToken(realtime.token, realtime.expiresAt);
+  }
+
+  private _tokenFresh(): boolean {
+    return !!this._token && this._tokenExp - Date.now() / 1000 > this.TOKEN_REFRESH_MARGIN_SEC;
+  }
+
+  private _applyToken(token: string, expiresAt: number): void {
+    this._token = token;
+    this._tokenExp = Number(expiresAt) || 0;
+    if (this.supabase) {
+      try {
+        this.supabase.realtime.setAuth(token);
+      } catch (err) {
+        console.warn('⚠️ [sync] setAuth:', err);
+      }
+    }
+    this._scheduleTokenRefresh();
+  }
+
+  private _clearTokenTimer(): void {
+    if (this._tokenTimer) {
+      clearTimeout(this._tokenTimer);
+      this._tokenTimer = null;
+    }
+  }
+
+  /** Обновить токен заранее, пока подписка активна */
+  private _scheduleTokenRefresh(): void {
+    this._clearTokenTimer();
+    if (!this._tokenExp) return;
+    const delayMs = Math.max(
+      30_000,
+      (this._tokenExp - this.TOKEN_REFRESH_MARGIN_SEC) * 1000 - Date.now()
+    );
+    this._tokenTimer = setTimeout(() => {
+      this._tokenTimer = null;
+      if (!this.isSubscribed && !this._isConnecting) return; // обновим при следующем подключении
+      this._ensureToken(true).catch(() => {});
+    }, delayMs);
+  }
+
+  /** Действующий токен: текущий или новый с сервера */
+  private _ensureToken(force: boolean = false): Promise<string | null> {
+    if (!force && this._tokenFresh()) return Promise.resolve(this._token);
+    if (this._tokenPromise) return this._tokenPromise;
+
+    this._tokenPromise = (async () => {
+      try {
+        const res = await apiClient.get<{ realtime?: { token: string; expiresAt: number } }>(
+          '/auth/realtime-token',
+          { retries: 1 }
+        );
+        if (res?.realtime?.token) {
+          this._applyToken(res.realtime.token, res.realtime.expiresAt);
+          return this._token;
+        }
+        return null;
+      } catch (err) {
+        console.warn('⚠️ [sync] Токен Realtime не получен:', err instanceof Error ? err.message : err);
+        if ((err as any)?.status === 403) {
+          // Синхронизация больше недоступна (подписка закончилась)
+          this.setRealtimeToken(null);
+        }
+        return null;
+      } finally {
+        this._tokenPromise = null;
+      }
+    })();
+    return this._tokenPromise;
   }
 
   // ==========================================
@@ -203,23 +292,16 @@ export class SyncService {
       return null;
     }
 
-    const jwtToken = this.getJWT();
-    if (!jwtToken) {
-      console.warn('⚠️ [initSupabase] Нет JWT токена');
-      return null;
-    }
-
-    this._jwtToken = jwtToken;
-
     try {
+      // Сессия Supabase Auth не используется: токен задаётся вручную через realtime.setAuth
       this.supabase = (window as any).supabase.createClient(
         this._config!.supabaseUrl,
         this._config!.supabaseAnonKey,
         {
-          global: {
-            headers: {
-              'Authorization': `Bearer ${jwtToken}`
-            }
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
           },
           realtime: {
             params: {
@@ -280,12 +362,22 @@ export class SyncService {
     this._isConnecting = true;
 
     try {
+      const token = await this._ensureToken();
+      if (!token) {
+        console.warn('⚠️ [subscribe] Нет токена Realtime');
+        this._isConnecting = false;
+        return;
+      }
+
       const supabase = await this.initSupabase();
       if (!supabase) {
         console.warn('⚠️ [subscribe] Supabase не инициализирован');
         this._isConnecting = false;
         return;
       }
+
+      // Без этого websocket подключается с anon-ключом и RLS не отдаёт события
+      supabase.realtime.setAuth(token);
 
       if (this.channel) {
         console.log('📡 [subscribe] Закрываем старый канал...');
@@ -343,6 +435,12 @@ export class SyncService {
           this._isConnecting = false;
           console.warn(`⚠️ Проблема с Realtime: ${status}`, err);
           
+          if (status === 'CHANNEL_ERROR') {
+            // Возможная причина — истёкший токен: следующая попытка возьмёт новый
+            this._token = null;
+            this._tokenExp = 0;
+          }
+
           if (status !== 'CLOSED' || err) {
             this.scheduleReconnect();
           }
@@ -597,4 +695,4 @@ export class SyncService {
 }
 
 export const syncService = new SyncService();
-console.log('✅ SyncService v4.2.0 загружен');
+console.log('✅ SyncService v5.0.0 загружен');
