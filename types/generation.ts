@@ -216,5 +216,7 @@ export interface IMediaConfirmResponse {
 export interface IMediaSignResponse {
   success: boolean;
   urls: Record<string, string>;
+  /** Пути, которых у пользователя больше нет (удалены из облака) */
+  missing?: string[];
   expires_in: number;
 }
