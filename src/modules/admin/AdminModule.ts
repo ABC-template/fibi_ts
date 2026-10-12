@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.5.0 — saveTierRow / saveAllTiers для тарифов — window.adminModule теперь проксирует к реальному
+// Версия: 7.6.0 — доступ по Telegram ID (userStore.isCreator), а не по роли: роль можно
+//                  переключать для тестов; вкладка «Пользователи» на /admin/users;
+//                  тест «Сбросить ежедневный вход» вместо несуществующего /quests/reset-daily
+//          7.5.0 — saveTierRow / saveAllTiers для тарифов — window.adminModule теперь проксирует к реальному
 //                  экземпляру (AdminModule._instance), а не к отдельному
 //                  «призрачному» инстансу, у которого никогда не вызывался init()
 // ============================================
@@ -41,7 +44,7 @@ export class AdminModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
-    if (userStore.role !== 'creator') {
+    if (!userStore.isCreator) {
       this.container.innerHTML = `
         <div style="padding:40px;text-align:center;color:var(--app-text-tertiary)">
           <div style="font-size:48px;margin-bottom:12px">⛔</div>
@@ -178,7 +181,7 @@ export class AdminModule {
   // Lifecycle
 
   async show(): Promise<void> {
-    if (userStore.role !== 'creator') {
+    if (!userStore.isCreator) {
       this.container.innerHTML = `
         <div style="padding:40px;text-align:center;color:var(--app-text-tertiary)">
           <div style="font-size:48px;margin-bottom:12px">⛔</div>
@@ -285,6 +288,10 @@ function getInstance(): AdminModule | null {
     getInstance()?.proxy('users', 'addCoins', userId),
   addTokensToUser: (userId: number) =>
     getInstance()?.proxy('users', 'addTokens', userId),
+  adjustUserBalance: (userId: number, currency: 'coins' | 'tokens') =>
+    getInstance()?.proxy('users', 'adjustBalance', userId, currency),
+  resetUserCheckin: (userId: number) =>
+    getInstance()?.proxy('users', 'resetCheckin', userId),
 
   // Audit
   nextAuditPage: () => getInstance()?.proxy('audit', 'nextPage'),
@@ -324,11 +331,11 @@ function getInstance(): AdminModule | null {
       const { apiClient } = await import('@/services/api');
       await apiClient.post('/admin/coins', {
         user_id: userStore.userId,
-        amount: 50,
+        amount: 10000,
         currency: 'tokens',
-        reason: 'Тестовое начисление токенов',
+        reason: 'Тестовое начисление энергии',
       });
-      alert('Начислено 50 токенов');
+      alert('Начислено 10 000 ⚡ постоянной энергии');
     } catch (e) {
       alert('Ошибка начисления токенов');
     }
@@ -336,12 +343,12 @@ function getInstance(): AdminModule | null {
   testResetDaily: async () => {
     try {
       const { apiClient } = await import('@/services/api');
-      await apiClient.post('/quests/reset-daily', { user_id: userStore.userId });
-      alert('Daily-квесты сброшены');
+      await apiClient.post('/admin/users', { action: 'reset_checkin', user_id: userStore.userId });
+      alert('Ежедневный вход сброшен: перезапустите приложение');
     } catch (e) {
       alert('Ошибка сброса');
     }
   },
 };
 
-console.log('✅ AdminModule v7.5.0 загружен');
+console.log('✅ AdminModule v7.6.0 загружен');
