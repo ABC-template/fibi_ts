@@ -1,7 +1,9 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.0.2 — today_bonus_added в модалке стрика
+// Версия: 13.1.0 — ежедневный вход выполняет сервер (auth/check → checkin), клиент только
+//                  показывает модалку; клиентские вызовы прогресса заданий убраны
+//          13.0.2 — today_bonus_added в модалке стрика
 // ============================================
 
 import './config';
@@ -187,21 +189,20 @@ function showStreakModal(streak: number, bonus: number, reward: number, bonusTok
     console.log('🔴🔴🔴 showStreakModal ВЫЗВАН!', { streak, bonus, reward, bonusTokens });
 
     const getStreakWord = (s: number): string => {
-        if (s === 1) return 'день';
-        if (s >= 2 && s <= 4) return 'дня';
+        const n10 = s % 10;
+        const n100 = s % 100;
+        if (n10 === 1 && n100 !== 11) return 'день';
+        if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return 'дня';
         return 'дней';
     };
 
-    const totalReward = reward || 5 + bonus;
+    // reward — сколько монет реально начислил сервер (база + бонус за стрик)
+    const totalReward = reward;
 
     let tokenMessage = '';
     if (bonusTokens > 0) {
         tokenMessage = `<div style="font-size: 16px; color: #f1c40f; margin-top: 4px;">
-            🎁 +${bonusTokens} бонусных токенов!
-        </div>`;
-    } else {
-        tokenMessage = `<div style="font-size: 13px; color: var(--app-text-tertiary); margin-top: 4px;">
-            ⚡ Бонусных токенов нет
+            ⚡ +${bonusTokens} бонусной энергии на сегодня
         </div>`;
     }
 
@@ -212,7 +213,7 @@ function showStreakModal(streak: number, bonus: number, reward: number, bonusTok
                 ${streak} ${getStreakWord(streak)} в ударе!
             </div>
             <div style="font-size: 18px; color: var(--app-accent-primary); margin-top: 4px;">
-                +${totalReward} 🪙
+                ${totalReward > 0 ? `+${totalReward} 🪙` : ''}
                 ${bonus > 0 ? `<span style="font-size: 14px; color: #f1c40f; display: block;">🎁 Бонус за стрик: +${bonus} 🪙</span>` : ''}
             </div>
             ${tokenMessage}
@@ -515,39 +516,16 @@ async function initApp(): Promise<void> {
                 console.warn('⚠️ Не удалось синхронизировать задания:', err);
             }
 
-            // ✅ ЕЖЕДНЕВНЫЙ ВХОД И СТРИК
-            try {
-                console.log('🔍 [initApp] Начинаем обработку ежедневного входа...');
-
-                const alreadyClaimed = questsStore.isDailyLoginClaimedToday();
-
-                if (!alreadyClaimed) {
-                    const loginResult = await questsStore.claimDailyLogin();
-                    console.log('📊 [initApp] Результат daily_login:', loginResult);
-
-                    if (loginResult.success && loginResult.claimed) {
-                        // Показываем именно то, что начислили сегодня
-                        const bonusTokens = todayBonusAdded;
-
-                        setTimeout(() => {
-                            console.log('🎯 Показываем модалку стрика...', { streak: loginResult.streak, bonusTokens });
-                            showStreakModal(
-                                loginResult.streak,
-                                loginResult.bonus,
-                                loginResult.reward,
-                                bonusTokens
-                            );
-                        }, 800);
-                    } else if (loginResult.success && !loginResult.claimed) {
-                        console.log(`ℹ️ [initApp] Бонус уже получен сегодня`);
-                    } else {
-                        console.warn('⚠️ [initApp] Не удалось получить ежедневный бонус:', loginResult);
-                    }
-                } else {
-                    console.log(`ℹ️ [initApp] daily_login уже получен сегодня`);
+            // ✅ ЕЖЕДНЕВНЫЙ ВХОД И СТРИК — выполняет сервер в /auth/check,
+            //    здесь только показываем результат
+            const checkin = result.checkin;
+            if (checkin?.claimed) {
+                if (typeof checkin.coins === 'number') {
+                    try { (window as any).economyStore?.updateCoinBalance?.(checkin.coins); } catch { /* не критично */ }
                 }
-            } catch (err) {
-                console.warn('⚠️ [initApp] Не удалось обработать ежедневный вход:', err);
+                setTimeout(() => {
+                    showStreakModal(checkin.streak, checkin.bonus, checkin.reward, todayBonusAdded);
+                }, 800);
             }
 
             // ✅ ОБНОВЛЯЕМ UI ПОСЛЕ НАЧИСЛЕНИЯ
@@ -739,26 +717,7 @@ function setupEventSubscriptions(): void {
         }
     });
 
-    eventBus.on('chat:message_added', (data) => {
-        if (data.message && data.message.type === 'user-msg') {
-            questsStore.updateProgress('send_message_1').catch(() => {});
-            questsStore.updateProgress('send_message_5').catch(() => {});
-        }
-    });
-
-    eventBus.on('organizer:todo_added', () => {
-        questsStore.updateProgress('add_todo').catch(() => {});
-    });
-
-    eventBus.on('organizer:todo_toggled', (data) => {
-        if (data.isCompleted) {
-            questsStore.updateProgress('complete_todo_3').catch(() => {});
-        }
-    });
-
-    eventBus.on('organizer:reminder_added', () => {
-        questsStore.updateProgress('create_reminder').catch(() => {});
-    });
+    // Прогресс заданий считает сервер (клиентские вызовы /quests/progress убраны)
 
     eventBus.on('ad:initialized', (data) => {
         if (data.success) {
