@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 2.0.0 - ИЗМЕНЕНО: экономика через EventBus
+// Версия: 2.1.0 - награду за реферала начисляет только сервер (убрано клиентское начисление),
+//                 баланс — getCoinBalance
+//          2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { referralStore, REFERRAL_TIERS, REFERRAL_REWARD_LIMIT } from './ReferralStore';
@@ -85,7 +87,7 @@ export class ReferralModule {
     const referrals = this.referralStore.getReferrals();
     const link = this.referralStore.getReferralLink();
     const rewardForNext = this.referralStore.getRewardForReferral();
-    const currentBalance = (window as any).economyStore?.getBalance() || 0;
+    const currentBalance = (window as any).economyStore?.getCoinBalance?.() || 0;
 
     this.container.innerHTML = `
       <div style="
@@ -412,67 +414,6 @@ export class ReferralModule {
 
   private _updateUI(): void {
     this._render();
-  }
-
-  async rewardReferral(referralId: string): Promise<void> {
-    const userId = this.userStore.userId;
-    if (!userId) {
-      this.uiRenderer?.showToast('⚠️ Ошибка авторизации', 'error', 1500);
-      return;
-    }
-
-    try {
-      const referral = this.referralStore.getReferrals().find(r => r.id === referralId);
-      if (!referral) {
-        this.uiRenderer?.showToast('⚠️ Реферал не найден', 'error', 1500);
-        return;
-      }
-
-      if (referral.status === 'rewarded') {
-        this.uiRenderer?.showToast('⚠️ Реферал уже награждён', 'info', 1500);
-        return;
-      }
-
-      const rewardedReferrals = this.referralStore.getReferrals()
-        .filter(r => r.referrer_id === userId && r.status === 'rewarded');
-      const totalRewarded = rewardedReferrals.length;
-
-      let rewardAmount = this.referralStore.getRewardForReferral();
-
-      const totalEarned = this.referralStore.getStats().total_reward;
-      if (totalEarned + rewardAmount > REFERRAL_REWARD_LIMIT) {
-        const remaining = REFERRAL_REWARD_LIMIT - totalEarned;
-        if (remaining <= 0) {
-          this.uiRenderer?.showToast('⚠️ Достигнут лимит реферальных наград', 'warning', 2000);
-          return;
-        }
-        rewardAmount = remaining;
-      }
-
-      this.eventBus.emit('economy:earn', {
-        userId: userId,
-        source: 'referral:reward',
-        amount: rewardAmount,
-        metadata: {
-          referral_id: referralId,
-          referred_id: referral.referred_id,
-          referred_username: referral.referred_username,
-          tier: this._getTierName(this.referralStore.getStats().current_tier)
-        }
-      });
-
-      this.referralStore.updateReferralStatus(referralId, 'rewarded');
-      this.referralStore._data.total_reward += rewardAmount;
-      this.referralStore.save();
-
-      this.uiRenderer?.showToast(`💰 +${rewardAmount} монет за реферала!`, 'success', 2000);
-      
-      this._updateUI();
-
-    } catch (err) {
-      console.error('❌ Ошибка начисления реферальной награды:', err);
-      this.uiRenderer?.showToast('⚠️ Ошибка начисления награды', 'error', 1500);
-    }
   }
 
   show(): void {
