@@ -1,10 +1,10 @@
 // ============================================
 // api/economy/index.ts
 // Экспорт всех эндпоинтов экономики
-// Версия: 1.0.0
+// Версия: 1.1.0 — earn удалён (монеты начисляет только сервер), добавлен game
 // ============================================
 
-export { default as earn } from './earn';
+export { default as game } from './game';
 export { default as spend } from './spend';
 export { default as balance } from './balance';
 export { default as history } from './history';
