@@ -8,7 +8,8 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.0.0
+// Версия: 3.1.0 — чат удерживается (holdChat), пока идёт запрос; тариф для цены — userStore.subscriptionTier
+//          3.0.0
 //   - форма в стиле генераторов: сегментные переключатели (до 4 вариантов) и «чипы» (до 8),
 //     шаговый счётчик для n, переключатель для флагов, зона загрузки со счётчиком «0 / N»,
 //     цена в кнопке по прайсу агента (меняется вместе с параметрами)
@@ -809,7 +810,7 @@ export class GenerationController {
 
   private _estimateCost(): number {
     if (!this._agent) return 0;
-    const tier = (userStore as any)._data?.subscription_tier || 'trial';
+    const tier = userStore.subscriptionTier;
     return estimateEnergy(this._agent, tier, this._collectParams());
   }
 
@@ -868,6 +869,9 @@ export class GenerationController {
     const startedAt = Date.now();
     this.close();
     this._showLocalPlaceholder(preset.prompt);
+    // Пока идёт запрос, в чате нет сообщений (их создаёт сервер в конце):
+    // не даём удалить его как «пустой» при выходе из чата или создании нового
+    chatStore.holdChat(chatId);
 
     try {
       const ensured = await chatService.ensureRemoteChat(chatId);
@@ -892,6 +896,7 @@ export class GenerationController {
       this._inFlight = false;
       this._handleSubmitError(err, preset, startedAt);
     } finally {
+      chatStore.releaseChat(chatId);
       this._inFlight = false;
       this.syncPolling();
     }
