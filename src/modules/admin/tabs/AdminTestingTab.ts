@@ -30,10 +30,10 @@ export class AdminTestingTab implements IAdminTab {
             🪙 Начислить себе 100 монет
           </button>
           <button class="btn btn-secondary" onclick="window.adminModule.testAddTokens()" style="padding:12px;text-align:left">
-            💎 Начислить себе 50 токенов
+            ⚡ Начислить себе 10 000 энергии
           </button>
           <button class="btn btn-secondary" onclick="window.adminModule.testResetDaily()" style="padding:12px;text-align:left">
-            🔄 Сбросить daily-квесты
+            🔄 Сбросить ежедневный вход
           </button>
         </div>
       </div>
