@@ -1,7 +1,8 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (с JWT и авто-рефрешем)
-// Версия: 5.2.0 - тариф и дата окончания подписки сохраняются в UserStore
+// Версия: 5.3.0 - в результат входа передаются баланс, бонус дня и ежедневный вход (checkin)
+//          5.2.0 - тариф и дата окончания подписки сохраняются в UserStore
 //          5.1.1 - замена @types → @app-types
 // ============================================
 
@@ -20,6 +21,19 @@ export interface IAuthResult {
   authUserId: string | null;
   isNewUser: boolean;
   serverModels: Record<string, boolean>;
+  /** Баланс энергии на момент входа */
+  tokens?: { bonus: number; permanent: number; total: number };
+  /** Сколько бонусной энергии начислено сегодня при входе */
+  today_bonus_added?: number;
+  /** Ежедневный вход, выполненный сервером (null — не удалось) */
+  checkin?: {
+    claimed: boolean;
+    streak: number;
+    base: number;
+    bonus: number;
+    reward: number;
+    coins: number | null;
+  } | null;
 }
 
 export class AuthService {
@@ -142,7 +156,10 @@ export class AuthService {
         jwtToken: data.jwtToken || null,
         authUserId: data.authUserId || null,
         isNewUser: data.isNewUser || false,
-        serverModels: data.serverModels || {}
+        serverModels: data.serverModels || {},
+        tokens: (data as any).tokens,
+        today_bonus_added: (data as any).today_bonus_added || 0,
+        checkin: (data as any).checkin ?? null
       };
 
     } catch (err) {
