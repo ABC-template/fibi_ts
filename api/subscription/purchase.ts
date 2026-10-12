@@ -1,7 +1,9 @@
 // ============================================
 // api/subscription/purchase.ts
 // Покупка подписки через Telegram Stars
-// Версия: 1.1.0 — бесплатные тарифы (price_stars = 0) купить нельзя
+// Версия: 1.2.0 — до подключения оплаты Stars покупка доступна только создателю
+//                  (остальным 403 «скоро»); проверка формата tier_key
+//          1.1.0 — бесплатные тарифы (price_stars = 0) купить нельзя
 // ============================================
 
 import {
@@ -34,10 +36,22 @@ export default async function handler(request: Request): Promise<Response> {
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
 
+    // Оплата Telegram Stars ещё не подключена: без неё эндпоинт выдавал бы
+    // подписку и энергию бесплатно. Пока — только для тестов создателя.
+    const roleRes = await supabaseFetch(
+      `users?telegram_id=eq.${userId}&select=role`,
+      { method: 'GET' },
+      config
+    );
+    const role = Array.isArray(roleRes) && roleRes[0] ? roleRes[0].role : null;
+    if (role !== 'creator') {
+      return errorResponse('Оплата подписки скоро появится', 403);
+    }
+
     const body = await request.json();
     const { tier_key } = body;
 
-    if (!tier_key) {
+    if (!tier_key || typeof tier_key !== 'string' || !/^[a-z0-9_-]{1,32}$/i.test(tier_key)) {
       return errorResponse('Missing tier_key', 400);
     }
 
