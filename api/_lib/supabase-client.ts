@@ -1,7 +1,8 @@
 // ============================================
 // api/_lib/supabase-client.ts 
 // Описание: Работа с Supabase через fetch (Edge Runtime)
-// Версия: 14.0.0 — добавлена spendAbstractTokens
+// Версия: 14.1.0 — claimQuest (RPC claim_quest) вместо claimQuestWithBonus
+//          14.0.0 — добавлена spendAbstractTokens
 // ============================================
 
 import type { ITelegramUser } from './auth';
@@ -615,29 +616,28 @@ export async function updateStreak(
   }
 }
 
-export async function claimQuestWithBonus(
+/**
+ * Забрать награду за задание (RPC claim_quest: владелец проверяется,
+ * сумма берётся из квеста).
+ */
+export async function claimQuest(
+  userId: number,
   userQuestId: string,
-  bonusAmount: number = 0,
   config: ISupabaseConfig | null = null
 ): Promise<{ success: boolean; reward: number; newBalance: number; transactionId?: string; error?: string }> {
   try {
     const result = await supabaseRPC(
-      'claim_quest_with_bonus',
+      'claim_quest',
       {
+        p_user_id: userId,
         p_user_quest_id: userQuestId,
-        p_bonus_amount: bonusAmount,
       },
       config
     );
 
     if (result && typeof result === 'object') {
       if (result.success === false) {
-        return {
-          success: false,
-          reward: 0,
-          newBalance: 0,
-          error: result.error || 'Unknown error',
-        };
+        return { success: false, reward: 0, newBalance: 0, error: result.error || 'Unknown error' };
       }
       return {
         success: true,
@@ -648,7 +648,7 @@ export async function claimQuestWithBonus(
     }
     return { success: false, reward: 0, newBalance: 0, error: 'Invalid response' };
   } catch (err) {
-    console.error('Failed to claim quest with bonus:', (err as Error).message);
+    console.error('Failed to claim quest:', (err as Error).message);
     return { success: false, reward: 0, newBalance: 0, error: (err as Error).message };
   }
 }
