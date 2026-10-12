@@ -38,6 +38,8 @@ export interface IUserStoreData {
   // ✅ НОВЫЕ ПОЛЯ
   premium_until?: string | null;
   trialUsed?: boolean;
+  /** Тариф с сервера (auth/check): от него зависит коэффициент цены агентов */
+  subscription_tier?: string | null;
 }
 
 /** Данные OrganizerStore */
