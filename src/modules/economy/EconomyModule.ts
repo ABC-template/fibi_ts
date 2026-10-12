@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.1.0 — window.economyModule указывает на настоящий экземпляр (тот, что
+// Версия: 2.2.0 — блок «Смотреть рекламу» (Adsgram) на вкладке монет
+//          2.1.0 — window.economyModule указывает на настоящий экземпляр (тот, что
 //                 создаёт загрузчик модулей); фантомный экземпляр с пустым div удалён —
 //                 кнопки вкладок/обмена в разметке вызывали его и ничего не происходило
 //          2.0.1 — исправлен subscription_tier
@@ -17,6 +18,7 @@ import { subscriptionService } from '@/services/subscription';
 import { subscriptionStore } from '@/store/SubscriptionStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { modalManager } from '@/core/modal-manager';
+import { adModule } from '@/modules/ad/AdModule';
 
 type TabType = 'coins' | 'tokens';
 
@@ -66,6 +68,10 @@ export class EconomyModule {
   }
 
   private _subscribeToEvents(): void {
+    const unsubAd = this.eventBus.on('ad:status_updated', () => this._refreshAdWidget(), this);
+    this._subscriptions.push(unsubAd);
+    void adModule.getStatus(true).then(() => this._refreshAdWidget());
+
     const unsubCoins = this.eventBus.on('economy:coins:updated', () => {
       this._updateUI();
     }, this);
@@ -167,6 +173,9 @@ export class EconomyModule {
         <div class="balance">${balance} 🪙</div>
         <div class="sub">Всего заработано: ${stats.total_earned} • Потрачено: ${stats.total_spent}</div>
       </div>
+
+      <!-- Реклама -->
+      <div id="ad-reward-widget">${this._renderAdWidget()}</div>
 
       <!-- Обмен -->
       ${isExchangeEnabled ? `
@@ -311,6 +320,38 @@ export class EconomyModule {
   // ==========================================
   // ПУБЛИЧНЫЕ МЕТОДЫ
   // ==========================================
+
+  private _renderAdWidget(): string {
+    const st = adModule.getCachedStatus();
+    if (!st || !st.enabled) return '';
+
+    const disabled = st.remainingToday <= 0;
+    const label = disabled
+      ? '🎬 На сегодня просмотры закончились'
+      : `🎬 Смотреть рекламу · +${st.amount} 🪙`;
+
+    return `
+      <div class="exchange-widget" style="display:flex;flex-direction:column;gap:6px;">
+        <button class="exchange-btn" ${disabled ? 'disabled' : ''}
+                onclick="window.economyModule.watchAd()">${label}</button>
+        <div class="rate" style="text-align:center;">
+          Осталось сегодня: ${st.remainingToday} из ${st.dailyLimit}
+        </div>
+      </div>
+    `;
+  }
+
+  private _refreshAdWidget(): void {
+    const el = this.container.querySelector('#ad-reward-widget');
+    if (el) el.innerHTML = this._renderAdWidget();
+  }
+
+  async watchAd(): Promise<void> {
+    const btn = this.container.querySelector('#ad-reward-widget button') as HTMLButtonElement | null;
+    if (btn) btn.disabled = true;
+    await adModule.showRewarded();
+    this._refreshAdWidget();
+  }
 
   switchTab(tab: TabType): void {
     if (this._activeTab === tab) return;
