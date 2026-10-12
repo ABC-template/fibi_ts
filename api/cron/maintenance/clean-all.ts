@@ -1,7 +1,8 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
 // Описание: Объединенная очистка (корзина + логи + usage + pending + медиа)
-// Версия: 2.3.0 - довершение застрявших видео-заданий (вебхук/опрос не сработали)
+// Версия: 2.4.0 - автоодобрение псевдо-заданий, у которых истёк срок проверки
+//          2.3.0 - довершение застрявших видео-заданий (вебхук/опрос не сработали)
 //          2.2.0 - TypeScript, очистка файлов генераций и просроченных замков чатов
 // ============================================
 
@@ -193,6 +194,19 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
+    // 6.6. ПСЕВДО-ЗАДАНИЯ: срок проверки истёк → одобрены (награду забирает пользователь)
+    // ==========================================
+    let pseudoApproved = 0;
+
+    try {
+      const result = await supabaseRPC('auto_approve_pseudo_quests', {}, config);
+      pseudoApproved = Number(result?.approved) || 0;
+      console.log(`✅ Одобрено псевдо-заданий: ${pseudoApproved}`);
+    } catch (err) {
+      console.error('Ошибка автоодобрения псевдо-заданий:', (err as Error).message);
+    }
+
+    // ==========================================
     // 7. ОЧИСТКА МЕДИА ГЕНЕРАЦИЙ
     //    (неотправленные загрузки > 24 ч + файлы удалённых чатов)
     //    Идёт после очистки корзины: у файлов удалённых чатов
@@ -233,7 +247,8 @@ export default async function handler(request: Request): Promise<Response> {
       orphaned_devices_cleaned: orphanedDevicesCleaned,
       notifications_cleaned: notificationsDeleted,
       media_files_removed: mediaRemoved,
-      video_jobs_finalized: videoFinalized
+      video_jobs_finalized: videoFinalized,
+      pseudo_quests_approved: pseudoApproved
     };
 
     console.log('✅ Общая очистка завершена:', JSON.stringify(report));
