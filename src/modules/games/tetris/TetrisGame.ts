@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/games/tetris/TetrisGame.ts
 // Описание: Классический Тетрис
-// Версия: 5.2.1 - замена @types → @app-types
+// Версия: 5.3.0 - монеты за игру считает сервер (событие economy:game), баланс — getCoinBalance
+//          5.2.1 - замена @types → @app-types
 // ============================================
 
 import './tetris.css';
@@ -242,7 +243,7 @@ export class TetrisGame {
   private _render(): void {
     if (!this.container) return;
     
-    const currentBalance = (window as any).economyStore?.getBalance() || 0;
+    const currentBalance = (window as any).economyStore?.getCoinBalance?.() || 0;
     
     this.container.innerHTML = `
       <div class="tetris-container" id="tetris-container">
@@ -744,13 +745,12 @@ export class TetrisGame {
       perfectClear: '✨ Perfect Clear!'
     };
     
-    const reward = rewards[id] || 10;
-    
+    // Сумму и суточный потолок определяет сервер (economy_rules), здесь — только для справки
+    void rewards;
+
     if (this.userId) {
-      eventBus.emit('economy:earn', {
-        userId: this.userId,
-        source: `game:tetris:achievement`,
-        amount: reward,
+      eventBus.emit('economy:game', {
+        event: `tetris:achievement:${id}`,
         metadata: {
           achievement_id: id,
           achievement_name: names[id],
@@ -762,7 +762,7 @@ export class TetrisGame {
     }
     
     if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast(`🏆 ${names[id]}! +${reward} 🪙`, 'success', 2500);
+      (window as any).uiRenderer.showToast(`🏆 ${names[id]}!`, 'success', 2000);
     }
     
     console.log(`🏆 Достижение разблокировано: ${names[id]}`);
@@ -774,10 +774,8 @@ export class TetrisGame {
       this._saveStats();
       
       if (this.userId) {
-        eventBus.emit('economy:earn', {
-          userId: this.userId,
-          source: 'game:tetris:high_score',
-          amount: 30,
+        eventBus.emit('economy:game', {
+          event: 'tetris:high_score',
           metadata: {
             score: this.score,
             level: this.level,
@@ -787,7 +785,7 @@ export class TetrisGame {
       }
       
       if ((window as any).uiRenderer) {
-        (window as any).uiRenderer.showToast('🏆 Новый рекорд! +30 🪙', 'success', 2000);
+        (window as any).uiRenderer.showToast('🏆 Новый рекорд!', 'success', 2000);
       }
     }
   }
