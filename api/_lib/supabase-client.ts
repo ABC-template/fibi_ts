@@ -1,7 +1,10 @@
 // ============================================
 // api/_lib/supabase-client.ts 
 // Описание: Работа с Supabase через fetch (Edge Runtime)
-// Версия: 14.1.0 — claimQuest (RPC claim_quest) вместо claimQuestWithBonus
+// Версия: 15.0.0 — без Supabase Auth: getOrCreateUser вместо getOrCreateAuthUser
+//                   (пароли и вход по паролю убраны), удалён setAppUserContext
+//                   (функция в БД удалена)
+//          14.1.0 — claimQuest (RPC claim_quest) вместо claimQuestWithBonus
 //          14.0.0 — добавлена spendAbstractTokens
 // ============================================
 
@@ -197,398 +200,56 @@ export async function canUserSync(
   }
 }
 
-export async function setAppUserContext(
-  userId: number,
-  config: ISupabaseConfig | null = null
-): Promise<void> {
-  try {
-    await supabaseRPC('set_app_user_id', { uid: userId }, config);
-  } catch (err) {
-    console.error('Failed to set user context:', (err as Error).message);
-  }
+/** Поля users, которые нужны при входе (auth/check) */
+const LOGIN_USER_FIELDS =
+  'id,telegram_id,role,premium_until,username,data_deadline,sync_token,subscription_tier,trial_used';
+
+async function selectLoginUser(telegramId: number, config: ISupabaseConfig | null): Promise<any | null> {
+  const rows = await supabaseFetch(
+    `users?telegram_id=eq.${telegramId}&select=${LOGIN_USER_FIELDS}`,
+    { method: 'GET' },
+    config
+  );
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 }
 
-export interface IAuthUserResult {
-  userId: string;
-  userUuid: string;
-  telegramId: number;
-  jwtToken: string;
-  syncToken: string | null;
-  isNew: boolean;
-}
-
-async function getUserPassword(
+/**
+ * Найти пользователя по Telegram ID или создать (trial).
+ * Supabase Auth не используется: id — случайный uuid, он же sub токена Realtime.
+ * Одновременные первые входы не создают дублей (on_conflict=telegram_id).
+ */
+export async function getOrCreateUser(
   telegramId: number,
+  tgUser: ITelegramUser | null,
   config: ISupabaseConfig | null = null
-): Promise<string | null> {
-  try {
-    const result = await supabaseFetch(
-      `users?telegram_id=eq.${telegramId}&select=password_hash`,
-      { method: 'GET' },
-      config
-    );
+): Promise<{ user: any; isNew: boolean }> {
+  const existing = await selectLoginUser(telegramId, config);
+  if (existing) return { user: existing, isNew: false };
 
-    if (result && Array.isArray(result) && result.length > 0) {
-      return result[0].password_hash;
-    }
-    return null;
-  } catch (err) {
-    console.error('Failed to get user password:', (err as Error).message);
-    return null;
-  }
-}
-
-export async function getOrCreateAuthUser(
-  telegramId: number,
-  userData: ITelegramUser | null,
-  config: ISupabaseConfig | null = null
-): Promise<IAuthUserResult> {
-  console.log(`🔍 [getOrCreateAuthUser] Начинаем для telegram_id: ${telegramId}`);
-
-  const { url: supabaseUrl, key: supabaseKey } = config || getSupabaseConfig('service');
-  const email = `${telegramId}@telegram.local`;
-
-  console.log(`🔍 [getOrCreateAuthUser] Email: ${email}`);
-
-  console.log(`🔍 [getOrCreateAuthUser] Проверяем public.users...`);
-  let existingUser: any = null;
-  let userId: string | null = null;
-  let userUuid: string | null = null;
-  let userPassword: string | null = null;
-  let isNew = false;
-
-  try {
-    const userRes = await supabaseFetch(
-      `users?telegram_id=eq.${telegramId}&select=id,telegram_id,role,password_hash,sync_token`,
-      { method: 'GET' },
-      config
-    );
-
-    if (userRes && Array.isArray(userRes) && userRes.length > 0) {
-      existingUser = userRes[0];
-      userId = existingUser.id;
-      userUuid = existingUser.id;
-      userPassword = existingUser.password_hash;
-      console.log(`🔍 [getOrCreateAuthUser] Найден в public.users:`, {
-        id: existingUser.id,
-        telegram_id: existingUser.telegram_id,
-        role: existingUser.role,
-        has_password: !!existingUser.password_hash,
-        has_sync_token: !!existingUser.sync_token
-      });
-    }
-  } catch (err) {
-    console.error(`❌ [getOrCreateAuthUser] Ошибка поиска в public.users:`, (err as Error).message);
-  }
-
-  let authUser: any = null;
-  let authUserId: string | null = null;
-
-  if (existingUser) {
-    console.log(`🔍 [getOrCreateAuthUser] Ищем в auth.users по ID: ${existingUser.id}`);
-
-    try {
-      const userById = await fetch(`${supabaseUrl}/auth/v1/admin/users/${existingUser.id}`, {
-        method: 'GET',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
-      });
-
-      if (userById.ok) {
-        authUser = await userById.json();
-        authUserId = authUser.id;
-        console.log(`✅ [getOrCreateAuthUser] Найден в auth.users по ID: ${authUserId}`);
-      } else if (userById.status === 404) {
-        console.error(`❌❌❌ [getOrCreateAuthUser] КРИТИЧЕСКАЯ ОШИБКА: Пользователь ${existingUser.id} есть в public.users, но НЕТ в auth.users!`);
-        throw new Error(`Целостность данных нарушена: пользователь ${existingUser.id} отсутствует в auth.users`);
-      } else {
-        console.error(`❌ [getOrCreateAuthUser] Ошибка при поиске в auth.users: ${userById.status}`);
-        throw new Error(`Ошибка при поиске в auth.users: ${userById.status}`);
-      }
-    } catch (err) {
-      if ((err as Error).message.includes('Целостность данных нарушена')) {
-        throw err;
-      }
-      console.error(`❌ [getOrCreateAuthUser] Исключение при поиске в auth.users:`, (err as Error).message);
-      throw new Error(`Ошибка при поиске в auth.users: ${(err as Error).message}`);
-    }
-  }
-
-  if (!existingUser) {
-    console.log(`🔍 [getOrCreateAuthUser] Нет в public.users, ищем в auth.users по email...`);
-
-    try {
-      const findResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users?filter=email.eq.${encodeURIComponent(email)}`, {
-        method: 'GET',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
-      });
-
-      if (findResponse.ok) {
-        const data = await findResponse.json();
-        const authUsers = data.users || [];
-        if (authUsers.length > 0) {
-          authUser = authUsers[0];
-          authUserId = authUser.id;
-          console.log(`✅ [getOrCreateAuthUser] Найден в auth.users по email: ${authUserId}`);
-        } else {
-          console.log(`ℹ️ [getOrCreateAuthUser] Не найден в auth.users по email`);
-        }
-      } else {
-        console.log(`ℹ️ [getOrCreateAuthUser] admin API вернул ${findResponse.status}`);
-      }
-    } catch (err) {
-      console.log(`ℹ️ [getOrCreateAuthUser] Ошибка поиска в auth.users:`, (err as Error).message);
-    }
-  }
-
-  if (authUser && !existingUser) {
-    console.log(`🆕 [getOrCreateAuthUser] Есть в auth.users, создаем в public.users...`);
-    userId = authUserId;
-    userUuid = userId;
-
-    userPassword = crypto.randomUUID();
-
-    await supabaseFetch(
-      'users',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          id: userId,
-          telegram_id: telegramId,
-          username: userData?.username || null,
-          role: 'trial',
-          user_lang: userData?.language_code || 'ru',
-          password_hash: userPassword,
-          sync_token: crypto.randomUUID(),
-          created_at: new Date().toISOString()
-        })
-      },
-      config
-    );
-
-    isNew = false;
-    console.log(`✅ [getOrCreateAuthUser] Пользователь создан в public.users: ${userId}`);
-  }
-
-  if (!existingUser && !authUser) {
-    console.log(`🆕 [getOrCreateAuthUser] Создаем пользователя с нуля...`);
-
-    const newUuid = crypto.randomUUID();
-    userPassword = crypto.randomUUID();
-    const newSyncToken = crypto.randomUUID();
-
-    const createBody = {
-      id: newUuid,
-      email: email,
-      password: userPassword,
-      email_confirm: true,
-      user_metadata: {
-        telegram_id: telegramId,
-        username: userData?.username || null,
-        first_name: userData?.first_name || null,
-        last_name: userData?.last_name || null
-      }
-    };
-
-    const createResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+  const inserted = await supabaseFetch(
+    'users?on_conflict=telegram_id',
+    {
       method: 'POST',
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(createBody)
-    });
-
-    if (createResponse.ok) {
-      const newAuthUser = await createResponse.json();
-      userId = newAuthUser.id;
-      userUuid = userId;
-      console.log(`✅ [getOrCreateAuthUser] Пользователь создан через admin: ${userId}`);
-    } else {
-      const errorText = await createResponse.text();
-      console.warn(`⚠️ [getOrCreateAuthUser] admin вернул ${createResponse.status}: ${errorText.substring(0, 100)}`);
-
-      const signupResponse = await fetch(`${supabaseUrl}/auth/v1/signup`, {
-        method: 'POST',
-        headers: {
-          'apikey': supabaseKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          email: email,
-          password: userPassword,
-          data: {
-            telegram_id: telegramId,
-            username: userData?.username || null,
-            first_name: userData?.first_name || null,
-            last_name: userData?.last_name || null
-          }
-        })
-      });
-
-      if (signupResponse.ok) {
-        const signupData = await signupResponse.json();
-        userId = signupData?.user?.id || signupData?.id || null;
-        userUuid = userId;
-        console.log(`✅ [getOrCreateAuthUser] Пользователь создан через signup: ${userId}`);
-      } else {
-        const signupError = await signupResponse.text();
-        throw new Error(`Failed to create auth user: ${signupError}`);
-      }
-    }
-
-    await supabaseFetch(
-      'users',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          id: userId,
-          telegram_id: telegramId,
-          username: userData?.username || null,
-          role: 'trial',
-          user_lang: userData?.language_code || 'ru',
-          password_hash: userPassword,
-          sync_token: newSyncToken,
-          created_at: new Date().toISOString()
-        })
-      },
-      config
-    );
-
-    isNew = true;
-    console.log(`✅ [getOrCreateAuthUser] Пользователь создан с нуля: ${userId}`);
-  }
-
-  if (!userId) {
-    console.error(`❌ [getOrCreateAuthUser] НЕ УДАЛОСЬ ОПРЕДЕЛИТЬ userId!`);
-    throw new Error('Failed to get or create user');
-  }
-
-  if (!userUuid) {
-    userUuid = userId;
-  }
-
-  console.log(`🔍 [getOrCreateAuthUser] Генерируем JWT для userId: ${userId}`);
-  let jwtToken: string | null = null;
-
-  if (!userPassword) {
-    console.log(`🔍 [getOrCreateAuthUser] Пароль не найден в памяти, пробуем получить из БД...`);
-    const dbPassword = await getUserPassword(telegramId, config);
-    if (dbPassword) {
-      userPassword = dbPassword;
-      console.log(`✅ [getOrCreateAuthUser] Пароль получен из БД`);
-    }
-  }
-
-  if (!userPassword) {
-    console.log(`🔍 [getOrCreateAuthUser] Генерируем новый пароль...`);
-    userPassword = crypto.randomUUID();
-
-    await supabaseFetch(
-      `users?telegram_id=eq.${telegramId}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({
-          password_hash: userPassword,
-          updated_at: new Date().toISOString()
-        })
-      },
-      config
-    );
-
-    try {
-      await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          password: userPassword
-        })
-      });
-      console.log(`✅ [getOrCreateAuthUser] Пароль обновлен в auth.users`);
-    } catch (err) {
-      console.warn(`⚠️ [getOrCreateAuthUser] Не удалось обновить пароль в auth.users:`, (err as Error).message);
-    }
-  }
-
-  try {
-    console.log(`🔍 [getOrCreateAuthUser] Пробуем sign-in...`);
-
-    const signInResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        'apikey': supabaseKey,
-        'Content-Type': 'application/json'
-      },
+      headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
       body: JSON.stringify({
-        email: email,
-        password: userPassword
-      })
-    });
+        id: crypto.randomUUID(),
+        telegram_id: telegramId,
+        username: tgUser?.username || null,
+        role: 'trial',
+        subscription_tier: 'trial',
+        user_lang: tgUser?.language_code || 'ru',
+        sync_token: crypto.randomUUID(),
+        trial_used: false,
+      }),
+    },
+    config
+  );
+  // Строка вернулась — создали мы; пусто — параллельный запрос успел раньше
+  const isNew = !!(inserted && !Array.isArray(inserted) && inserted.id);
 
-    if (signInResponse.ok) {
-      const signInData = await signInResponse.json();
-      jwtToken = signInData.access_token;
-      console.log(`✅ [getOrCreateAuthUser] JWT получен через sign-in`);
-    } else {
-      const errorText = await signInResponse.text();
-      console.warn(`⚠️ [getOrCreateAuthUser] sign-in вернул ${signInResponse.status}: ${errorText.substring(0, 100)}`);
-
-      try {
-        const sessionResponse = await fetch(`${supabaseUrl}/auth/v1/admin/sessions`, {
-          method: 'POST',
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            user_id: userId,
-            expires_in: 3600
-          })
-        });
-
-        if (sessionResponse.ok) {
-          const sessionData = await sessionResponse.json();
-          jwtToken = sessionData.access_token;
-          console.log(`✅ [getOrCreateAuthUser] JWT получен через admin/sessions (fallback)`);
-        }
-      } catch (fallbackErr) {
-        console.warn(`⚠️ [getOrCreateAuthUser] fallback ошибка:`, (fallbackErr as Error).message);
-      }
-    }
-  } catch (err) {
-    console.warn(`⚠️ [getOrCreateAuthUser] sign-in ошибка:`, (err as Error).message);
-  }
-
-  if (!jwtToken) {
-    console.error(`❌ [getOrCreateAuthUser] НЕ УДАЛОСЬ ПОЛУЧИТЬ JWT!`);
-    throw new Error('Failed to generate JWT token');
-  }
-
-  const currentSyncToken = await getSyncToken(telegramId, config);
-
-  console.log(`✅ [getOrCreateAuthUser] Успешно завершено! userId: ${userId}, userUuid: ${userUuid}, isNew: ${isNew}`);
-  console.log(`🔑 JWT: ${jwtToken.substring(0, 30)}...`);
-  console.log(`🔄 sync_token: ${currentSyncToken?.substring(0, 8) || 'null'}...`);
-
-  return {
-    userId: userId,
-    userUuid: userUuid,
-    telegramId: telegramId,
-    jwtToken: jwtToken,
-    syncToken: currentSyncToken,
-    isNew: isNew
-  };
+  const user = await selectLoginUser(telegramId, config);
+  if (!user) throw new Error('Failed to create user');
+  return { user, isNew };
 }
 
 export async function updateStreak(
