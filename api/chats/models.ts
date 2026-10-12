@@ -1,7 +1,8 @@
 // ============================================
 // api/chats/models.ts
 // Описание: Конфигурация моделей ИИ
-// Версия: 4.0.1 - FIXED импорт TopicId
+// Версия: 4.1.0 - getRotatedKeysPool: ключи 0..9 с пропусками; убран неиспользуемый hasAvailableKeys
+//          4.0.1 - FIXED импорт TopicId
 // ============================================
 
 import { 
@@ -67,26 +68,14 @@ export function getLanguageInstruction(userLang: string = 'ru'): string {
 }
 
 /**
- * Получить список ключей OpenRouter
- * @returns Массив ключей
+ * Ключи OpenRouter ROUTER_KEY0..ROUTER_KEY9. Пропуск в нумерации не обрывает
+ * список (раньше при отсутствии, например, ROUTER_KEY1 ключи 2..9 не использовались).
  */
 export function getRotatedKeysPool(): string[] {
   const keys: string[] = [];
-  let i = 0;
-  while (true) {
-    const key = process.env[`ROUTER_KEY${i}`];
-    if (!key || key.trim().length === 0) break;
-    keys.push(key.trim());
-    i++;
+  for (let i = 0; i < 10; i++) {
+    const key = process.env[`ROUTER_KEY${i}`]?.trim();
+    if (key) keys.push(key);
   }
   return keys;
-}
-
-/**
- * Проверить, есть ли доступные ключи
- * @returns true если есть хотя бы один ключ
- */
-export function hasAvailableKeys(): boolean {
-  const keys = getRotatedKeysPool();
-  return keys.length > 0;
 }
