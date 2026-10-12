@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.2.0 — настройки генерации строятся по возможностям модели (GenerationSettingsPanel):
+// Версия: 3.3.0 — у генеративных агентов (фото/видео/аудио) галочка trial неактивна:
+//                  сервер всё равно не пускает trial к генерации
+//          3.2.0 — настройки генерации строятся по возможностям модели (GenerationSettingsPanel):
 //                  режимы, параметры формы, цена; JSON остаётся запасным вариантом
 //          3.1.0 — context_length выбранной модели (уже приходит от
 //                  OpenRouter в /admin/agents/models) теперь сохраняется
@@ -582,6 +584,7 @@ export class AdminAgentsTab implements IAdminTab {
     const container = document.getElementById('agent-allowed-tiers');
     if (!container) return null;
     const checked = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))
+      .filter(el => !el.disabled)
       .map(el => el.value).filter(Boolean);
     return checked.length > 0 ? checked : null;
   }
@@ -645,6 +648,7 @@ export class AdminAgentsTab implements IAdminTab {
           <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
             <input type="checkbox" value="${t.tier_key}" ${checked}> ${t.tier_key}
           </label>`;
+
         const currentMarkup = agent?.markup_by_tier?.[t.tier_key] ?? '';
         markupContainer.innerHTML += `
           <div>
@@ -654,8 +658,28 @@ export class AdminAgentsTab implements IAdminTab {
               style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
           </div>`;
       }
+      this._syncTrialCheckbox();
+      const modalitySelect = document.getElementById('agent-modality') as HTMLSelectElement | null;
+      if (modalitySelect) modalitySelect.addEventListener('change', () => this._syncTrialCheckbox());
     } catch (e) {
       container.innerHTML = '<span style="color:#e74c3c;font-size:12px">Не удалось загрузить тарифы</span>';
+    }
+  }
+
+  /** Генерация медиа недоступна trial: галочка trial неактивна и снята */
+  private _syncTrialCheckbox(): void {
+    const container = document.getElementById('agent-allowed-tiers');
+    const modality = (document.getElementById('agent-modality') as HTMLSelectElement | null)?.value || 'text';
+    const trial = container?.querySelector<HTMLInputElement>('input[type="checkbox"][value="trial"]');
+    if (!trial) return;
+    const generative = modality !== 'text';
+    trial.disabled = generative;
+    if (generative) trial.checked = false;
+    const label = trial.closest('label') as HTMLElement | null;
+    if (label) {
+      label.style.opacity = generative ? '0.45' : '';
+      label.style.cursor = generative ? 'not-allowed' : 'pointer';
+      label.title = generative ? 'Генерация медиа недоступна тарифу trial' : '';
     }
   }
 
