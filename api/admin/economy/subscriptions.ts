@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/economy/subscriptions.ts
 // Управление тарифами (подписки + лимиты токенов)
-// Версия: 2.0.0 — bonus_tokens_per_day + daily_spend_limit
+// Версия: 2.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+//          2.0.0 — bonus_tokens_per_day + daily_spend_limit
 // ============================================
 
 import {
@@ -12,18 +13,17 @@ import {
   errorResponse,
   getSupabaseConfig,
   supabaseFetch,
+  isAdminTelegramId,
 } from '../../_lib/index';
 
 export const config = { runtime: 'edge' };
-
-const CREATOR_ID = 1541531808;
 
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
   const auth = await authenticate(request);
-  if (auth.error || auth.userId !== CREATOR_ID) {
+  if (auth.error || !isAdminTelegramId(auth.userId)) {
     return errorResponse('Доступ запрещён', 403);
   }
 
