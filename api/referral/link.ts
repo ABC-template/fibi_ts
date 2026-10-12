@@ -1,7 +1,8 @@
 // ============================================
 // api/referral/link.ts
 // Получение реферальной ссылки
-// Версия: 1.0.0
+// Версия: 1.1.0 — ссылка вида t.me/<бот>?startapp=ref_<id36> (открывает Mini App)
+//          1.0.0
 // ============================================
 
 import {
@@ -36,8 +37,14 @@ export default async function handler(request: Request): Promise<Response> {
     const config = getSupabaseConfig('service');
 
     // Генерируем реферальный код (base64 от userId)
-    const refCode = btoa(String(userId));
-    const link = `https://t.me/${BOT_USERNAME}?start=ref_${refCode}`;
+    // Ссылка сразу открывает Mini App: параметр startapp приходит в initData
+    // (start_param) и обрабатывается сервером при входе (auth/check).
+    // Код — id в base36: в startapp разрешены только A-Z a-z 0-9 _ -
+    const refCode = Number(userId).toString(36);
+    const appShortName = process.env.BOT_APP_SHORTNAME?.trim();
+    const link = appShortName
+      ? `https://t.me/${BOT_USERNAME}/${appShortName}?startapp=ref_${refCode}`
+      : `https://t.me/${BOT_USERNAME}?startapp=ref_${refCode}`;
 
     // Сохраняем ссылку в БД (опционально)
     // Можно обновлять при каждом запросе, чтобы ссылка была актуальной
