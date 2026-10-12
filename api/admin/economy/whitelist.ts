@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/economy/whitelist.ts
 // Управление белым списком для обмена
-// Версия: 1.0.0
+// Версия: 1.1.0 — удаление по user_id (так вызывает админка), не только по id записи
+//          1.0.0
 // ============================================
 
 import {
@@ -114,13 +115,19 @@ export default async function handler(request: Request): Promise<Response> {
     try {
       const url = new URL(request.url);
       const id = url.searchParams.get('id');
+      const userId = url.searchParams.get('user_id');
 
-      if (!id) {
-        return errorResponse('Missing id', 400);
+      // Удаление по id записи или по user_id (так вызывает вкладка «Безопасность»)
+      let filter: string | null = null;
+      if (id && /^[0-9a-f-]{36}$/i.test(id)) filter = `id=eq.${id}`;
+      else if (userId && /^\d{1,20}$/.test(userId)) filter = `user_id=eq.${userId}`;
+
+      if (!filter) {
+        return errorResponse('Missing id or user_id', 400);
       }
 
       await supabaseFetch(
-        `economy_whitelist?id=eq.${id}`,
+        `economy_whitelist?${filter}`,
         { method: 'DELETE' },
         config
       );
