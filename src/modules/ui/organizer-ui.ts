@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/ui/organizer-ui.ts
 // Интерфейс органайзера
-// Версия: 3.1.0 - с использованием конфига
+// Версия: 3.2.0 - анализ трекера: отдельный новый чат в «Быстрых», сообщение сохраняется,
+//                 в streamAiResponse уходит chatId (раньше — объект чата, ответ терялся)
+//          3.1.0 - с использованием конфига
 // ============================================
 
 import { organizerStore } from '@/store/OrganizerStore';
@@ -656,12 +658,10 @@ export class OrganizerUI {
     }
   }
 
-  triggerTrackerAnalysis(trackerId: UUID, trackerTitle: string): void {
+  async triggerTrackerAnalysis(trackerId: UUID, trackerTitle: string): Promise<void> {
     const card = document.getElementById('profile-card');
     if (card) card.classList.add('hidden');
     if ((window as any).tg?.BackButton) (window as any).tg.BackButton.hide();
-
-    (window as any).uiRenderer.showSkeleton();
 
     const logs = this.organizerStore.getLogsForTracker(trackerId);
     const logText = logs.map(l =>
@@ -670,16 +670,42 @@ export class OrganizerUI {
 
     const prompt = `Сделай подробный научный, физиологический и психологический анализ моего прогресса по цели: "${trackerTitle}". Вот журнал моих фиксаций и текстовых заметок триггеров:\n${logText || 'Журнал пуст, я только начинаю свой путь.'}\n\nПожалуйста, разложи по полочкам, какие позитивные изменения происходят в моем организме, мозге и дофаминовых рецепторах прямо сейчас на этом этапе. Отвечай развернуто, структурировано.`;
 
-    if ((window as any).streamAiResponse) {
-      const userLang = this.chatStore.getActiveChat()?.language || 'ru';
-      (window as any).streamAiResponse(
-        [{ type: 'user-msg', text: prompt }],
-        'fast',
-        userLang,
-        null,
-        this.chatStore.getActiveChat()
-      );
+    // Анализ — в новом чате «Быстрых»: так он не смешивается с текущей
+    // беседой (и не попадает в чат генерации), а вопрос и ответ сохраняются
+    const chat = this.chatStore.createTempChat('fast');
+    if (!chat) return;
+
+    const messageId = this.chatStore.generateUUID();
+    const saved = this.chatStore.addMessage(chat.id, prompt, 'user-msg', { id: messageId });
+    if (!saved) return;
+
+    try {
+      const { messageService } = await import('@/services/messages');
+      await messageService.sendMessage(chat.id, prompt, 'user-msg', { id: messageId });
+    } catch (err) {
+      console.warn('⚠️ [trackerAnalysis] Сообщение не синхронизировано:', err);
     }
+
+    if (typeof (window as any).openChat === 'function') {
+      (window as any).openChat(chat.id, 'fast');
+    }
+
+    if (typeof (window as any).streamAiResponse !== 'function') {
+      await import('@/modules/chat/stream');
+    }
+
+    (window as any).uiRenderer?.showSkeleton();
+
+    const userLang = chat.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
+    await (window as any).streamAiResponse(
+      [{ type: 'user-msg', text: prompt }],
+      'fast',
+      userLang,
+      null,
+      chat.id,
+      chat.agent_id || null,
+      null
+    );
   }
 
   // ==========================================
