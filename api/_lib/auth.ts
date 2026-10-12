@@ -1,7 +1,8 @@
 // ============================================
 // api/_lib/auth.ts
 // Описание: Единая аутентификация для всех Edge-функций
-// Версия: 4.1.0 - getVerifiedStartParam (start_param из подписанного initData)
+// Версия: 4.2.0 - админ по Telegram ID (ADMIN_TELEGRAM_IDS), не зависит от роли
+//          4.1.0 - getVerifiedStartParam (start_param из подписанного initData)
 //          4.0.0 - TypeScript
 // ============================================
 
@@ -225,12 +226,31 @@ export async function getVerifiedStartParam(
 }
 
 /**
+ * Telegram ID, которым открыта админ-панель. Доступ не зависит от роли:
+ * владелец может переключать себе роль (trial/premium) для тестов и не терять админку.
+ * Список — переменная ADMIN_TELEGRAM_IDS (через запятую), по умолчанию создатель.
+ */
+export function getAdminTelegramIds(): number[] {
+  const raw = process.env.ADMIN_TELEGRAM_IDS?.trim() || '1541531808';
+  return raw
+    .split(',')
+    .map((x) => Number(x.trim()))
+    .filter((x) => Number.isSafeInteger(x) && x > 0);
+}
+
+export function isAdminTelegramId(userId: number | null | undefined): boolean {
+  return !!userId && getAdminTelegramIds().includes(Number(userId));
+}
+
+/**
  * Проверить, является ли пользователь администратором
+ * (по Telegram ID из списка админов либо по роли admin/creator)
  */
 export async function isAdmin(
   userId: number,
   config: any = null
 ): Promise<boolean> {
+  if (isAdminTelegramId(userId)) return true;
   try {
     const cfg = config || getSupabaseConfig('service');
     const result = await supabaseFetch(
