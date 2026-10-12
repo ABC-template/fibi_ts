@@ -8,7 +8,10 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.1.0 — чат удерживается (holdChat), пока идёт запрос; тариф для цены — userStore.subscriptionTier
+// Версия: 3.2.0 — медиа можно сохранить в приложении (IndexedDB) и открывать без облака;
+//                  удалённые из облака файлы показываются плашкой «Файл удалён»;
+//                  без доступа к агенту (trial) чат только для просмотра — без «Повторить»
+//          3.1.0 — чат удерживается (holdChat), пока идёт запрос; тариф для цены — userStore.subscriptionTier
 //          3.0.0
 //   - форма в стиле генераторов: сегментные переключатели (до 4 вариантов) и «чипы» (до 8),
 //     шаговый счётчик для n, переключатель для флагов, зона загрузки со счётчиком «0 / N»,
@@ -31,11 +34,13 @@ import { fetchAgentsWithAccess } from '@/services/agents';
 import {
   REFERENCE_LIMITS,
   forgetMediaUrl,
+  isMediaDeleted,
   resolveMediaUrls,
   uploadReference,
   validateReferenceFile,
 } from '@/services/generation-media';
 import { isLiveGeneration, liveWindowMs } from '@/store/generation-live';
+import { getLocalUrl, isSavedLocally, saveFromUrl } from '@/services/media-vault';
 import { estimateEnergy } from '@/services/generation-pricing';
 import type { IMessage, UUID } from '@app-types';
 import type {
@@ -1226,21 +1231,50 @@ export class GenerationController {
       row.appendChild(open);
     }
 
-    const repeat = document.createElement('button');
-    repeat.type = 'button';
-    repeat.className = 'gen-btn gen-btn-primary';
-    repeat.textContent = 'Повторить';
-    repeat.addEventListener('click', () => this.open(this._presetFromMessage(msg)));
-    row.appendChild(repeat);
+    // Без доступа к агенту (например, после перехода в trial) чат — только для просмотра
+    if (this.host.hasAccess()) {
+      const repeat = document.createElement('button');
+      repeat.type = 'button';
+      repeat.className = 'gen-btn gen-btn-primary';
+      repeat.textContent = 'Повторить';
+      repeat.addEventListener('click', () => this.open(this._presetFromMessage(msg)));
+      row.appendChild(repeat);
+    }
     return row;
+  }
+
+  /** Плашка вместо файла, которого больше нет ни в облаке, ни в приложении */
+  private _markDeleted(holder: HTMLElement): void {
+    holder.classList.remove('gen-skeleton');
+    holder.classList.add('gen-media-deleted');
+    holder.style.display = 'flex';
+    holder.style.alignItems = 'center';
+    holder.style.justifyContent = 'center';
+    holder.style.minHeight = '96px';
+    holder.style.padding = '12px';
+    holder.style.textAlign = 'center';
+    holder.style.fontSize = '13px';
+    holder.style.color = 'var(--app-text-tertiary)';
+    const note = document.createElement('div');
+    note.textContent = '🗑 Файл удалён из облака';
+    holder.insertBefore(note, holder.firstChild);
+  }
+
+  /** Ссылка для показа: сначала копия в приложении, потом облако */
+  private async _mediaUrl(path: string): Promise<{ url: string | null; local: boolean }> {
+    const local = await getLocalUrl(path);
+    if (local) return { url: local, local: true };
+    const urls = await resolveMediaUrls([path]);
+    return { url: urls[path] || null, local: false };
   }
 
   /** Подставляет в контейнер картинку / видео / аудио по подписанной ссылке */
   private _mountMedia(holder: HTMLElement, media: IGenerationMedia, onClick?: () => void, autoplay = false): void {
-    resolveMediaUrls([media.storage_path]).then((urls) => {
-      const url = urls[media.storage_path];
-      if (!url || !holder.isConnected) {
-        if (!url) holder.classList.add('gen-media-failed');
+    this._mediaUrl(media.storage_path).then(({ url, local }) => {
+      if (!holder.isConnected) return;
+      if (!url) {
+        if (isMediaDeleted(media.storage_path)) this._markDeleted(holder);
+        else holder.classList.add('gen-media-failed');
         return;
       }
       holder.classList.remove('gen-skeleton');
@@ -1267,8 +1301,8 @@ export class GenerationController {
         img.src = url;
         let retried = false;
         img.addEventListener('error', () => {
-          // Ссылка могла истечь — один раз перевыпускаем
-          if (retried) {
+          // Ссылка могла истечь — один раз перевыпускаем (у копии в приложении ссылки не истекают)
+          if (retried || local) {
             holder.classList.add('gen-media-failed');
             return;
           }
@@ -1388,7 +1422,21 @@ export class GenerationController {
     download.textContent = 'Скачать';
     download.addEventListener('click', () => this._download(media));
 
-    actions.append(repeat, download);
+    const keep = document.createElement('button');
+    keep.type = 'button';
+    keep.className = 'gen-btn';
+    keep.textContent = '📲 В приложение';
+    keep.title = 'Сохранить в приложении: будет открываться и без облака';
+    keep.addEventListener('click', () => void this._saveToApp(media, keep));
+    void Promise.all(media.map((m) => isSavedLocally(m.storage_path))).then((saved) => {
+      if (saved.every(Boolean)) {
+        keep.textContent = '✓ В приложении';
+        keep.disabled = true;
+      }
+    });
+
+    if (this.host.hasAccess()) actions.append(repeat);
+    actions.append(keep, download);
     overlay.append(close, scroller, actions);
     document.body.appendChild(overlay);
     this._viewer = overlay;
@@ -1433,14 +1481,61 @@ export class GenerationController {
     return parts.join(' · ');
   }
 
+  /** Сохранить файлы в приложении (IndexedDB), чтобы они открывались без облака */
+  private async _saveToApp(media: IGenerationMedia[], btn?: HTMLButtonElement): Promise<void> {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Сохраняю…';
+    }
+    let saved = 0;
+    let missing = 0;
+    for (const item of media) {
+      if (await isSavedLocally(item.storage_path)) {
+        saved++;
+        continue;
+      }
+      const urls = await resolveMediaUrls([item.storage_path]);
+      const url = urls[item.storage_path];
+      if (!url) {
+        missing++;
+        continue;
+      }
+      if (await saveFromUrl(item.storage_path, url, item.mime)) saved++;
+    }
+
+    const done = saved === media.length;
+    if (btn) {
+      btn.textContent = done ? '✓ В приложении' : '📲 В приложение';
+      btn.disabled = done;
+    }
+    if (done) this._toast('📲 Сохранено в приложении', 'success', 1800);
+    else if (missing > 0) this._toast('Часть файлов уже удалена из облака', 'warning', 2500);
+    else this._toast('Не удалось сохранить — проверьте свободное место', 'error', 2500);
+  }
+
   private async _download(media: IGenerationMedia[]): Promise<void> {
     const urls = await resolveMediaUrls(media.map((m) => m.storage_path));
     const tg = (window as any).Telegram?.WebApp;
 
+    let skipped = 0;
     for (const item of media) {
       const base = urls[item.storage_path];
-      if (!base) continue;
       const fileName = item.storage_path.split('/').pop() || 'generation';
+      if (!base) {
+        // В облаке файла нет — отдаём копию из приложения, если она есть
+        const local = await getLocalUrl(item.storage_path);
+        if (!local) {
+          skipped++;
+          continue;
+        }
+        const a = document.createElement('a');
+        a.href = local;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        continue;
+      }
       const url = `${base}${base.includes('?') ? '&' : '?'}download=${encodeURIComponent(fileName)}`;
 
       if (typeof tg?.downloadFile === 'function') {
@@ -1459,6 +1554,7 @@ export class GenerationController {
       a.click();
       a.remove();
     }
+    if (skipped > 0) this._toast('Файл удалён из облака и не сохранён в приложении', 'warning', 2500);
   }
 
   // ==========================================
