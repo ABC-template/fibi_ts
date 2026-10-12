@@ -1,28 +1,24 @@
 // ============================================
 // api/admin/coins.ts
-// Управление монетами (для creator)
-// Версия: 2.0.0 - ИЗМЕНЕНО: через EconomyService
+// Совместимость: начисление монет / постоянной энергии из админки (вкладка «Тесты»).
+// Новый код использует POST /api/admin/users { action: 'balance' }.
+// Тело: { user_id, amount, currency?: 'coins'|'tokens', action?: 'add'|'subtract', reason? }
+// Версия: 3.0.0 — через SQL admin_adjust_coins / admin_adjust_permanent_tokens
+//                  (старые RPC add_coins/spend_coins не существовали); доступ по Telegram ID
 // ============================================
 
-import {
-  authenticate,
-  corsHeaders,
-  handleCORS,
-  jsonResponse,
-  errorResponse,
-  getSupabaseConfig,
-} from '../_lib/index';
+import { authenticate, isAdminTelegramId } from '../_lib/auth';
+import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
+import { getSupabaseConfig, supabaseRPC } from '../_lib/supabase-client';
 
 export const config = { runtime: 'edge' };
-
-const CREATOR_ID = 1541531808;
 
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
   const auth = await authenticate(request);
-  if (auth.error || auth.userId !== CREATOR_ID) {
+  if (auth.error || !isAdminTelegramId(auth.userId)) {
     return errorResponse('Доступ запрещён', 403);
   }
 
@@ -32,87 +28,31 @@ export default async function handler(request: Request): Promise<Response> {
 
   try {
     const body = await request.json();
-    const { user_id, amount, reason, action } = body;
+    const userId = Number(body?.user_id);
+    const raw = Math.trunc(Number(body?.amount));
 
-    if (!user_id || !amount || amount <= 0) {
+    if (!Number.isSafeInteger(userId) || userId <= 0 || !Number.isFinite(raw) || raw <= 0) {
       return errorResponse('Invalid parameters', 400);
     }
 
-    const config = getSupabaseConfig('service');
-    
-    const { supabaseRPC } = await import('../_lib/supabase-client');
+    const amount = body?.action === 'subtract' ? -raw : raw;
+    const fn = body?.currency === 'tokens' ? 'admin_adjust_permanent_tokens' : 'admin_adjust_coins';
 
-    if (action === 'add') {
-      const result = await supabaseRPC(
-        'add_coins',
-        {
-          p_user_id: user_id,
-          p_amount: amount,
-          p_source: `admin_${Date.now()}`,
-          p_description: reason || 'Административное начисление',
-        },
-        config
-      );
+    const result = await supabaseRPC(
+      fn,
+      {
+        p_user_id: userId,
+        p_amount: amount,
+        p_admin_id: auth.userId,
+        p_reason: typeof body?.reason === 'string' ? body.reason.slice(0, 200) : null,
+      },
+      getSupabaseConfig('service')
+    );
 
-      await supabaseRPC(
-        'log_economy_audit',
-        {
-          p_user_id: user_id,
-          p_event_type: 'ADJUST',
-          p_source: `admin_manual_${Date.now()}`,
-          p_amount: amount,
-          p_balance_before: (result?.balance_before || 0) - amount,
-          p_balance_after: result?.new_balance || 0,
-          p_metadata: { reason: reason || 'Административное начисление' },
-          p_ip_address: request.headers.get('cf-connecting-ip') || null,
-          p_user_agent: request.headers.get('user-agent') || null,
-        },
-        config
-      );
-
-      return jsonResponse({
-        success: true,
-        action: 'add',
-        new_balance: result?.new_balance || 0,
-      });
+    if (!result?.success) {
+      return errorResponse(result?.error || 'Operation failed', 400);
     }
-
-    if (action === 'spend') {
-      const result = await supabaseRPC(
-        'spend_coins',
-        {
-          p_user_id: user_id,
-          p_amount: amount,
-          p_source: `admin_${Date.now()}`,
-          p_description: reason || 'Административное списание',
-        },
-        config
-      );
-
-      await supabaseRPC(
-        'log_economy_audit',
-        {
-          p_user_id: user_id,
-          p_event_type: 'ADJUST',
-          p_source: `admin_manual_${Date.now()}`,
-          p_amount: -amount,
-          p_balance_before: (result?.balance_before || 0) + amount,
-          p_balance_after: result?.new_balance || 0,
-          p_metadata: { reason: reason || 'Административное списание' },
-          p_ip_address: request.headers.get('cf-connecting-ip') || null,
-          p_user_agent: request.headers.get('user-agent') || null,
-        },
-        config
-      );
-
-      return jsonResponse({
-        success: true,
-        action: 'spend',
-        new_balance: result?.new_balance || 0,
-      });
-    }
-
-    return errorResponse('Invalid action', 400);
+    return jsonResponse({ success: true, ...result });
   } catch (err) {
     console.error('Admin coins error:', (err as Error).message);
     return errorResponse((err as Error).message, 500);
