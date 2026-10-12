@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/referral/ReferralStore.ts
 // Локальное хранилище рефералов
-// Версия: 2.0.0 - ИЗМЕНЕНО: экономика через EventBus
+// Версия: 2.1.0 - sync заменяет список приглашённых серверным (сервер — источник правды)
+//          2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -196,9 +197,7 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
   }
 
   sync(data: { referrals: IReferral[]; total_reward: number; referral_link: string }): void {
-    const existingIds = new Set(this._data.referrals.map(r => r.id));
-    const newReferrals = data.referrals.filter(r => !existingIds.has(r.id));
-    this._data.referrals = [...this._data.referrals, ...newReferrals];
+    this._data.referrals = Array.isArray(data.referrals) ? data.referrals : [];
     this._data.total_reward = data.total_reward || 0;
     this._data.referral_link = data.referral_link || null;
     this._data.last_sync = new Date().toISOString();
