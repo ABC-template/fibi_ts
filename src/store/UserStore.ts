@@ -1,7 +1,9 @@
 // ============================================
 // src/store/UserStore.ts
 // Пользователь, настройки, лимиты, устройство
-// Версия: 6.1.0 — хранится тариф (subscription_tier) и дата окончания с сервера
+// Версия: 6.2.0 — доступ к админке (isCreator) по флагу сервера adminPanel
+//                  (список ADMIN_TELEGRAM_IDS / CREATOR_ID), без ID в коде
+//          6.1.0 — хранится тариф (subscription_tier) и дата окончания с сервера
 //          6.0.0 — без usedToday/dailyLimit
 // ============================================
 
@@ -138,8 +140,9 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return this._data.devicePlatform || 'web';
   }
 
+  /** Доступ к админ-панели — решает сервер (auth/check → adminPanel) */
   get isCreator(): boolean {
-    return this.userId === 1541531808;
+    return this._data.adminPanel === true;
   }
 
   // ✅ НОВЫЕ ГЕТТЕРЫ
@@ -165,6 +168,12 @@ export class UserStore extends BaseStore<IUserStoreData> {
     this._data.subscription_tier = tier || 'trial';
     this._data.premium_until = premiumUntil || null;
     if (trialUsed !== undefined) this._data.trialUsed = !!trialUsed;
+    this.save();
+  }
+
+  /** Флаг доступа к админ-панели из ответа auth/check */
+  setAdminPanel(value: boolean): void {
+    this._data.adminPanel = value === true;
     this.save();
   }
 
@@ -241,4 +250,4 @@ export class UserStore extends BaseStore<IUserStoreData> {
 }
 
 export const userStore = new UserStore();
-console.log('✅ UserStore v6.0.0 загружен (без request-quota)');
+console.log('✅ UserStore v6.2.0 загружен');
