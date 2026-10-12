@@ -1,12 +1,12 @@
 // ============================================
 // src/services/api.ts
-// Базовый API-клиент с JWT и sync_token
-// Версия: 9.2.0 - JWT обновляется только на 401 и только один раз (403 больше не
+// Базовый API-клиент. Авторизация — только Telegram initData (заголовок X-Telegram-Init-Data)
+// Версия: 10.0.0 - JWT убран (сервер его больше не принимает); x-sync-token не отправляется
+//                  (сервер его не читал); 401 = initData устарел → просьба перезапустить приложение
+//          9.2.0 - JWT обновляется только на 401 и только один раз (403 больше не
 //                 зацикливает запросы); одновременные обновления склеиваются
 //          9.1.0 - добавлен updateStreak
 // ============================================
-
-import { BaseStore } from '@/store/BaseStore';
 
 export class ApiError extends Error {
   public status: number;
@@ -41,12 +41,10 @@ export class ApiClient {
   private timeout: number = 30000;
   private retries: number = 3;
   private retryDelay: number = 1000;
-  private jwtToken: string | null = null;
-  private syncToken: string | null = null;
+  private _sessionExpiredShown: boolean = false;
 
   constructor() {
     this.initFromTelegram();
-    this.loadTokens();
   }
 
   private initFromTelegram(): void {
@@ -58,102 +56,39 @@ export class ApiClient {
     }
   }
 
-  private loadTokens(): void {
-    const tempStore = new BaseStore('temp');
-
-    const telegramId = this.getTelegramId();
-    if (telegramId) {
-      this.jwtToken = tempStore.getJWT();
-    } else {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.includes('jwt_token_')) {
-          this.jwtToken = localStorage.getItem(key);
-          break;
-        }
-      }
-    }
-
-    this.syncToken = tempStore.getSyncToken();
-
-    if (this.syncToken) {
-      console.log(`🔑 Найден sync_token: ${this.syncToken.substring(0, 8)}...`);
-    } else {
-      console.log('ℹ️ sync_token не найден');
-    }
-  }
-
-  private getTelegramId(): number | null {
-    try {
-      const initData = (window as any).Telegram?.WebApp?.initData;
-      if (initData) {
-        const params = new URLSearchParams(initData);
-        const userStr = params.get('user');
-        if (userStr) {
-          try {
-            const user = JSON.parse(decodeURIComponent(userStr));
-            if (user?.id) return user.id;
-          } catch (e) {}
-        }
-      }
-
-      const user = (window as any).Telegram?.WebApp?.initDataUnsafe?.user;
-      return user?.id || null;
-    } catch (e) {
-      return null;
-    }
-  }
-
   // ==========================================
   // БАЗОВЫЙ ЗАПРОС
   // ==========================================
 
-  private _refreshPromise: Promise<boolean> | null = null;
-
-  /** Обновить JWT через /auth/check. Одновременные вызовы склеиваются в один. */
-  private _refreshJwt(): Promise<boolean> {
-    if (this._refreshPromise) return this._refreshPromise;
-    this._refreshPromise = (async () => {
-      const authService = (window as any).authService;
-      if (!authService) return false;
-      try {
-        const result = await authService.checkSubscription();
-        if (!result?.jwtToken) return false;
-        const tempStore = new BaseStore('temp');
-        tempStore.saveJWT(result.jwtToken);
-        this.jwtToken = result.jwtToken;
-        if (result.syncToken) {
-          tempStore.saveSyncToken(result.syncToken);
-          this.syncToken = result.syncToken;
-        }
-        return true;
-      } catch (err) {
-        console.error('❌ Не удалось обновить JWT:', err);
-        return false;
-      }
-    })().finally(() => {
-      setTimeout(() => { this._refreshPromise = null; }, 0);
-    });
-    return this._refreshPromise;
-  }
-
-  async request<T = any>(endpoint: string, options: IApiRequestOptions = {}): Promise<T> {
-    this.loadTokens();
-
-    const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint}`;
-
-    const headers: Record<string, string> = {
+  /** Заголовки авторизации для запросов к /api */
+  private authHeaders(): Record<string, string> {
+    return {
       'Content-Type': 'application/json',
       'X-Telegram-Init-Data': this.initData || ''
     };
+  }
 
-    if (this.jwtToken) {
-      headers['Authorization'] = `Bearer ${this.jwtToken}`;
-    }
+  /**
+   * 401 — подпись Telegram устарела (initData живёт 24 часа) или не передана.
+   * Обновить её может только перезапуск Mini App — сообщаем один раз.
+   */
+  private notifySessionExpired(): void {
+    if (this._sessionExpiredShown) return;
+    this._sessionExpiredShown = true;
+    const msg = 'Сессия Telegram устарела. Закройте и снова откройте приложение.';
+    const tg = (window as any).Telegram?.WebApp;
+    try {
+      if (tg?.showAlert) {
+        tg.showAlert(msg);
+      } else if ((window as any).uiRenderer?.showToast) {
+        (window as any).uiRenderer.showToast(`⚠️ ${msg}`, 'warning', 5000);
+      }
+    } catch (e) {}
+  }
 
-    if (this.syncToken) {
-      headers['x-sync-token'] = this.syncToken;
-    }
+  async request<T = any>(endpoint: string, options: IApiRequestOptions = {}): Promise<T> {
+    const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint}`;
+    const headers = this.authHeaders();
 
     const timeout = options.timeout || this.timeout;
     const retries = options.retries || this.retries;
@@ -188,21 +123,9 @@ export class ApiClient {
           return { success: true, cached: true, status: 304 } as T;
         }
 
-        // 401 — токен недействителен: обновляем JWT один раз и повторяем запрос.
-        // 403 — это «запрещено» (нет доступа, блокировка, «оплата скоро»), а не
-        // протухший токен: обновление не поможет. Раньше 403 тоже уходил в
-        // обновление и повтор без ограничения — бесконечный цикл запросов.
-        if (
-          response.status === 401 &&
-          !(options as any)._authRetried &&
-          !endpoint.startsWith('/auth/check')
-        ) {
-          console.warn('⚠️ Ошибка аутентификации 401, обновляем JWT (один раз)...');
-          const refreshed = await this._refreshJwt();
-          if (refreshed) {
-            return this.request<T>(endpoint, { ...options, _authRetried: true } as any);
-          }
-          throw new ApiError('Authentication failed', 401);
+        if (response.status === 401) {
+          this.notifySessionExpired();
+          throw new ApiError('Сессия Telegram устарела', 401);
         }
 
         const contentType = response.headers.get('content-type') || '';
@@ -381,27 +304,18 @@ export class ApiClient {
     body: any,
     onChunk: (chunk: string, accumulated: string) => void
   ): Promise<string> {
-    this.loadTokens();
     const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Telegram-Init-Data': this.initData || ''
-    };
-
-    if (this.jwtToken) {
-      headers['Authorization'] = `Bearer ${this.jwtToken}`;
-    }
-
-    if (this.syncToken) {
-      headers['x-sync-token'] = this.syncToken;
-    }
+    const headers = this.authHeaders();
 
     const response = await fetch(url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify(body)
     });
+
+    if (response.status === 401) {
+      this.notifySessionExpired();
+    }
 
     if (!response.ok) {
       const text = await response.text();
@@ -453,4 +367,4 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
-console.log('✅ ApiClient v9.1.0 загружен');
+console.log('✅ ApiClient v10.0.0 загружен');
