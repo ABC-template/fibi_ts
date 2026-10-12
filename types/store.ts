@@ -1,7 +1,8 @@
 // ============================================
 // types/store.ts
 // Типы для хранилищ (Store)
-// Версия: 3.0.0 - добавлены поля UserStore
+// Версия: 3.1.0 - adminPanel в UserStore
+//          3.0.0 - добавлены поля UserStore
 // ============================================
 
 import { IChat } from './chat';
@@ -40,6 +41,8 @@ export interface IUserStoreData {
   trialUsed?: boolean;
   /** Тариф с сервера (auth/check): от него зависит коэффициент цены агентов */
   subscription_tier?: string | null;
+  /** Доступ к админ-панели (auth/check → adminPanel) */
+  adminPanel?: boolean;
 }
 
 /** Данные OrganizerStore */
