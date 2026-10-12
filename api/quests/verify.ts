@@ -1,7 +1,8 @@
 // ============================================
 // api/quests/verify.ts
 // Верифицировать задание (админ)
-// Версия: 1.0.0
+// Версия: 1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+//          1.0.0
 // ============================================
 
 import {
@@ -12,11 +13,10 @@ import {
   errorResponse,
   getSupabaseConfig,
   supabaseRPC,
+  isAdminTelegramId,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
-
-const CREATOR_ID = 1541531808;
 
 interface IVerifyRequest {
   userQuestId: string;
@@ -38,7 +38,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // Только создатель
-    if (auth.userId !== CREATOR_ID) {
+    if (!isAdminTelegramId(auth.userId)) {
       return errorResponse('Доступ запрещён', 403);
     }
 
