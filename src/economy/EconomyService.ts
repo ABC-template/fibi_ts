@@ -1,7 +1,8 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 5.0.0 — spent_today / daily_limit / bypass - добавлены все методы для совместимости
+// Версия: 5.1.0 — монеты из игр через /economy/game (клиент больше не начисляет монеты сам)
+//          5.0.0 — spent_today / daily_limit / bypass - добавлены все методы для совместимости
 // ============================================
 
 import { apiClient } from '@/services/api';
@@ -114,45 +115,25 @@ export class EconomyService {
   }
 
   /**
-   * Начислить монеты (для совместимости с существующим кодом)
+   * Сообщить серверу о событии в игре. Сколько монет начислить (и начислять ли —
+   * суточный потолок, одноразовые достижения), решает сервер.
    */
-  async addCoins(
-    userId: number,
-    amount: number,
-    source: string,
-    description: string,
+  async awardGameCoins(
+    event: string,
     metadata: Record<string, any> = {}
-  ): Promise<ITransactionResult> {
+  ): Promise<{ success: boolean; awarded: number; newBalance?: number; reason?: string; error?: string }> {
     try {
-      const result = await apiClient.post('/economy/earn', {
-        userId,
-        amount,
-        source,
-        description,
-        metadata,
-      });
-
-      if (result.success) {
-        return {
-          success: true,
-          newBalance: result.newBalance || 0,
-          transactionId: result.transactionId || null,
-          delta: result.delta || amount,
-        };
-      }
-
+      const result = await apiClient.post('/economy/game', { event, metadata });
       return {
-        success: false,
-        newBalance: 0,
-        error: result.error || 'Failed to add coins',
+        success: result?.success === true,
+        awarded: result?.awarded || 0,
+        newBalance: result?.newBalance,
+        reason: result?.reason,
+        error: result?.error,
       };
     } catch (err) {
-      console.error('[EconomyService.addCoins] Error:', err);
-      return {
-        success: false,
-        newBalance: 0,
-        error: (err as Error).message,
-      };
+      console.error('[EconomyService.awardGameCoins] Error:', err);
+      return { success: false, awarded: 0, error: (err as Error).message };
     }
   }
 
