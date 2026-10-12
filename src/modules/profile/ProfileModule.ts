@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/profile/ProfileModule.ts
 // Полноценная страница профиля
-// Версия: 4.2.0 - используем questsStore.getBalance()
+// Версия: 4.3.0 - очистка кэша без clearJWT (JWT больше нет)
+//          4.2.0 - используем questsStore.getBalance()
 // ============================================
 
 import './profile.css';
@@ -592,22 +593,18 @@ export class ProfileModule {
     if ((window as any).questsStore) {
       (window as any).questsStore._data = {};
       (window as any).questsStore.save();
-      (window as any).questsStore.clearJWT();
     }
     if ((window as any).chatStore) {
       (window as any).chatStore._data = {};
       (window as any).chatStore.save();
-      (window as any).chatStore.clearJWT();
     }
     if ((window as any).userStore) {
       (window as any).userStore._data = {};
       (window as any).userStore.save();
-      (window as any).userStore.clearJWT();
     }
     if ((window as any).organizerStore) {
       (window as any).organizerStore._data = {};
       (window as any).organizerStore.save();
-      (window as any).organizerStore.clearJWT();
     }
 
     localStorage.removeItem('sync_token');
