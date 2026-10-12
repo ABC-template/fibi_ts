@@ -1,7 +1,11 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.2.0 — списание текста в долларах: usage.cost OpenRouter × ENERGY_PER_USD
+// Версия: 3.3.0 — блокировка пользователя (user_blocks) проверяется до запроса;
+//                  генеративные агенты здесь не обслуживаются; оплата после ответа
+//                  «до нуля» (p_allow_partial, недоплата в system_logs); обрыв клиентом
+//                  оплачивается по фактически отданному тексту
+//          3.2.0 — списание текста в долларах: usage.cost OpenRouter × ENERGY_PER_USD
 //                  × коэффициент агента (единая шкала с фото/видео); предварительная
 //                  проверка и max_tokens считаются по цене модели за токен
 //          3.1.0 — замок чата: пока в чате идёт запрос, второй отклоняется (409);
@@ -131,7 +135,8 @@ async function getAgentBySlug(
 async function spendTokens(
   userId: number,
   amount: number,
-  config: any
+  config: any,
+  description: string = 'Запрос к агенту'
 ): Promise<{
   success: boolean;
   bonusUsed: number;
@@ -149,7 +154,9 @@ async function spendTokens(
         p_user_id: userId,
         p_amount: amount,
         p_source: 'chat',
-        p_description: 'Запрос к агенту',
+        p_description: description,
+        // Ответ уже отдан: списываем сколько есть, недоплату пишет БД
+        p_allow_partial: true,
       },
       config
     );
@@ -253,6 +260,13 @@ export default async function handler(request: Request): Promise<Response> {
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
 
+    const blocked = await supabaseRPC('is_user_blocked', { p_user_id: userId }, config).catch(() => false);
+    if (blocked === true) {
+      return errorResponse('⛔ Доступ к приложению ограничен администратором.', 403, {
+        'X-Access-Reason': 'blocked',
+      });
+    }
+
     let body: IStreamRequestBody;
     try {
       body = await request.json();
@@ -329,6 +343,12 @@ export default async function handler(request: Request): Promise<Response> {
     const userProTier = (userRes && Array.isArray(userRes) && userRes.length > 0)
       ? userRes[0].subscription_tier || null
       : null;
+
+    // Генеративные агенты (фото/видео) работают через /api/generations/create
+    const agentModality = String((agent as any).modality || 'text');
+    if (agentModality !== 'text') {
+      return errorResponse('Этот агент создаёт медиа: используйте форму генерации в чате.', 400);
+    }
 
     const access = checkAgentAccess(agent, userRole, userProTier);
 
@@ -619,7 +639,7 @@ export default async function handler(request: Request): Promise<Response> {
               }
 
               if (clientCancelled) {
-                console.warn(`⚠️ [stream] Клиент оборвал соединение. Токены не списаны.`);
+                console.warn(`⚠️ [stream] Клиент оборвал соединение (списание — в cancel()).`);
               } else if (streamCompleted && accumulatedText.trim().length > 0) {
                 console.log(`📊 [stream] Стрим завершен успешно (${chunksReceived} чанков, ${accumulatedText.length} символов)`);
                 console.log(`📊 [stream] OpenRouter usage:`, finalUsage);
@@ -702,12 +722,28 @@ export default async function handler(request: Request): Promise<Response> {
           },
           async cancel() {
             // Клиент ушёл (закрыл приложение / прервал запрос): не ждём конца
-            // ответа модели и не списываем энергию за обрыв
+            // ответа модели. Отданная часть ответа уже оплачена нами в OpenRouter,
+            // поэтому списываем за неё (иначе обрыв в конце = бесплатный ответ)
             clientCancelled = true;
             try {
               await reader.cancel();
             } catch {
               // уже закрыт
+            }
+            try {
+              if (accumulatedText.trim().length > 0) {
+                const outTokens = estimateTokens([{ role: 'assistant', content: accumulatedText }]);
+                const usd = modelPrices
+                  ? promptUsd + outTokens * modelPrices.completion
+                  : estimatedUsd;
+                const charge = textEnergyForUsd(usd, safeMarkup, minCharge);
+                if (Number.isFinite(charge) && charge > 0) {
+                  const spend = await spendTokens(userId, charge, config, 'Запрос к агенту (прерван)');
+                  console.log(`💰 [stream] Обрыв клиентом: списано по отданному тексту ${charge} (${spend.success ? 'ok' : spend.error})`);
+                }
+              }
+            } catch (err) {
+              console.error('❌ [stream] Ошибка списания при обрыве:', err);
             }
             await chatLock?.release();
           }
