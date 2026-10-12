@@ -1,445 +1,195 @@
 // ============================================
 // src/modules/ad/AdModule.ts
-// Модуль рекламы (минимальная связанность)
-// Версия: 1.0.0
+// Реклама Adsgram (rewarded): показ и награда монетами.
+// Версия: 2.0.0
+//   - настоящий SDK Adsgram (sad.min.js, Adsgram.init({ blockId }).show())
+//     вместо несуществующих showRewardedAd/showInterstitialAd
+//   - blockId и состояние (сумма, остаток на сегодня, ожидание) — с сервера
+//     (GET /api/ads/reward); SDK загружается при первом показе, не при старте
+//   - монеты начисляет сервер: после досмотра POST /api/ads/reward (режим client)
+//     или Reward URL Adsgram (режим server — тогда только обновляем баланс)
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
-import { userStore } from '@/store/UserStore';
-import { uiRenderer } from '@/modules/ui/renderer';
+import { apiClient } from '@/services/api';
 
-export interface IAdOptions {
-  /** Тип рекламы: rewarded (с наградой), interstitial (межстраничная), banner */
-  type: 'rewarded' | 'interstitial' | 'banner';
-  /** Количество монет за просмотр (для rewarded) */
-  rewardCoins?: number;
-  /** Источник запроса (для логирования) */
-  source?: string;
-  /** Дополнительные метаданные */
-  metadata?: Record<string, any>;
-  /** Callback при успешном просмотре */
-  onReward?: () => void;
-  /** Callback при ошибке */
-  onError?: (error: string) => void;
-  /** Callback при закрытии */
-  onClose?: () => void;
+const SDK_URL = 'https://sad.adsgram.ai/js/sad.min.js';
+
+export interface IAdStatus {
+  enabled: boolean;
+  mode: 'client' | 'server';
+  blockId: string | null;
+  amount: number;
+  dailyLimit: number;
+  remainingToday: number;
+  waitSeconds: number;
 }
 
-export interface IAdResult {
-  success: boolean;
-  rewarded: boolean;
-  coinsEarned?: number;
+export interface IAdRewardResult {
+  shown: boolean;
+  awarded: number;
+  reason?: string | null;
   error?: string;
 }
 
-// ✅ ПРИМЕЧАНИЕ: Этот класс НЕ ИМПОРТИРУЕТ внешние SDK напрямую.
-// Вместо этого он загружает их динамически и вызывает через window.
-// Это позволяет легко удалить модуль, не затрагивая другие части приложения.
 export class AdModule {
-  private isInitialized: boolean = false;
-  private isAdLoading: boolean = false;
-  private adsgram: any = null;
-  private userId: number | null = null;
-
-  // Настройки по умолчанию
-  private defaultRewardCoins: number = 5;
-  private config: {
-    blockId?: string;
-    debug: boolean;
-  } = {
-    debug: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1',
-  };
+  private sdkPromise: Promise<void> | null = null;
+  private controller: any = null;
+  private controllerBlockId: string | null = null;
+  private busy = false;
+  private status: IAdStatus | null = null;
 
   constructor() {
-    this.userId = userStore.userId;
-    this._subscribeToEvents();
+    eventBus.on('ad:show:rewarded', () => {
+      void this.showRewarded();
+    });
   }
 
-  // ==========================================
-  // ПОДПИСКА НА СОБЫТИЯ
-  // ==========================================
-
-  private _subscribeToEvents(): void {
-    // ✅ Подписываемся на запросы показа рекламы через EventBus
-    eventBus.on('ad:show', this.show.bind(this));
-    eventBus.on('ad:show:rewarded', (options) => {
-      this.show({ ...options, type: 'rewarded' });
-    });
-    eventBus.on('ad:show:interstitial', (options) => {
-      this.show({ ...options, type: 'interstitial' });
-    });
-
-    // Обновляем userId при смене пользователя
-    eventBus.on('user:changed', (data) => {
-      this.userId = data.userId;
-    });
-
-    console.log('📡 AdModule подписан на события');
-  }
-
-  // ==========================================
-  // ИНИЦИАЛИЗАЦИЯ
-  // ==========================================
-
+  /** Совместимость со стартом приложения: ничего не грузим заранее */
   async init(): Promise<void> {
-    if (this.isInitialized) {
-      console.log('ℹ️ AdModule уже инициализирован');
-      return;
-    }
+    eventBus.emit('ad:initialized', { success: true });
+  }
 
+  /** Состояние кнопки «Смотреть рекламу» */
+  async getStatus(force = false): Promise<IAdStatus | null> {
+    if (this.status && !force) return this.status;
     try {
-      // Загружаем конфигурацию (можно получать с сервера)
-      await this._loadConfig();
-
-      // Инициализируем SDK (динамическая загрузка)
-      await this._initSDK();
-
-      this.isInitialized = true;
-      console.log('✅ AdModule инициализирован');
-
-      // Отправляем событие об инициализации
-      eventBus.emit('ad:initialized', { success: true });
-
+      const res = await apiClient.get('/ads/reward');
+      if (!res?.success) return null;
+      this.status = {
+        enabled: res.enabled === true,
+        mode: res.mode === 'server' ? 'server' : 'client',
+        blockId: res.blockId || null,
+        amount: Number(res.amount) || 0,
+        dailyLimit: Number(res.dailyLimit) || 0,
+        remainingToday: Number(res.remainingToday) || 0,
+        waitSeconds: Number(res.waitSeconds) || 0,
+      };
+      return this.status;
     } catch (err) {
-      console.error('❌ Ошибка инициализации AdModule:', err);
-      eventBus.emit('ad:initialized', { success: false, error: (err as Error).message });
+      console.warn('⚠️ [Ad] Не удалось получить состояние рекламы:', err);
+      return null;
     }
   }
 
-  // ==========================================
-  // ЗАГРУЗКА КОНФИГУРАЦИИ
-  // ==========================================
-
-  private async _loadConfig(): Promise<void> {
-    try {
-      // Можно получать конфиг с сервера
-      // const response = await fetch('/api/ad/config');
-      // const config = await response.json();
-      // this.config = { ...this.config, ...config };
-
-      // Или использовать переменные окружения
-      // this.config.blockId = process.env.ADSGRAM_BLOCK_ID;
-
-      if (this.config.debug) {
-        console.log('🔧 AdModule config:', this.config);
-      }
-    } catch (err) {
-      console.warn('⚠️ Не удалось загрузить конфиг рекламы, используем defaults');
-    }
+  getCachedStatus(): IAdStatus | null {
+    return this.status;
   }
 
-  // ==========================================
-  // ЗАГРУЗКА SDK (динамическая)
-  // ==========================================
+  private _loadSdk(): Promise<void> {
+    if ((window as any).Adsgram) return Promise.resolve();
+    if (this.sdkPromise) return this.sdkPromise;
 
-  private async _initSDK(): Promise<void> {
-    // ✅ Проверяем, не загружен ли SDK уже
-    if (typeof (window as any).Adsgram !== 'undefined') {
-      this.adsgram = (window as any).Adsgram;
-      console.log('✅ Adsgram SDK уже загружен');
-      return;
-    }
-
-    // ✅ Загружаем SDK динамически
-    return new Promise((resolve, reject) => {
+    this.sdkPromise = new Promise<void>((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://cdn.adsgram.ai/js/adsgram.js';
+      script.src = SDK_URL;
       script.async = true;
-      script.onload = () => {
-        // После загрузки SDK доступен через window.Adsgram
-        if (typeof (window as any).Adsgram !== 'undefined') {
-          this.adsgram = (window as any).Adsgram;
-          console.log('✅ Adsgram SDK загружен динамически');
-          resolve();
-        } else {
-          reject(new Error('Adsgram SDK не найден после загрузки'));
-        }
-      };
-      script.onerror = () => {
-        reject(new Error('Не удалось загрузить Adsgram SDK'));
-      };
+      script.onload = () => ((window as any).Adsgram ? resolve() : reject(new Error('Adsgram SDK не найден')));
+      script.onerror = () => reject(new Error('Не удалось загрузить рекламу'));
       document.head.appendChild(script);
+    }).catch((err) => {
+      this.sdkPromise = null;
+      throw err;
     });
+    return this.sdkPromise;
   }
 
-  // ==========================================
-  // ПОКАЗ РЕКЛАМЫ (ОСНОВНОЙ МЕТОД)
-  // ==========================================
+  private _getController(blockId: string): any {
+    if (this.controller && this.controllerBlockId === blockId) return this.controller;
+    this.controller = (window as any).Adsgram.init({ blockId });
+    this.controllerBlockId = blockId;
+    return this.controller;
+  }
 
-  async show(options: IAdOptions): Promise<IAdResult> {
-    // Проверяем инициализацию
-    if (!this.isInitialized) {
-      console.warn('⚠️ AdModule не инициализирован, пробуем инициализировать...');
-      await this.init();
-      if (!this.isInitialized) {
-        return { success: false, rewarded: false, error: 'AdModule not initialized' };
-      }
-    }
-
-    // Проверяем, что SDK загружен
-    if (!this.adsgram) {
-      return { success: false, rewarded: false, error: 'Ad SDK not loaded' };
-    }
-
-    // Проверяем, не идёт ли уже показ
-    if (this.isAdLoading) {
-      return { success: false, rewarded: false, error: 'Ad is already loading' };
-    }
-
-    // Проверяем настройки
-    const type = options.type || 'rewarded';
-    const rewardCoins = options.rewardCoins || this.defaultRewardCoins;
-    const source = options.source || 'ad:unknown';
-
-    this.isAdLoading = true;
+  /**
+   * Показать rewarded-рекламу. Награду начисляет сервер; здесь — показ,
+   * запрос награды и обновление баланса.
+   */
+  async showRewarded(): Promise<IAdRewardResult> {
+    if (this.busy) return { shown: false, awarded: 0, error: 'Реклама уже показывается' };
+    this.busy = true;
+    const toast = (window as any).uiRenderer?.showToast?.bind((window as any).uiRenderer);
 
     try {
-      // ✅ Показываем рекламу в зависимости от типа
-      let result: IAdResult;
-
-      switch (type) {
-        case 'rewarded':
-          result = await this._showRewardedAd(options, rewardCoins, source);
-          break;
-        case 'interstitial':
-          result = await this._showInterstitialAd(options);
-          break;
-        case 'banner':
-          result = await this._showBannerAd(options);
-          break;
-        default:
-          result = { success: false, rewarded: false, error: `Unknown ad type: ${type}` };
+      const status = await this.getStatus(true);
+      if (!status?.enabled || !status.blockId) {
+        return { shown: false, awarded: 0, error: 'Реклама сейчас недоступна' };
+      }
+      if (status.remainingToday <= 0) {
+        toast?.('🎬 Лимит просмотров на сегодня исчерпан', 'info', 2200);
+        return { shown: false, awarded: 0, reason: 'daily_limit' };
+      }
+      if (status.waitSeconds > 0) {
+        toast?.(`⏳ Следующая реклама через ${status.waitSeconds} с`, 'info', 2000);
+        return { shown: false, awarded: 0, reason: 'too_soon' };
       }
 
-      // ✅ Логируем результат
-      if (this.config.debug) {
-        console.log('📊 Ad result:', result);
+      await this._loadSdk();
+      const controller = this._getController(status.blockId);
+
+      let done = false;
+      try {
+        const result = await controller.show();
+        done = result?.done === true;
+      } catch (result: any) {
+        // Пропуск, ошибка или нет рекламы: show() отклоняется
+        const description = result?.description || '';
+        console.log('ℹ️ [Ad] Реклама не досмотрена:', description || result);
+        return { shown: true, awarded: 0, reason: 'not_completed' };
       }
 
-      return result;
+      if (!done) return { shown: true, awarded: 0, reason: 'not_completed' };
 
+      if (status.mode === 'server') {
+        // Награда придёт через Reward URL — обновим баланс чуть позже
+        setTimeout(() => void this._reloadBalance(), 2500);
+        toast?.(`🎉 Спасибо! +${status.amount} 🪙 скоро поступят`, 'success', 2200);
+        return { shown: true, awarded: 0, reason: 'server_mode' };
+      }
+
+      const res = await apiClient.post('/ads/reward', {});
+      const awarded = Number(res?.awarded) || 0;
+
+      if (awarded > 0) {
+        if (typeof res.newBalance === 'number') {
+          const store = (window as any).economyStore;
+          store?.updateCoinBalance?.(res.newBalance);
+          eventBus.emit('economy:balance:updated', {
+            userId: 0,
+            newBalance: res.newBalance,
+            delta: awarded,
+            source: 'ad:rewarded',
+          });
+        }
+        toast?.(`🎉 +${awarded} 🪙 за просмотр`, 'success', 2000);
+      } else if (res?.reason === 'daily_limit') {
+        toast?.('🎬 Лимит просмотров на сегодня исчерпан', 'info', 2200);
+      } else if (res?.reason === 'too_soon') {
+        toast?.('⏳ Слишком часто — попробуйте чуть позже', 'info', 2000);
+      }
+
+      return { shown: true, awarded, reason: res?.reason || null };
     } catch (err) {
-      const error = (err as Error).message;
-      console.error('❌ Ошибка показа рекламы:', error);
-      return { success: false, rewarded: false, error };
+      const message = (err as Error).message || 'Ошибка рекламы';
+      console.error('❌ [Ad]', message);
+      toast?.(`⚠️ ${message}`, 'error', 2000);
+      return { shown: false, awarded: 0, error: message };
     } finally {
-      this.isAdLoading = false;
+      this.busy = false;
+      void this.getStatus(true).then(() => eventBus.emit('ad:status_updated', this.status));
     }
   }
 
-  // ==========================================
-  // REWARDED AD (с наградой)
-  // ==========================================
-
-  private _showRewardedAd(
-    options: IAdOptions,
-    rewardCoins: number,
-    source: string
-  ): Promise<IAdResult> {
-    return new Promise((resolve) => {
-      // ✅ Проверяем, что SDK поддерживает rewarded ads
-      if (!this.adsgram || !this.adsgram.showRewardedAd) {
-        resolve({ success: false, rewarded: false, error: 'Rewarded ads not supported' });
-        return;
-      }
-
-      // ✅ Показываем рекламу через SDK
-      // Это пример для Adsgram — подставь свой API
-      this.adsgram.showRewardedAd({
-        blockId: this.config.blockId || 'default',
-        onReward: () => {
-          // ✅ ПОЛЬЗОВАТЕЛЬ ПОСМОТРЕЛ РЕКЛАМУ → НАЧИСЛЯЕМ НАГРАДУ
-          console.log(`🎉 Пользователь получил награду: ${rewardCoins} монет (${source})`);
-
-          // Начисляем монеты через экономику
-          if (this.userId) {
-            eventBus.emit('economy:earn', {
-              userId: this.userId,
-              source: source,
-              amount: rewardCoins,
-              metadata: {
-                ...options.metadata,
-                adType: 'rewarded',
-              },
-            });
-          }
-
-          // Вызываем callback
-          if (options.onReward) {
-            options.onReward();
-          }
-
-          resolve({
-            success: true,
-            rewarded: true,
-            coinsEarned: rewardCoins,
-          });
-        },
-        onError: (error: any) => {
-          console.error('❌ Ошибка рекламы:', error);
-
-          if (options.onError) {
-            options.onError(typeof error === 'string' ? error : error?.message || 'Unknown error');
-          }
-
-          resolve({
-            success: false,
-            rewarded: false,
-            error: typeof error === 'string' ? error : error?.message || 'Ad error',
-          });
-        },
-        onClose: () => {
-          console.log('👋 Реклама закрыта');
-
-          if (options.onClose) {
-            options.onClose();
-          }
-        },
-      });
-    });
-  }
-
-  // ==========================================
-  // INTERSTITIAL AD (межстраничная)
-  // ==========================================
-
-  private _showInterstitialAd(options: IAdOptions): Promise<IAdResult> {
-    return new Promise((resolve) => {
-      // ✅ Аналогично, но без награды
-      if (!this.adsgram || !this.adsgram.showInterstitialAd) {
-        resolve({ success: false, rewarded: false, error: 'Interstitial ads not supported' });
-        return;
-      }
-
-      this.adsgram.showInterstitialAd({
-        blockId: this.config.blockId || 'default',
-        onAdShown: () => {
-          console.log('📺 Interstitial ad shown');
-
-          // Межстраничная реклама — без награды
-          // Можно показать что-то в UI
-          resolve({
-            success: true,
-            rewarded: false,
-          });
-        },
-        onError: (error: any) => {
-          console.error('❌ Ошибка interstitial:', error);
-
-          if (options.onError) {
-            options.onError(typeof error === 'string' ? error : error?.message || 'Unknown error');
-          }
-
-          resolve({
-            success: false,
-            rewarded: false,
-            error: typeof error === 'string' ? error : error?.message || 'Ad error',
-          });
-        },
-        onClose: () => {
-          console.log('👋 Interstitial ad closed');
-
-          if (options.onClose) {
-            options.onClose();
-          }
-        },
-      });
-    });
-  }
-
-  // ==========================================
-  // BANNER AD (не требует действий)
-  // ==========================================
-
-  private _showBannerAd(options: IAdOptions): Promise<IAdResult> {
-    return new Promise((resolve) => {
-      // ✅ Баннер — просто показываем
-      if (!this.adsgram || !this.adsgram.showBannerAd) {
-        resolve({ success: false, rewarded: false, error: 'Banner ads not supported' });
-        return;
-      }
-
-      this.adsgram.showBannerAd({
-        blockId: this.config.blockId || 'default',
-        onAdLoaded: () => {
-          console.log('📢 Banner ad loaded');
-          resolve({
-            success: true,
-            rewarded: false,
-          });
-        },
-        onError: (error: any) => {
-          console.error('❌ Ошибка banner:', error);
-
-          if (options.onError) {
-            options.onError(typeof error === 'string' ? error : error?.message || 'Unknown error');
-          }
-
-          resolve({
-            success: false,
-            rewarded: false,
-            error: typeof error === 'string' ? error : error?.message || 'Ad error',
-          });
-        },
-      });
-    });
-  }
-
-  // ==========================================
-  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-  // ==========================================
-
-  /**
-   * Проверить, доступна ли реклама
-   */
-  isAdAvailable(): boolean {
-    if (!this.isInitialized || !this.adsgram) {
-      return false;
+  private async _reloadBalance(): Promise<void> {
+    try {
+      const store = (window as any).economyStore;
+      await store?.loadBalances?.();
+      eventBus.emit('economy:balance:loaded', { balance: store?.getCoinBalance?.() ?? 0 });
+    } catch {
+      // не критично
     }
-    // ✅ Можно проверить через SDK
-    // return this.adsgram.isAdAvailable();
-    return true;
-  }
-
-  /**
-   * Получить настройки
-   */
-  getConfig(): Record<string, any> {
-    return { ...this.config };
-  }
-
-  /**
-   * Обновить настройки
-   */
-  updateConfig(config: Partial<typeof this.config>): void {
-    this.config = { ...this.config, ...config };
-    console.log('🔧 AdModule config обновлён');
-  }
-
-  /**
-   * Дестрой
-   */
-  destroy(): void {
-    this.isInitialized = false;
-    this.adsgram = null;
-    console.log('🗑️ AdModule уничтожен');
-  }
-
-  /**
-   * Проверка, инициализирован ли модуль
-   */
-  isReady(): boolean {
-    return this.isInitialized && !!this.adsgram;
   }
 }
 
-// ==========================================
-// ЭКЗЕМПЛЯР
-// ==========================================
-
 export const adModule = new AdModule();
-
-// Привязываем к window для глобального доступа
 (window as any).adModule = adModule;
-
-console.log('✅ AdModule v1.0.0 загружен');
