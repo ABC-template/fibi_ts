@@ -5,7 +5,7 @@
 //                  не больше окна контекста модели); без цены модели вход ограничен
 //                  16 000 токенов (раньше можно было отправить сколько угодно за min_charge);
 //                  роль сообщений только по типу (prompts.ts v5); проверка типов тела;
-//                  создатель — из CREATOR_ID
+//                  создатель — из CREATOR_ID; убрана заглушка checkOpenRouterLimit
 //          3.4.0 — ответ открывается сразу, модель вызывается внутри потока с «пульсом»;
 //                  на каждом ключе ждём первое слово ≤45 с, потом следующий ключ (401/402/429/5xx/
 //                  таймаут/ошибка внутри потока); понятный текст ошибки вместо «ключи перегружены»
@@ -42,11 +42,7 @@ import type { IHistoryMessage } from '../chat/prompts';
 import {
   checkTokenAvailability,
 } from '../_lib/tokens';
-import {
-  checkOpenRouterLimit,
-  logOpenRouterUsage,
-  estimateTokens,
-} from '../_lib/tokens-usage';
+import { logOpenRouterUsage, estimateTokens } from '../_lib/tokens-usage';
 import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
 import { checkAgentAccess } from '../_lib/agent-access';
 import { getMarkupForTier } from '../_lib/markup-helper';
@@ -611,13 +607,6 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('История чата не помещается в контекст модели. Уменьшите контекст в настройках чата или начните новый чат.', 413);
     }
 
-    const openRouterCheck = await checkOpenRouterLimit(userId, estimatedTokens, config);
-    if (!openRouterCheck.allowed) {
-      return errorResponse(
-        openRouterCheck.error || 'Превышен лимит токенов OpenRouter',
-        429
-      );
-    }
 
     // Оценка списания заранее: входные токены + небольшой ответ по цене модели.
     // Если цену узнать не удалось — проверяем только min_charge.
