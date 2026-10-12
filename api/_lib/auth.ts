@@ -1,7 +1,10 @@
 // ============================================
 // api/_lib/auth.ts
 // Описание: Единая аутентификация для всех Edge-функций
-// Версия: 5.0.0 - Telegram ID для JWT берётся из public.users по id пользователя (sub токена),
+// Версия: 6.0.0 - только Telegram initData: JWT Supabase Auth больше не принимается
+//                 (вход по паролю убран, Realtime получает отдельный токен — api/_lib/jwt.ts);
+//                 authUserId убран из результата (никем не использовался, лишний запрос к БД)
+//          5.0.0 - Telegram ID для JWT берётся из public.users по id пользователя (sub токена),
 //                 а не из user_metadata (его пользователь может изменить сам);
 //                 initData старше 24 часов не принимается;
 //                 ID создателя и админов — из переменных CREATOR_ID / ADMIN_TELEGRAM_IDS
@@ -23,8 +26,6 @@ declare const process: {
 /** Сколько живёт initData от Telegram (секунды) */
 const INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export interface ITelegramUser {
   id: number;
   first_name?: string;
@@ -36,9 +37,8 @@ export interface ITelegramUser {
 
 export interface IAuthResult {
   user: ITelegramUser | null;
+  /** Telegram ID пользователя */
   userId: number | null;
-  authUserId: string | null;
-  jwtToken?: string;
   error: string | null;
   status?: number;
 }
@@ -113,131 +113,34 @@ async function validateTelegramInitData(
 }
 
 /**
- * Валидация JWT токена (с проверкой через Supabase)
- */
-async function validateJWT(token: string): Promise<any> {
-  if (!token) return null;
-
-  try {
-    const config = getSupabaseConfig('anon');
-    const response = await fetch(`${config.url}/auth/v1/user`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'apikey': config.key
-      }
-    });
-
-    if (!response.ok) {
-      console.warn('JWT validation failed:', response.status);
-      return null;
-    }
-
-    return await response.json();
-  } catch (err) {
-    console.error('JWT validation error:', (err as Error).message);
-    return null;
-  }
-}
-
-/**
- * Telegram ID владельца аккаунта Supabase Auth.
- * Источник — public.users (id = id пользователя в auth.users). user_metadata
- * не используется: его пользователь меняет сам своим токеном.
- */
-async function telegramIdByAuthUser(authUserId: string): Promise<number | null> {
-  if (!UUID_RE.test(authUserId)) return null;
-  try {
-    const rows = await supabaseFetch(
-      `users?id=eq.${authUserId}&select=telegram_id`,
-      { method: 'GET' },
-      getSupabaseConfig('service')
-    );
-    const id = Array.isArray(rows) && rows[0] ? Number(rows[0].telegram_id) : NaN;
-    return Number.isSafeInteger(id) && id > 0 ? id : null;
-  } catch (err) {
-    console.error('telegramIdByAuthUser error:', (err as Error).message);
-    return null;
-  }
-}
-
-/**
- * Аутентификация с приоритетом JWT
+ * Аутентификация запроса по Telegram initData (заголовок x-telegram-init-data).
+ * Другого способа нет: токен Realtime API не принимает.
  */
 export async function authenticate(
   request: Request,
   requireUser: boolean = true
 ): Promise<IAuthResult> {
   try {
-    // 1. JWT из заголовка Authorization
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.slice(7);
-      const user = await validateJWT(token);
-
-      if (user?.id) {
-        const telegramId = await telegramIdByAuthUser(String(user.id));
-        if (telegramId) {
-          return {
-            user: user,
-            userId: telegramId,
-            authUserId: user.id,
-            jwtToken: token,
-            error: null
-          };
-        }
-        // Токен валиден, но привязки к public.users нет — пробуем initData
-      }
-    }
-
-    // 2. Fallback: Telegram initData
     const initData = request.headers.get('x-telegram-init-data');
-    if (initData) {
-      const botToken = process.env.BOT_TOKEN?.trim();
-      if (botToken) {
-        const tgUser = await validateTelegramInitData(initData, botToken);
-        if (tgUser && tgUser.id) {
-          const config = getSupabaseConfig('service');
-          const userRes = await supabaseFetch(
-            `users?telegram_id=eq.${Number(tgUser.id)}&select=id`,
-            { method: 'GET' },
-            config
-          );
+    const botToken = process.env.BOT_TOKEN?.trim();
 
-          let authUserId: string | null = null;
-          if (userRes && Array.isArray(userRes) && userRes.length > 0 && userRes[0].id) {
-            authUserId = userRes[0].id;
-          }
-
-          return {
-            user: tgUser,
-            userId: parseInt(String(tgUser.id), 10),
-            authUserId: authUserId,
-            error: null
-          };
+    if (initData && botToken) {
+      const tgUser = await validateTelegramInitData(initData, botToken);
+      if (tgUser) {
+        const userId = Number(tgUser.id);
+        if (Number.isSafeInteger(userId) && userId > 0) {
+          return { user: tgUser, userId, error: null };
         }
       }
     }
 
     if (requireUser) {
-      return {
-        user: null,
-        userId: null,
-        authUserId: null,
-        error: 'Unauthorized',
-        status: 401
-      };
+      return { user: null, userId: null, error: 'Unauthorized', status: 401 };
     }
-
-    return { user: null, userId: null, authUserId: null, error: null };
+    return { user: null, userId: null, error: null };
   } catch (err) {
     console.error('Authentication error:', (err as Error).message);
-    return {
-      user: null,
-      userId: null,
-      authUserId: null,
-      error: (err as Error).message,
-      status: 500
-    };
+    return { user: null, userId: null, error: (err as Error).message, status: 500 };
   }
 }
 
