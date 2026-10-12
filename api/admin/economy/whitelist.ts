@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/economy/whitelist.ts
 // Управление белым списком для обмена
-// Версия: 1.1.0 — удаление по user_id (так вызывает админка), не только по id записи
+// Версия: 1.2.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+//          1.1.0 — удаление по user_id (так вызывает админка), не только по id записи
 //          1.0.0
 // ============================================
 
@@ -13,19 +14,18 @@ import {
   errorResponse,
   getSupabaseConfig,
   supabaseFetch,
+  isAdminTelegramId,
 } from '../../_lib/index';
 
 export const config = { runtime: 'edge' };
-
-const CREATOR_ID = 1541531808;
 
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
-  // Только для создателя
+  // Только для админов
   const auth = await authenticate(request);
-  if (auth.error || auth.userId !== CREATOR_ID) {
+  if (auth.error || !isAdminTelegramId(auth.userId)) {
     return errorResponse('Доступ запрещён', 403);
   }
 
