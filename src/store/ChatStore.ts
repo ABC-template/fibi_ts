@@ -1,7 +1,8 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 7.0.0 — история чатов хранится в IndexedDB (база fibi-chats) вместо localStorage
+// Версия: 7.1.0 — удалены флаги выгрузки upload_* (записывались, но нигде не читались)
+//          7.0.0 — история чатов хранится в IndexedDB (база fibi-chats) вместо localStorage
 //                  (~5 МБ на всё приложение): init() читает базу и один раз переносит
 //                  старые данные из localStorage; запись отложенная и последовательная,
 //                  сброс при сворачивании/закрытии; при нехватке места — предупреждение;
@@ -1071,32 +1072,6 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     });
   }
 
-  isUploadInProgress(): boolean {
-    return localStorage.getItem('upload_in_progress') === 'true';
-  }
-
-  getUploadProgress(): { total: number; current: number; startedAt: number } {
-    return {
-      total: parseInt(localStorage.getItem('upload_chats_count') || '0'),
-      current: parseInt(localStorage.getItem('upload_current_index') || '0'),
-      startedAt: parseInt(localStorage.getItem('upload_started_at') || '0')
-    };
-  }
-
-  setUploadProgress(current: number, total: number): void {
-    localStorage.setItem('upload_in_progress', 'true');
-    localStorage.setItem('upload_chats_count', String(total));
-    localStorage.setItem('upload_current_index', String(current));
-    localStorage.setItem('upload_started_at', String(Date.now()));
-  }
-
-  clearUploadFlags(): void {
-    localStorage.removeItem('upload_in_progress');
-    localStorage.removeItem('upload_started_at');
-    localStorage.removeItem('upload_chats_count');
-    localStorage.removeItem('upload_current_index');
-  }
-
   updateMetadata(metadataChats: any[]): void {
     if (!metadataChats || !Array.isArray(metadataChats)) return;
     
@@ -1119,4 +1094,4 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 }
 
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v7.0.0 загружен');
+console.log('✅ ChatStore v7.1.0 загружен');
