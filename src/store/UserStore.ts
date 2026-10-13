@@ -1,7 +1,8 @@
 // ============================================
 // src/store/UserStore.ts
 // Пользователь, настройки, лимиты, устройство
-// Версия: 6.2.0 — доступ к админке (isCreator) по флагу сервера adminPanel
+// Версия: 6.3.0 — убраны trialUsed / markTrialUsed (пробного периода больше нет)
+//          6.2.0 — доступ к админке (isCreator) по флагу сервера adminPanel
 //                  (список ADMIN_TELEGRAM_IDS / CREATOR_ID), без ID в коде
 //          6.1.0 — хранится тариф (subscription_tier) и дата окончания с сервера
 //          6.0.0 — без usedToday/dailyLimit
@@ -25,7 +26,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
         deviceType: 'web',
         devicePlatform: 'web',
         premium_until: null,
-        trialUsed: false,
       };
       this.save();
     }
@@ -33,9 +33,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
     // ✅ Инициализация новых полей (с проверкой)
     if (!('premium_until' in this._data)) {
       this._data.premium_until = null;
-    }
-    if (!('trialUsed' in this._data)) {
-      this._data.trialUsed = false;
     }
 
     this.initFromTelegram();
@@ -150,10 +147,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
     return this._data.premium_until || null;
   }
 
-  get trialUsed(): boolean {
-    return this._data.trialUsed || false;
-  }
-
   /** Тариф для цен: trial / ключ платного тарифа (для admin/creator — как пришёл с сервера) */
   get subscriptionTier(): string {
     return this._data.subscription_tier || 'trial';
@@ -163,11 +156,10 @@ export class UserStore extends BaseStore<IUserStoreData> {
   // СЕТТЕРЫ
   // ==========================================
 
-  /** Тариф, дата окончания и признак использованного trial — из ответа auth/check */
-  setSubscription(tier: string | null | undefined, premiumUntil: string | null | undefined, trialUsed?: boolean): void {
+  /** Тариф и дата окончания — из ответа auth/check */
+  setSubscription(tier: string | null | undefined, premiumUntil: string | null | undefined): void {
     this._data.subscription_tier = tier || 'trial';
     this._data.premium_until = premiumUntil || null;
-    if (trialUsed !== undefined) this._data.trialUsed = !!trialUsed;
     this.save();
   }
 
@@ -203,13 +195,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
 
   getDeviceFingerprint(): string | null {
     return this._data.signedFingerprint || this._data.deviceFingerprint || null;
-  }
-
-  // ✅ НОВЫЙ МЕТОД
-  markTrialUsed(): void {
-    this._data.trialUsed = true;
-    this.save();
-    this._emitChange('user:trial_used', {});
   }
 
   // ==========================================
