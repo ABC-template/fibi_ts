@@ -1,7 +1,11 @@
 // ============================================
 // src/services/api.ts
 // Базовый API-клиент. Авторизация — только Telegram initData (заголовок X-Telegram-Init-Data)
-// Версия: 10.0.0 - JWT убран (сервер его больше не принимает); x-sync-token не отправляется
+// Версия: 10.1.0 - 403 с кодом blocked / channel_required → событие fibi:access-denied
+//                  (заглушка src/ui/access-gate.ts); у каждой попытки свой таймаут (раньше
+//                  повтор получал уже сработавший сигнал и падал сразу); POST/PATCH/DELETE
+//                  по умолчанию не повторяются (повтор мог выполнить действие дважды)
+//          10.0.0 - JWT убран (сервер его больше не принимает); x-sync-token не отправляется
 //                  (сервер его не читал); 401 = initData устарел → просьба перезапустить приложение
 //          9.2.0 - JWT обновляется только на 401 и только один раз (403 больше не
 //                 зацикливает запросы); одновременные обновления склеиваются
@@ -91,18 +95,21 @@ export class ApiClient {
     const headers = this.authHeaders();
 
     const timeout = options.timeout || this.timeout;
-    const retries = options.retries || this.retries;
+    const method = String(options.method || 'GET').toUpperCase();
+    // Повтор безопасен только для чтения; для изменений — только если вызывающий явно разрешил
+    const retries = Math.max(1, options.retries ?? (method === 'GET' ? this.retries : 1));
     const retryDelay = options.retryDelay || this.retryDelay;
+    const externalSignal = options.signal || null;
 
     const defaultOptions: RequestInit = {
       method: 'GET',
-      headers: headers,
-      signal: AbortSignal.timeout(timeout)
+      headers: headers
     };
 
+    const { timeout: _t, retries: _r, retryDelay: _d, ...fetchOptions } = options;
     const mergedOptions: RequestInit = {
       ...defaultOptions,
-      ...options,
+      ...fetchOptions,
       headers: {
         ...headers,
         ...(options.headers || {})
@@ -117,7 +124,11 @@ export class ApiClient {
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const response = await fetch(url, mergedOptions);
+        // Свой таймаут на каждую попытку
+        const response = await fetch(url, {
+          ...mergedOptions,
+          signal: externalSignal || AbortSignal.timeout(timeout)
+        });
 
         if (response.status === 304) {
           return { success: true, cached: true, status: 304 } as T;
@@ -157,6 +168,13 @@ export class ApiClient {
             attempt: attempt
           });
 
+          // Нет доступа (блокировка / нужна подписка на канал) — заглушка поверх приложения
+          if (response.status === 403 && (errorDetails?.code === 'blocked' || errorDetails?.code === 'channel_required')) {
+            try {
+              window.dispatchEvent(new CustomEvent('fibi:access-denied', { detail: errorDetails }));
+            } catch (e) {}
+          }
+
           throw new ApiError(errorMessage, response.status, errorDetails);
         }
 
@@ -179,7 +197,8 @@ export class ApiClient {
         }
 
         if (attempt < retries &&
-            (err instanceof Error && (err.name === 'AbortError' || err.name === 'TypeError' || err.message?.includes('network')))) {
+            !externalSignal?.aborted &&
+            (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError' || err.name === 'TypeError' || err.message?.includes('network')))) {
 
           const delay = retryDelay * Math.pow(2, attempt - 1);
           console.log(`🔄 Повторная попытка ${attempt}/${retries} через ${delay}ms`);
