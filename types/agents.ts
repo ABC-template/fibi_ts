@@ -1,7 +1,8 @@
 // ============================================
 // types/agents.ts
 // Типы для конструктора ИИ-агентов
-// Версия: 1.5.0 — IAiAgentWithAccess заменён на IPublicAgent: пользователю
+// Версия: 1.6.0 — удалены устаревшие allowed_roles, min_pro_tier и тип ProTier
+//          1.5.0 — IAiAgentWithAccess заменён на IPublicAgent: пользователю
 //                  уходят только поля для интерфейса (без system_prompt, model_id, наценок по тарифам)
 //          1.4.0 — добавлен generation_config
 // ============================================
@@ -10,8 +11,6 @@ import { UUID, ISODateString } from './common';
 import type { IGenerationConfig } from './generation';
 
 export type AgentModality = 'text' | 'image' | 'video' | 'audio';
-
-export type ProTier = 'trial' | 'basic' | 'plus' | 'pro' | 'ultra';
 
 export interface IAgentName {
   ru: string;
@@ -33,10 +32,6 @@ export interface IAiAgent {
   /** Базовый markup (fallback, если нет значения в markup_by_tier) */
   markup_coefficient: number;
   min_charge: number;
-  /** @deprecated не используется в проверке доступа с v3.0.0 */
-  allowed_roles: string[];
-  /** @deprecated используйте allowed_tiers */
-  min_pro_tier: ProTier | null;
   /**
    * Массив tier_key, которым разрешён доступ.
    * NULL или [] = доступен всем авторизованным.
@@ -107,10 +102,6 @@ export interface IAiAgentInput {
   system_prompt: string;
   markup_coefficient?: number;
   min_charge?: number;
-  /** @deprecated */
-  allowed_roles?: string[];
-  /** @deprecated */
-  min_pro_tier?: ProTier | null;
   allowed_tiers?: string[] | null;
   markup_by_tier?: Record<string, number> | null;
   welcome_message?: IAgentName | null;
