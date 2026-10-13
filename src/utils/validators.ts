@@ -1,8 +1,11 @@
 // ============================================
 // src/utils/validators.ts
 // Клиентские валидации
-// Версия: 2.1.0 - добавлены window
+// Версия: 2.2.0 - sanitizeHTML через utils/html (общие правила, без style/id/img)
+//          2.1.0 - добавлены window
 // ============================================
+
+import { escapeHtml, sanitizeRichHtml } from './html';
 
 /**
  * Проверка UUID
@@ -72,24 +75,9 @@ export function isValidImageBase64(str: string): boolean {
  * Санитайзинг HTML (клиентский)
  */
 export function sanitizeHTML(html: string): string {
-    if (typeof (window as any).DOMPurify !== 'undefined') {
-        return (window as any).DOMPurify.sanitize(html, {
-            ALLOWED_TAGS: [
-                'p', 'br', 'strong', 'em', 'u', 'i', 'b',
-                'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                'ul', 'ol', 'li', 'blockquote',
-                'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                'span', 'div', 'img', 'hr', 'sub', 'sup'
-            ],
-            ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
-            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
-        });
-    }
-
-    // Fallback
-    const temp = document.createElement('div');
-    temp.textContent = html;
-    return temp.innerHTML;
+    const clean = sanitizeRichHtml(html);
+    // Без DOMPurify — HTML показывается как текст
+    return clean === null ? escapeHtml(html) : clean;
 }
 
 // ==========================================
