@@ -1,7 +1,8 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.6.0 — резерв энергии (sql/energy_holds.sql): перед запросом энергия
+// Версия: 3.6.1 — IAgent без устаревших allowed_roles / min_pro_tier
+//          3.6.0 — резерв энергии (sql/energy_holds.sql): перед запросом энергия
 //                  замораживается атомарно в БД (параллельные запросы в разных чатах
 //                  больше не тратят один баланс дважды); max_tokens — по замороженному;
 //                  после ответа заморозка снимается и списывается факт; обрыв модели
@@ -212,8 +213,6 @@ interface IAgent {
   system_prompt: string;
   markup_coefficient: number;
   min_charge: number;
-  allowed_roles: string[];
-  min_pro_tier: string | null;
   allowed_tiers: string[] | null;
   markup_by_tier: Record<string, number> | null;
   inject_balance: boolean;
