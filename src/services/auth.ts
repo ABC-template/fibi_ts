@@ -1,7 +1,8 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (Telegram initData; без JWT)
-// Версия: 7.2.0 - в результате access (блокировка / нужна подписка на канал, ссылка)
+// Версия: 7.2.1 - без trial_used
+//          7.2.0 - в результате access (блокировка / нужна подписка на канал, ссылка)
 //          7.1.0 - в результате previousRole (роль до проверки): app.ts читал user_role уже
 //                 после перезаписи, и переходы trial ↔ PRO никогда не срабатывали
 //          7.0.0 - JWT и его таймер обновления убраны; токен Realtime из ответа передаётся
@@ -95,8 +96,7 @@ export class AuthService {
 
       userStore.setSubscription(
         data.subscription_tier,
-        data.premium_until,
-        data.trial_used
+        data.premium_until
       );
 
       userStore.setAdminPanel(data.adminPanel === true);
