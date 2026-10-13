@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.6.0 — Markdown только через utils/html: если DOMPurify не загрузился,
+// Версия: 4.7.0 — 403 «нет доступа к приложению» (блок / канал) открывает заглушку
+//          4.6.0 — Markdown только через utils/html: если DOMPurify не загрузился,
 //                  ответ показывается текстом (раньше сырой HTML модели шёл в innerHTML)
 //          4.5.0 — «пульс» сервера вырезается, ошибка до первого слова показывается
 //                  понятным текстом; обрыв, если 40 с не приходит ничего;
@@ -108,6 +109,14 @@ const STREAM_ERROR_MARK = '\u0001';
       console.error(`❌ [СТРИМ #${callId}] Ошибка ${response.status}: ${text.substring(0, 200)}`);
       
       if (response.status === 403) {
+        // Нет доступа к приложению (блокировка / подписка на канал) — общая заглушка
+        let body: any = null;
+        try { body = JSON.parse(text); } catch {}
+        if (body?.code === 'blocked' || body?.code === 'channel_required') {
+          window.dispatchEvent(new CustomEvent('fibi:access-denied', { detail: body }));
+          uiRendererInstance.renderMessage(String(body.error || 'Нет доступа'), 'ai-msg');
+          return false;
+        }
         const accessReason = response.headers.get('X-Access-Reason') || 'unknown';
         const agentSlug = response.headers.get('X-Agent-Slug') || 'агента';
         let errorMessage = `⛔ Доступ к агенту "${agentSlug}" запрещён.`;
