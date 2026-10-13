@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/profile/ProfileModule.ts
 // Полноценная страница профиля
-// Версия: 4.3.0 - очистка кэша без clearJWT (JWT больше нет)
+// Версия: 4.4.0 - очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
+//          4.3.0 - очистка кэша без clearJWT (JWT больше нет)
 //          4.2.0 - используем questsStore.getBalance()
 // ============================================
 
@@ -12,6 +13,7 @@ import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { questsStore } from '@/store/QuestsStore';
+import { clearLocalCache, confirmClearCache } from '@/utils/clear-cache';
 import { themeManager } from '@/core/theme-manager';
 import type { ThemeType } from '@/core/theme-manager';
 
@@ -585,52 +587,10 @@ export class ProfileModule {
 };
 
 (window as any).clearCacheFromProfile = function(): void {
-  const confirmMsg = 'Очистить локальный кэш приложения?\n\n' +
-    '⚠️ Ваши НЕСИНХРОНИЗИРОВАННЫЕ данные (TRIAL) будут потеряны.\n' +
-    '☁️ Синхронизированные данные (PRO) восстановятся из облака.';
-
-  const doClear = (): void => {
-    if ((window as any).questsStore) {
-      (window as any).questsStore._data = {};
-      (window as any).questsStore.save();
-    }
-    if ((window as any).chatStore) {
-      (window as any).chatStore._data = {};
-      (window as any).chatStore.save();
-    }
-    if ((window as any).userStore) {
-      (window as any).userStore._data = {};
-      (window as any).userStore.save();
-    }
-    if ((window as any).organizerStore) {
-      (window as any).organizerStore._data = {};
-      (window as any).organizerStore.save();
-    }
-
-    localStorage.removeItem('sync_token');
-
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('sync_token_') && key !== 'sync_token') {
-        localStorage.removeItem(key);
-      }
-    }
-
-    localStorage.removeItem('last_user_id');
-
-    if ((window as any).uiRenderer) {
-      (window as any).uiRenderer.showToast('🧹 Кэш и токен очищены', 'success', 1500);
-    }
-
+  confirmClearCache(() => {
     (window as any).goBackFromProfile();
-    setTimeout(() => location.reload(), 1000);
-  };
-
-  if ((window as any).tg?.showConfirm) {
-    (window as any).tg.showConfirm(confirmMsg, (ok: boolean) => { if (ok) doClear(); });
-  } else if (confirm(confirmMsg)) {
-    doClear();
-  }
+    void clearLocalCache();
+  });
 };
 
-console.log('✅ ProfileModule v4.2.0 загружен');
+console.log('✅ ProfileModule v4.4.0 загружен');
