@@ -1,7 +1,8 @@
 // ============================================
 // api/chat/whisper.ts
 // Описание: Распознавание голоса (OpenRouter /audio/transcriptions)
-// Версия: 5.0.0 — формат аудио определяется по содержимому файла (раньше всегда «wav»,
+// Версия: 5.1.0 — лимит частоты (whisper)
+//          5.0.0 — формат аудио определяется по содержимому файла (раньше всегда «wav»,
 //                  а браузеры пишут webm/ogg/mp4 — распознавание падало); блокировка
 //                  пользователя; распознавание платное: проверка баланса до запроса,
 //                  списание по usage.cost после; лимит 2 МБ; создатель — из CREATOR_ID
@@ -19,6 +20,7 @@ import {
 import { getRotatedKeysPool } from '../chats/index';
 import { checkTokenAvailability } from '../_lib/tokens';
 import { textEnergyForUsd } from '../_lib/text-pricing';
+import { enforceRateLimit } from '../_lib/rate-limit';
 
 export const config = { runtime: 'edge' };
 
@@ -71,6 +73,9 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId!;
+
+    const limited = await enforceRateLimit('whisper', userId);
+    if (limited) return limited;
     const db = getSupabaseConfig('service');
 
     const blocked = await supabaseRPC('is_user_blocked', { p_user_id: userId }, db).catch(() => false);
