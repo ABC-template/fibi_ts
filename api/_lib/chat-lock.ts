@@ -5,7 +5,8 @@
 // типов агентов. Замок живёт в таблице chat_locks (см. sql/chat_locks.sql),
 // захват атомарный, у замка есть TTL — если функция упала и не сняла замок,
 // он сам освободится.
-// Версия: 2.0.0
+// Версия: 2.1.0 — assertChatsNotBusy принимает текст ошибки (удаление сообщения)
+//          2.0.0
 //   - видео-генерация живёт дольше запроса: замок берётся на длинный срок, а токен
 //     замка сохраняется в сообщении, чтобы снять его из вебхука/опроса статуса
 //   - assertChatsNotBusy: удаление чата запрещено, пока в нём идёт запрос
@@ -135,7 +136,8 @@ export async function releaseChatLockByToken(
 export async function assertChatsNotBusy(
   userId: number,
   chatIds: string[],
-  config: ISupabaseConfig
+  config: ISupabaseConfig,
+  message: string = CHAT_DELETE_BUSY_MESSAGE
 ): Promise<void> {
   const ids = chatIds.filter(isValidChatId);
   if (ids.length === 0) return;
@@ -147,12 +149,15 @@ export async function assertChatsNotBusy(
     config
   );
   if (Array.isArray(rows) && rows.length > 0) {
-    throw new HttpError(409, CHAT_DELETE_BUSY_MESSAGE);
+    throw new HttpError(409, message);
   }
 }
 
 export const CHAT_DELETE_BUSY_MESSAGE =
   'Чат нельзя удалить, пока в нём идёт генерация. Дождитесь ответа.';
+
+export const MESSAGE_DELETE_BUSY_MESSAGE =
+  'Сообщение нельзя удалить, пока в чате идёт ответ или генерация. Дождитесь окончания.';
 
 /** Ответ 409 «в чате уже идёт запрос» (с заголовками для клиента) */
 export function chatBusyResponse(retryAfter: number): Response {
