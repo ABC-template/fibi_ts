@@ -1,7 +1,8 @@
 // ============================================
 // src/services/sync.ts
 // Realtime синхронизация для PRO
-// Версия: 5.0.0 - свой токен Realtime (auth/check или /auth/realtime-token) передаётся
+// Версия: 5.1.0 - роль читается с привязкой к Telegram ID (user-storage)
+//          5.0.0 - свой токен Realtime (auth/check или /auth/realtime-token) передаётся
 //                 в websocket через realtime.setAuth: раньше токен уходил только в
 //                 REST-заголовки, канал подключался анонимно и RLS не пропускал события;
 //                 токен обновляется заранее (таймер) и после ошибки канала
@@ -18,6 +19,7 @@ import { apiClient } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
 import { chatService } from './chats';
+import { userStorage } from '@/utils/user-storage';
 import type { IMessage, MessageType, TopicId, UUID } from '@app-types';
 
 export class SyncService {
@@ -127,7 +129,7 @@ export class SyncService {
       return;
     }
 
-    const role = localStorage.getItem('user_role');
+    const role = userStorage.get('user_role');
     if (role !== 'pro' && role !== 'premium' && role !== 'admin' && role !== 'creator') {
       console.log(`📡 [handleTabShow] Realtime только для PRO, текущая роль: ${role}`);
       return;
@@ -352,7 +354,7 @@ export class SyncService {
       return;
     }
 
-    const role = localStorage.getItem('user_role');
+    const role = userStorage.get('user_role');
     if (role !== 'pro' && role !== 'premium' && role !== 'admin' && role !== 'creator') {
       console.warn(`⚠️ [subscribe] Realtime только для PRO, текущая роль: ${role}`);
       return;
