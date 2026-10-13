@@ -1,7 +1,9 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.5.0 — история чатов загружается из IndexedDB (await chatStore.init())
+// Версия: 13.6.0 — данные аккаунта в localStorage привязаны к Telegram ID (user-storage):
+//                  при запуске старые ключи переносятся к текущему аккаунту
+//          13.5.0 — история чатов загружается из IndexedDB (await chatStore.init())
 //                  до сайдбара и модулей
 //          13.4.0 — заглушка доступа (src/ui/access-gate.ts): блокировка и подписка на
 //                  канал по ответу auth/check, вместо старого экрана «гостя»
@@ -31,6 +33,7 @@ import { updateCoinsDisplay, updateDrawerUserInfo, updateDrawerRole, setupHeader
 import { initExportButtons } from '@/ui/modals';
 import { setupNetworkListeners, showOfflineBanner } from '@/services/network';
 import { setupGlobalFunctions } from '@/utils/global';
+import { migrateLegacyUserKeys, saveSyncToken } from '@/utils/user-storage';
 
 // ✅ STORES
 import { chatStore } from '@/store/ChatStore';
@@ -403,6 +406,9 @@ async function initApp(): Promise<void> {
     // ✅ ШАГ 0: НАСТРОЙКА TELEGRAM
     setupTelegramWebApp();
 
+    // ✅ Ключи прежних версий без Telegram ID → к текущему аккаунту
+    migrateLegacyUserKeys();
+
     // ✅ ИСТОРИЯ ЧАТОВ (IndexedDB) — до любой работы с чатами
     updateSplashProgress(5, '💾 Загрузка истории...');
     await chatStore.init();
@@ -516,10 +522,7 @@ async function initApp(): Promise<void> {
 
             if (needFullReload) {
                 console.log('🔄 [initApp] sync_token не совпадает → полная перезапись');
-                if (result.syncToken) {
-                    localStorage.setItem('sync_token', result.syncToken);
-                    console.log(`✅ sync_token сохранен: ${result.syncToken.substring(0, 8)}...`);
-                }
+                saveSyncToken(result.syncToken);
                 await window.fullDataReload();
             } else {
                 console.log('✅ [initApp] sync_token совпадает → используем кеш');
@@ -568,8 +571,6 @@ async function initApp(): Promise<void> {
 
             // Переходы trial ↔ PRO (выгрузка локальных чатов / выключение синхронизации)
             await applyAccessTransition(result);
-
-            localStorage.setItem('user_role', result.role || 'trial');
 
             if (result.isMember || result.role === 'admin' || result.role === 'creator') {
                 console.log(`👤 Пользователь авторизован: ${result.role}`);
