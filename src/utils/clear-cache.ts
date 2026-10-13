@@ -1,7 +1,8 @@
 // ============================================
 // src/utils/clear-cache.ts
 // Очистка локального кэша приложения (профиль и сайдбар)
-// Версия: 1.0.0 - общая функция вместо двух копий; история чатов удаляется
+// Версия: 1.1.0 - sync_token текущего аккаунта (user-storage)
+//          1.0.0 - общая функция вместо двух копий; история чатов удаляется
 //                 из IndexedDB, перезагрузка — только после завершения очистки
 // ============================================
 
@@ -9,6 +10,7 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { organizerStore } from '@/store/OrganizerStore';
 import { questsStore } from '@/store/QuestsStore';
+import { userStorage } from '@/utils/user-storage';
 
 export const CLEAR_CACHE_CONFIRM =
   'Очистить локальный кэш приложения?\n\n' +
@@ -34,14 +36,7 @@ export async function clearLocalCache(): Promise<void> {
     store.save();
   }
 
-  localStorage.removeItem('sync_token');
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith('sync_token_')) {
-      localStorage.removeItem(key);
-    }
-  }
-  localStorage.removeItem('last_user_id');
+  userStorage.remove('sync_token');
 
   (window as any).uiRenderer?.showToast?.('🧹 Кэш и токен очищены', 'success', 1500);
   setTimeout(() => location.reload(), 1000);
