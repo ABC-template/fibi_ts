@@ -4,7 +4,8 @@
 // режима, создаём запись в media_files и выдаём одноразовую ссылку,
 // по которой клиент грузит файл прямо в Storage.
 // Дальше клиент вызывает /api/media/confirm.
-// Версия: 2.0.0 — референс грузится в бакет generation-inputs (Storage сам не примет
+// Версия: 2.1.0 — лимит частоты (media_upload)
+//          2.0.0 — референс грузится в бакет generation-inputs (Storage сам не примет
 //                  больше inputMaxBytes и не-изображение); квота проверяется с запасом
 //                  inputMaxBytes (заявленному размеру не верим: фактический узнаём в confirm);
 //                  ошибки без текста исключения
@@ -15,6 +16,7 @@ import { authenticate } from '../_lib/auth';
 import { handleCORS, errorResponse, jsonResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { HttpError } from '../_lib/http-error';
+import { enforceRateLimit } from '../_lib/rate-limit';
 import { loadGenerativeAgent, resolveMode, modeAcceptsImages } from '../_lib/generation';
 import {
   MEDIA_LIMITS,
@@ -41,6 +43,9 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(auth.error || 'Unauthorized', auth.status || 401);
     }
     const userId = auth.userId;
+
+    const limited = await enforceRateLimit('media_upload', userId);
+    if (limited) return limited;
 
     let body: any;
     try {
