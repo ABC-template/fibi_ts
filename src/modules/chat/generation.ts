@@ -8,7 +8,8 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.4.0 — одна генерация на пользователя: сервер отвечает 409 generation_busy
+// Версия: 3.4.1 — оценка цены по agent.markup с сервера (тариф больше не передаётся)
+//          3.4.0 — одна генерация на пользователя: сервер отвечает 409 generation_busy
 //                  с chat_id — в форме «Дождитесь окончания генерации» и кнопка
 //                  «Перейти в чат» (если генерация идёт в другом чате)
 //          3.3.0 — без сообщения-запроса (всё о запросе — в карточке результата и просмотрщике);
@@ -825,8 +826,7 @@ export class GenerationController {
 
   private _estimateCost(): number {
     if (!this._agent) return 0;
-    const tier = userStore.subscriptionTier;
-    return estimateEnergy(this._agent, tier, this._collectParams());
+    return estimateEnergy(this._agent, this._collectParams());
   }
 
   private _refreshSubmit(): void {
