@@ -1,7 +1,9 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.2.0 — после окончания подписки предлагается сохранить медиа в приложении
+// Версия: 13.3.0 — переходы trial ↔ PRO через access-transition (раньше не срабатывали:
+//                  роль сравнивалась уже перезаписанной, а условие ждало sync_token = null)
+//          13.2.0 — после окончания подписки предлагается сохранить медиа в приложении
 //          13.1.0 — ежедневный вход выполняет сервер (auth/check → checkin), клиент только
 //                  показывает модалку; клиентские вызовы прогресса заданий убраны
 //          13.0.2 — today_bonus_added в модалке стрика
@@ -38,6 +40,7 @@ import { syncService } from '@/services/sync';
 import { chatService } from '@/services/chats';
 import { messageService } from '@/services/messages';
 import { apiClient } from '@/services/api';
+import { applyAccessTransition } from '@/services/access-transition';
 
 // ✅ UI RENDERERS
 import { uiRenderer } from '@/modules/ui/renderer';
@@ -544,34 +547,8 @@ async function initApp(): Promise<void> {
                 updateAllBalanceDisplays();
             }, 500);
 
-            // TRIAL → PRO
-            const previousRole = localStorage.getItem('user_role');
-            const isFirstTimePro = isPro && result.syncToken === null;
-            if (isFirstTimePro && previousRole === 'trial') {
-                console.log('🔄 TRIAL → PRO: загружаем локальные данные в облако');
-                const hasLocalData = Object.keys(chatStore.histories).length > 0;
-                if (hasLocalData && chatService) {
-                    await chatService.uploadLocalDataToCloud();
-                }
-                const newToken = await window.refreshSyncToken?.() || result.syncToken;
-                localStorage.setItem('sync_token', newToken);
-                if (uiRenderer) {
-                    uiRenderer.showToast('🎉 Добро пожаловать в PRO! Ваши чаты синхронизированы.', 'success', 3000);
-                }
-            }
-
-            // PRO → TRIAL
-            const isTrial = result.role === 'trial';
-            if (isTrial && previousRole !== 'trial' && (previousRole === 'pro' || previousRole === 'premium')) {
-                console.log('⚠️ PRO → TRIAL: подписка истекла');
-                if (syncService) syncService.unsubscribe();
-                if (result.dataDeadline) {
-                    const daysLeft = Math.ceil((new Date(result.dataDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                    if (uiRenderer) {
-                        uiRenderer.showToast(`⚠️ Подписка истекла. Данные будут удалены через ${daysLeft} дней. Скачайте архив.`, 'warning', 5000);
-                    }
-                }
-            }
+            // Переходы trial ↔ PRO (выгрузка локальных чатов / выключение синхронизации)
+            await applyAccessTransition(result);
 
             localStorage.setItem('user_role', result.role || 'trial');
 
