@@ -1,7 +1,8 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 9.0.0 — доступ (api/_lib/access-gate.ts): подписка на канал проверяется
+// Версия: 9.1.0 — без trial_used (пробного периода больше нет)
+//          9.0.0 — доступ (api/_lib/access-gate.ts): подписка на канал проверяется
 //                  только если в админке включено «Только для подписчиков», и при
 //                  каждом входе заново (результат запоминается в users); Telegram не
 //                  ответил — последний известный результат, проверок не было — пропуск.
@@ -361,7 +362,6 @@ export default async function handler(request: Request): Promise<Response> {
         checkin,
         subscription_tier: subscriptionTier,
         premium_until: premiumUntil,
-        trial_used: dbUser?.trial_used || false,
       },
       200
     );
