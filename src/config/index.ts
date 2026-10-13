@@ -1,7 +1,8 @@
 // ============================================
 // src/config/index.ts
 // Экспорт центрального конфига и всех типов
-// Версия: 3.0.1 - замена @types → @app-types
+// Версия: 3.1.0 - без IExportRequest / IExportResponse; IExportArchiveMessage
+//          3.0.1 - замена @types → @app-types
 // ============================================
 
 // Экспорт конфига
@@ -35,6 +36,7 @@ export type {
   ICreateMessageData,
   ITrash,
   IExportArchive,
+  IExportArchiveMessage,
   IFavoriteItem,
   // User
   ITelegramUser,
@@ -72,9 +74,7 @@ export type {
   IChatActionRequest,
   IMessageActionRequest,
   IBatchRequest,
-  IExportRequest,
-  IExportResponse,
   IUsageLimit,
 } from '@app-types';
 
-console.log('✅ Config v3.0.1 загружен');
+console.log('✅ Config v3.1.0 загружен');
