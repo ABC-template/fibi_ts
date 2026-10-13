@@ -1,7 +1,11 @@
 // ============================================
 // api/_lib/auth.ts
 // Описание: Единая аутентификация для всех Edge-функций
-// Версия: 6.0.0 - только Telegram initData: JWT Supabase Auth больше не принимается
+// Версия: 7.0.0 - проверка доступа (access-gate) в каждом запросе: блокировка
+//                 пользователя и, если включено, подписка на канал → 403;
+//                 isAdmin — только по Telegram ID (роль admin больше не даёт
+//                 правку агентов: её может выдать себе тестовый аккаунт)
+//          6.0.0 - только Telegram initData: JWT Supabase Auth больше не принимается
 //                 (вход по паролю убран, Realtime получает отдельный токен — api/_lib/jwt.ts);
 //                 authUserId убран из результата (никем не использовался, лишний запрос к БД)
 //          5.0.0 - Telegram ID для JWT берётся из public.users по id пользователя (sub токена),
@@ -12,7 +16,8 @@
 //          4.1.0 - getVerifiedStartParam (start_param из подписанного initData)
 // ============================================
 
-import { getSupabaseConfig, supabaseFetch } from './supabase-client';
+import { getSupabaseConfig } from './supabase-client';
+import { checkAccessGate, isAccessExemptPath } from './access-gate';
 
 declare const process: {
   env: {
@@ -41,6 +46,8 @@ export interface IAuthResult {
   userId: number | null;
   error: string | null;
   status?: number;
+  /** Отказ в доступе: blocked | channel_required */
+  code?: string;
 }
 
 /**
@@ -129,6 +136,17 @@ export async function authenticate(
       if (tgUser) {
         const userId = Number(tgUser.id);
         if (Number.isSafeInteger(userId) && userId > 0) {
+          // Доступ: блокировка и (если включено) подписка на канал
+          if (!isAccessExemptPath(request)) {
+            const denied = await checkAccessGate(
+              userId,
+              getSupabaseConfig('service'),
+              isAdminTelegramId(userId)
+            );
+            if (denied) {
+              return { user: tgUser, userId: null, error: denied.message, status: 403, code: denied.code };
+            }
+          }
           return { user: tgUser, userId, error: null };
         }
       }
@@ -187,31 +205,15 @@ export function isAdminTelegramId(userId: number | null | undefined): boolean {
 }
 
 /**
- * Проверить, является ли пользователь администратором
- * (по Telegram ID из списка админов либо по роли admin/creator)
+ * Админ-права (админка, правка агентов) — только по Telegram ID из
+ * ADMIN_TELEGRAM_IDS / CREATOR_ID. Роль admin в БД даёт лишь безлимит энергии
+ * и доступ ко всем агентам, но не управление приложением.
  */
 export async function isAdmin(
   userId: number,
-  config: any = null
+  _config: any = null
 ): Promise<boolean> {
-  if (isAdminTelegramId(userId)) return true;
-  try {
-    const cfg = config || getSupabaseConfig('service');
-    const result = await supabaseFetch(
-      `users?telegram_id=eq.${Number(userId)}&select=role`,
-      { method: 'GET' },
-      cfg
-    );
-
-    if (!result || !Array.isArray(result) || result.length === 0) {
-      return false;
-    }
-
-    return ['admin', 'creator'].includes(result[0].role);
-  } catch (err) {
-    console.error('Failed to check admin status:', (err as Error).message);
-    return false;
-  }
+  return isAdminTelegramId(userId);
 }
 
 /**
