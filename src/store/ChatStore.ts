@@ -1,7 +1,12 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 6.4.0 — полная загрузка из облака: серверные поля (topic_id, max_context,
+// Версия: 7.0.0 — история чатов хранится в IndexedDB (база fibi-chats) вместо localStorage
+//                  (~5 МБ на всё приложение): init() читает базу и один раз переносит
+//                  старые данные из localStorage; запись отложенная и последовательная,
+//                  сброс при сворачивании/закрытии; при нехватке места — предупреждение;
+//                  если IndexedDB недоступна — работает на localStorage, как раньше
+//          6.4.0 — полная загрузка из облака: серверные поля (topic_id, max_context,
 //                  user_renamed), agent_id/modality, metadata сообщений; локальные
 //                  несинхронизированные чаты и активный чат сохраняются;
 //                  «удержание» чата (holdChat) — не удаляется как пустой, пока идёт запрос
@@ -10,7 +15,7 @@
 //          6.1.0 — добавлены agent_id и modality
 // ============================================
 
-import { BaseStore } from './BaseStore';
+import { BaseStore, isQuotaError, warnStorageFull } from './BaseStore';
 import { chatHasLiveGeneration } from './generation-live';
 import type {
   IChat,
@@ -29,6 +34,55 @@ import type {
 const DEFAULT_TOPICS: TopicId[] = ['code', 'creative', 'fast', 'kitchen', 'analytics'];
 const MAX_PINNED_CHATS = 10;
 
+const DB_NAME = 'fibi-chats';
+const DB_VERSION = 1;
+const DB_STORE = 'histories';
+const SAVE_DELAY_MS = 250;
+
+function openChatsDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB недоступна'));
+      return;
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('IndexedDB заблокирована'));
+  });
+}
+
+function idbRequest<T>(
+  db: IDBDatabase,
+  mode: IDBTransactionMode,
+  run: (store: IDBObjectStore) => IDBRequest
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, mode);
+    const req = run(tx.objectStore(DB_STORE));
+    let result: T;
+    req.onsuccess = () => { result = req.result as T; };
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error || req.error);
+    tx.onabort = () => reject(tx.error || req.error || new Error('Транзакция прервана'));
+  });
+}
+
+function parseStored(raw: unknown): IChatStoreData | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? data : null;
+  } catch (e) {
+    console.warn('⚠️ [ChatStore] Сохранённые данные повреждены:', e);
+    return null;
+  }
+}
+
 export class ChatStore extends BaseStore<IChatStoreData> {
   /**
    * Чаты, которые нельзя удалять как «пустые», пока по ним идёт запрос
@@ -37,33 +91,180 @@ export class ChatStore extends BaseStore<IChatStoreData> {
    */
   private _held: Set<string> = new Set();
 
+  /** База IndexedDB; null — работаем на localStorage (IndexedDB недоступна) */
+  private _db: IDBDatabase | null = null;
+  private _ready = false;
+  private _dirty = false;
+  /** После очистки кэша запись запрещена до перезагрузки страницы */
+  private _disposed = false;
+  private _saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private _writeChain: Promise<void> = Promise.resolve();
+
   constructor() {
     super('chat');
-    this.load();
+    this._applyDefaults();
+  }
 
-    if (Object.keys(this._data).length === 0) {
-      this._data = {
-        histories: {} as Record<TopicId, IChat[]>,
-        activeIds: {} as Record<TopicId, string | null>,
-        currentTopic: 'code'
-      };
-      this.save();
+  // ==========================================
+  // ХРАНЕНИЕ (IndexedDB)
+  // ==========================================
+
+  /**
+   * Загрузка истории. Вызывается один раз в начале initApp, до любой работы с чатами.
+   * Старые данные из localStorage переносятся в IndexedDB и удаляются оттуда
+   * только после успешной записи.
+   */
+  async init(): Promise<void> {
+    if (this._ready) return;
+    const key = this.getStorageKey();
+
+    let legacyRaw: string | null = null;
+    try {
+      legacyRaw = localStorage.getItem(key);
+    } catch (e) {
+      console.warn('⚠️ [ChatStore] localStorage недоступен:', e);
     }
 
+    let data: IChatStoreData | null = null;
+    let migrate = false;
+
+    try {
+      this._db = await openChatsDb();
+      data = parseStored(await idbRequest<unknown>(this._db, 'readonly', (st) => st.get(key)));
+      if (!data && legacyRaw) {
+        data = parseStored(legacyRaw);
+        migrate = !!data;
+      }
+    } catch (e) {
+      console.warn('⚠️ [ChatStore] IndexedDB недоступна, история остаётся в localStorage:', e);
+      this._db = null;
+      data = parseStored(legacyRaw);
+    }
+
+    this._data = (data || {}) as IChatStoreData;
+    this._applyDefaults();
+    this._loaded = true;
+    this._ready = true;
+
+    if (this._db) {
+      if (migrate) {
+        this._dirty = true;
+        await this.flush();
+        if (!this._dirty) {
+          try { localStorage.removeItem(key); } catch { /* не критично */ }
+          console.log('📦 [ChatStore] История перенесена из localStorage в IndexedDB');
+        }
+      } else if (legacyRaw) {
+        // Устаревшая копия: в IndexedDB уже есть данные
+        try { localStorage.removeItem(key); } catch { /* не критично */ }
+      }
+
+      const flushNow = (): void => { void this.flush(); };
+      window.addEventListener('pagehide', flushNow);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushNow();
+      });
+
+      // Просим браузер не вытеснять базу при нехватке места
+      try {
+        navigator.storage?.persist?.().catch(() => {});
+      } catch { /* не поддерживается */ }
+    }
+
+    console.log(`💾 [ChatStore] Загружено (${this._db ? 'IndexedDB' : 'localStorage'})`);
+  }
+
+  /** Данные живут в памяти; читать их можно только после init() */
+  load(): IChatStoreData {
+    return this._data;
+  }
+
+  save(): void {
+    if (this._disposed) return;
+    if (!this._ready) {
+      console.warn('⚠️ [ChatStore] save() до init() — пропущено');
+      return;
+    }
+    if (!this._db) {
+      super.save();
+      return;
+    }
+
+    this._dirty = true;
+    this._emitChange('data:saved', { store: this.storeName });
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      void this.flush();
+    }, SAVE_DELAY_MS);
+  }
+
+  /** Записать несохранённые изменения сейчас (по очереди с предыдущими записями) */
+  flush(): Promise<void> {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
+    this._writeChain = this._writeChain.then(() => this._write());
+    return this._writeChain;
+  }
+
+  private async _write(): Promise<void> {
+    if (!this._db || !this._dirty || this._disposed) return;
+    this._dirty = false;
+    const key = this.getStorageKey();
+    try {
+      const raw = JSON.stringify(this._data);
+      await idbRequest(this._db, 'readwrite', (st) => st.put(raw, key));
+    } catch (e) {
+      // Не потерять изменения: следующая запись попробует снова
+      this._dirty = true;
+      console.error('❌ [ChatStore] Ошибка сохранения в IndexedDB:', e);
+      if (isQuotaError(e)) warnStorageFull();
+    }
+  }
+
+  /**
+   * Очистка кэша: удалить сохранённую историю (IndexedDB и localStorage).
+   * После вызова изменения больше не сохраняются — следом нужна перезагрузка.
+   */
+  async clearPersisted(): Promise<void> {
+    this._disposed = true;
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
+    await this._writeChain.catch(() => {});
+
+    const key = this.getStorageKey();
+    if (this._db) {
+      try {
+        await idbRequest(this._db, 'readwrite', (st) => st.delete(key));
+      } catch (e) {
+        console.error('❌ [ChatStore] Не удалось очистить IndexedDB:', e);
+      }
+    }
+    try { localStorage.removeItem(key); } catch { /* не критично */ }
+    this._data = {} as IChatStoreData;
+    this._applyDefaults();
+    this._emitChange('store:cleared', { store: this.storeName });
+  }
+
+  private _applyDefaults(): void {
+    if (!this._data || typeof this._data !== 'object') this._data = {} as IChatStoreData;
     if (!this._data.histories) this._data.histories = {} as Record<TopicId, IChat[]>;
     if (!this._data.activeIds) this._data.activeIds = {} as Record<TopicId, string | null>;
     if (!this._data.currentTopic) this._data.currentTopic = 'code';
 
     for (const topic of DEFAULT_TOPICS) {
-      if (!this._data.activeIds[topic]) {
-        this._data.activeIds[topic] = null;
-      }
-      if (!this._data.histories[topic]) {
-        this._data.histories[topic] = [];
-      }
+      if (!this._data.activeIds[topic]) this._data.activeIds[topic] = null;
+      if (!this._data.histories[topic]) this._data.histories[topic] = [];
     }
-    this.save();
   }
+
+  // ==========================================
+  // ЧАТЫ
+  // ==========================================
 
   get histories(): Record<TopicId, IChat[]> {
     return this._data.histories;
@@ -918,4 +1119,4 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 }
 
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v6.4.0 загружен');
+console.log('✅ ChatStore v7.0.0 загружен');
