@@ -3,6 +3,7 @@
 // Состояние видео-задания для приложения (опрос раз в несколько секунд).
 // Заодно доводит готовое задание до конца: если вебхук не пришёл или не
 // отработал, результат всё равно будет сохранён и оплачен. Идемпотентно.
+// Версия: 1.1.0 — лимит частоты (generation_status)
 // Версия: 1.0.0
 // ============================================
 
@@ -11,6 +12,7 @@ import { handleCORS, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { UUID_RE } from '../_lib/media';
 import { keepAliveJson } from '../_lib/keepalive';
+import { enforceRateLimit } from '../_lib/rate-limit';
 import { finalizeVideoJob } from '../_lib/generation-store';
 
 export const config = { runtime: 'edge' };
@@ -28,6 +30,9 @@ export default async function handler(request: Request): Promise<Response> {
     if (auth.error || !auth.userId) {
       return errorResponse(auth.error || 'Unauthorized', auth.status || 401);
     }
+
+    const limited = await enforceRateLimit('generation_status', auth.userId);
+    if (limited) return limited;
 
     const body = await request.json();
     const messageId = String(body?.message_id || '');
