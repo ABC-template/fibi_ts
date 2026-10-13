@@ -4,7 +4,10 @@
 // списание энергии, обновление сообщений и завершение видео-задания.
 // finalizeVideoJob идемпотентна: вебхук OpenRouter и опрос статуса из приложения
 // могут прийти одновременно — результат сохранится и будет оплачен ровно один раз.
-// Версия: 1.2.0 — резерв энергии: списание через settle_energy (снимает заморозку
+// Версия: 1.3.0 — persistBytes: путь через buildStoragePath; при сбое удаляются и записи,
+//                  и уже загруженные объекты (раньше объекты оставались в Storage без записи
+//                  и не попадали ни в квоту, ни в очистку)
+//          1.2.0 — резерв энергии: списание через settle_energy (снимает заморозку
 //                  hold_id из metadata), при провале задания заморозка снимается
 //                  без списания; истёкшая подписка — коэффициент как у trial
 //          1.1.0 — списание за генерацию «до нуля» (p_allow_partial), возвращается факт
@@ -17,10 +20,11 @@ import { getMarkupForTier } from './markup-helper';
 import {
   MEDIA_LIMITS,
   UUID_RE,
+  buildStoragePath,
   deleteMediaRows,
-  extFromMime,
   isAllowedMime,
   mediaTypeFromMime,
+  removeObjects,
   uploadObject,
 } from './media';
 import { releaseChatLockByToken, VIDEO_LOCK_TTL_SEC } from './chat-lock';
@@ -136,8 +140,8 @@ export async function touchChat(chatId: string, config: ISupabaseConfig): Promis
 
 /**
  * Кладёт результаты в Storage и учитывает их в media_files.
- * Порядок: запись → загрузка; при сбое загрузки запись откатывается,
- * а уже сохранённые файлы этого вызова удаляются (в сообщении ничего не появится).
+ * Порядок: запись → загрузка. При любом сбое удаляются уже загруженные объекты
+ * и все записи этого вызова (в сообщении ничего не появится).
  */
 export async function persistBytes(
   userId: number,
@@ -147,6 +151,7 @@ export async function persistBytes(
 ): Promise<IStoredMedia[]> {
   const stored: IStoredMedia[] = [];
   const rowIds: string[] = [];
+  const uploaded: string[] = [];
 
   try {
     for (const { bytes, mime } of items) {
@@ -154,8 +159,7 @@ export async function persistBytes(
       if (bytes.length > MEDIA_LIMITS.outputMaxBytes) throw new Error('Result is too large');
       if (!isAllowedMime(mime)) throw new Error(`Unsupported result type: ${mime || 'unknown'}`);
 
-      const ext = extFromMime(mime) as string;
-      const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`;
+      const storagePath = buildStoragePath(userId, mime, 'output');
 
       const row = await supabaseFetch(
         'media_files',
@@ -176,6 +180,7 @@ export async function persistBytes(
       rowIds.push(row.id);
 
       await uploadObject(storagePath, bytes, mime, config);
+      uploaded.push(storagePath);
 
       stored.push({
         type: mediaTypeFromMime(mime) as IStoredMedia['type'],
@@ -185,7 +190,16 @@ export async function persistBytes(
       });
     }
   } catch (err) {
-    // Откат: записи в media_files удаляем, объекты Storage убирает очистка по записям
+    // Откат: сначала объекты, потом записи. Если объекты удалить не вышло — записи
+    // оставляем: по ним файлы найдёт очистка (find_unreferenced_media, сообщения на них нет)
+    if (uploaded.length > 0) {
+      try {
+        await removeObjects(uploaded, config);
+      } catch (e) {
+        console.error('persistBytes rollback (storage) failed:', (e as Error).message);
+        throw err;
+      }
+    }
     if (rowIds.length > 0) {
       try {
         await deleteMediaRows(rowIds, config);
