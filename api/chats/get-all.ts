@@ -1,7 +1,10 @@
 // ============================================
 // api/chats/get-all.ts
 // Описание: Получение ВСЕХ чатов с сообщениями для пользователя
-// Версия: 4.1.0 - agent_id/modality чатов и metadata сообщений (генерации);
+// Версия: 4.2.0 - чаты и сообщения загружаются страницами по 1000 (раньше всё сверх
+//                 1000 строк молча терялось); сообщения фильтруются через связь
+//                 с чатом, а не длинным списком id в адресе
+//          4.1.0 - agent_id/modality чатов и metadata сообщений (генерации);
 //                 sync_token не перегенерируется; убран ложный Content-Encoding: gzip
 //          4.0.0 - добавлен pinned, сортировка по pinned + updated_at
 // ============================================
@@ -15,58 +18,73 @@ export const config = {
   maxDuration: 30
 };
 
+/** Сколько строк просим за один запрос (PostgREST отдаёт не больше max-rows, обычно 1000) */
+const PAGE_SIZE = 1000;
+/** Предохранитель: не больше стольких страниц (сообщений: 200 000) */
+const MAX_PAGES = 200;
+
+/**
+ * Все строки по запросу, страницами. Раньше один запрос молча обрезался
+ * на 1000 строк — часть чатов/сообщений не доходила до приложения.
+ * Порядок обязан быть однозначным (последний ключ — id).
+ */
+async function fetchAllPages(pathWithOrder: string, config: any): Promise<any[]> {
+  const all: any[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const rows = await supabaseFetch(
+      `${pathWithOrder}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+      { method: 'GET' },
+      config
+    );
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return all;
+}
+
 /**
  * Получить все чаты пользователя с сообщениями
  * Возвращает ВСЕ чаты, включая удаленные (deleted_at)
  * Сортировка: сначала закреплённые (pinned = true), затем по updated_at DESC
  */
 async function getAllChatsWithMessages(userUuid: string, config: any): Promise<any[]> {
-  // 1. Получаем ВСЕ чаты пользователя (без фильтра deleted_at!)
-  //    Сортировка: pinned DESC (сначала закреплённые), затем updated_at DESC
-  const chats = await supabaseFetch(
-    `chats?user_uuid=eq.${userUuid}&order=pinned.desc,updated_at.desc`,
-    { method: 'GET' },
+  // 1. ВСЕ чаты пользователя (без фильтра deleted_at!), страницами
+  const chats = await fetchAllPages(
+    `chats?user_uuid=eq.${userUuid}&order=pinned.desc,updated_at.desc,id.asc`,
     config
   );
 
-  if (!chats || !Array.isArray(chats) || chats.length === 0) {
+  if (chats.length === 0) {
     return [];
   }
 
-  // 2. Получаем ID всех чатов
-  const chatIds = chats.map(c => c.id);
-  const chatIdsStr = chatIds.join(',');
+  // 2. ВСЕ сообщения этих чатов (включая удалённые), страницами. Фильтр — через
+  //    связь с чатом, а не списком id в адресе (на сотнях чатов адрес не помещался)
+  const allMessages = await fetchAllPages(
+    `messages?select=id,chat_id,text,msg_type,is_favorite,created_at,deleted_at,metadata,chats!inner(user_uuid)` +
+      `&chats.user_uuid=eq.${userUuid}&order=created_at.asc,id.asc`,
+    config
+  );
 
-  // 3. Получаем ВСЕ сообщения для этих чатов (включая удаленные сообщения)
-  let allMessages: any[] = [];
-  if (chatIds.length > 0) {
-    allMessages = await supabaseFetch(
-      `messages?chat_id=in.(${chatIdsStr})&order=created_at.asc`,
-      { method: 'GET' },
-      config
-    );
-  }
-
-  // 4. Группируем сообщения по чатам
+  // 3. Группируем сообщения по чатам
   const messagesByChat: Record<string, any[]> = {};
-  if (allMessages && Array.isArray(allMessages)) {
-    for (const msg of allMessages) {
-      if (!messagesByChat[msg.chat_id]) {
-        messagesByChat[msg.chat_id] = [];
-      }
-      messagesByChat[msg.chat_id].push({
-        id: msg.id,
-        text: msg.text,
-        msg_type: msg.msg_type,
-        is_favorite: msg.is_favorite || false,
-        created_at: msg.created_at,
-        deleted_at: msg.deleted_at,
-        metadata: msg.metadata || null
-      });
+  for (const msg of allMessages) {
+    if (!messagesByChat[msg.chat_id]) {
+      messagesByChat[msg.chat_id] = [];
     }
+    messagesByChat[msg.chat_id].push({
+      id: msg.id,
+      text: msg.text,
+      msg_type: msg.msg_type,
+      is_favorite: msg.is_favorite || false,
+      created_at: msg.created_at,
+      deleted_at: msg.deleted_at,
+      metadata: msg.metadata || null
+    });
   }
 
-  // 5. Собираем полные данные
+  // 4. Собираем полные данные
   return chats.map(chat => ({
     id: chat.id,
     title: chat.title,
