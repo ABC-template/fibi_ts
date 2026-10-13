@@ -1,13 +1,16 @@
 // ============================================
 // api/admin/agents/[...path].ts
 // Описание: Получение, обновление и деактивация конкретного агента
-// Версия: 1.4.0 — PATCH принимает и обновляет context_length модели
+// Версия: 1.5.0 — allowed_tiers через normalizeAllowedTiers (trial не сохраняется);
+//                  без устаревших allowed_roles / min_pro_tier
+//          1.4.0 — PATCH принимает и обновляет context_length модели
 //                  (нужен для динамической проверки размера файлов)
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { normalizeAllowedTiers } from '../../_lib/agent-access';
 import type { IAiAgentInput } from '../../../types/agents';
 
 export const config = { runtime: 'edge' };
@@ -154,17 +157,6 @@ export default async function handler(request: Request): Promise<Response> {
         updates.min_charge = minCharge;
       }
 
-      if (body.allowed_roles !== undefined) {
-        if (!Array.isArray(body.allowed_roles) || body.allowed_roles.length === 0) {
-          return errorResponse('At least one role is required', 400);
-        }
-        updates.allowed_roles = body.allowed_roles;
-      }
-
-      if (body.min_pro_tier !== undefined) {
-        updates.min_pro_tier = body.min_pro_tier || null;
-      }
-
       if (body.is_active !== undefined) {
         updates.is_active = Boolean(body.is_active);
       }
@@ -181,13 +173,11 @@ export default async function handler(request: Request): Promise<Response> {
 
       // --- allowed_tiers ---
       if (body.allowed_tiers !== undefined) {
-        if (body.allowed_tiers === null || (Array.isArray(body.allowed_tiers) && body.allowed_tiers.length === 0)) {
-          updates.allowed_tiers = null;
-        } else if (Array.isArray(body.allowed_tiers)) {
-          updates.allowed_tiers = body.allowed_tiers;
-        } else {
+        const tiers = normalizeAllowedTiers(body.allowed_tiers);
+        if (tiers === undefined) {
           return errorResponse('allowed_tiers must be an array or null', 400);
         }
+        updates.allowed_tiers = tiers;
       }
 
       // --- markup_by_tier ---
