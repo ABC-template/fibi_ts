@@ -3,7 +3,8 @@
 // Пакетная выдача подписанных ссылок на файлы пользователя.
 // Клиент хранит/получает из БД только storage_path и просит ссылки здесь
 // (показ в чате, просмотрщик, «Повторить»). Ссылки живут signTtlSec.
-// Версия: 1.2.0 — ошибки без текста исключения (пути обоих бакетов подписывает signUrls)
+// Версия: 1.3.0 — лимит частоты (media_sign)
+//          1.2.0 — ошибки без текста исключения (пути обоих бакетов подписывает signUrls)
 //          1.1.0 — в ответе missing: пути, которых больше нет у пользователя
 //                  (файл удалён из облака) — приложение показывает «Файл удалён»
 //          1.0.0
@@ -13,6 +14,7 @@ import { authenticate } from '../_lib/auth';
 import { handleCORS, errorResponse, jsonResponse } from '../_lib/cors';
 import { getSupabaseConfig } from '../_lib/supabase-client';
 import { HttpError } from '../_lib/http-error';
+import { enforceRateLimit } from '../_lib/rate-limit';
 import { MEDIA_LIMITS, assertStoragePaths, getOwnedFiles, signUrls } from '../_lib/media';
 
 export const config = { runtime: 'edge' };
@@ -33,6 +35,9 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(auth.error || 'Unauthorized', auth.status || 401);
     }
     const userId = auth.userId;
+
+    const limited = await enforceRateLimit('media_sign', userId);
+    if (limited) return limited;
 
     let body: any;
     try {
