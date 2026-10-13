@@ -53,15 +53,15 @@ interface IAgentRow {
   is_active: boolean;
 }
 
-/** Ключи generation_config, которые нужны форме генерации на клиенте */
-const PUBLIC_GENERATION_KEYS = ['modes', 'params', 'prompt', 'negative_prompt', 'pricing'] as const;
-
+/** Из generation_config — только то, что нужно форме генерации на клиенте */
 function publicGenerationConfig(gen: IGenerationConfig | null): IGenerationConfig | null {
   if (!gen || typeof gen !== 'object' || Array.isArray(gen)) return null;
   const out: IGenerationConfig = {};
-  for (const key of PUBLIC_GENERATION_KEYS) {
-    if (gen[key] !== undefined) out[key] = gen[key];
-  }
+  if (gen.modes !== undefined) out.modes = gen.modes;
+  if (gen.params !== undefined) out.params = gen.params;
+  if (gen.prompt !== undefined) out.prompt = gen.prompt;
+  if (gen.negative_prompt !== undefined) out.negative_prompt = gen.negative_prompt;
+  if (gen.pricing !== undefined) out.pricing = gen.pricing;
   return out;
 }
 
