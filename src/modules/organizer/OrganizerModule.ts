@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/organizer/OrganizerModule.ts
 // Модуль органайзера с вкладками
-// Версия: 4.0.3 - замена @types → @app-types
+// Версия: 4.1.0 - текст напоминаний, значения и заметки трекеров экранируются
+//          4.0.3 - замена @types → @app-types
 // ============================================
 import './organizer.css';
 import { headerManager } from '@/core/header-manager';
@@ -9,6 +10,7 @@ import { organizerStore } from '@/store/OrganizerStore';
 import { organizerService } from '@/services/organizer';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
+import { escapeHtml } from '@/utils/html';
 import type { TopicId } from '@app-types';
 
 export class OrganizerModule {
@@ -292,7 +294,7 @@ export class OrganizerModule {
       info.style.cssText = 'flex:1; overflow:hidden;';
       info.innerHTML = `
         <div style="font-size:10px; font-weight:bold; color:var(--app-accent-primary);">⏰ ${dateStr}, ${timeStr}</div>
-        <div style="font-size:13px; color:var(--app-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${rem.task_text}</div>
+        <div style="font-size:13px; color:var(--app-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(rem.task_text)}</div>
       `;
 
       const del = document.createElement('button');
@@ -458,8 +460,8 @@ export class OrganizerModule {
       row.innerHTML = `
         <div>
           <span style="font-weight:bold; color:var(--app-accent-primary);">${dateStr}:</span>
-          <span style="color:var(--app-text-primary);">${log.value}</span>
-          ${log.note_text ? `<span style="color:var(--app-text-tertiary); font-style:italic; margin-left:4px;">📝 ${log.note_text}</span>` : ''}
+          <span style="color:var(--app-text-primary);">${escapeHtml(log.value)}</span>
+          ${log.note_text ? `<span style="color:var(--app-text-tertiary); font-style:italic; margin-left:4px;">📝 ${escapeHtml(log.note_text)}</span>` : ''}
         </div>
         <button onclick="window.organizerModule.deleteTrackerLog('${log.id}')" style="background:transparent; border:none; font-size:10px; cursor:pointer; opacity:0.4;">🗑️</button>
       `;
