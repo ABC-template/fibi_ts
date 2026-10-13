@@ -3,7 +3,13 @@
 // Медиа генераций: приватный бакет Supabase Storage + таблица media_files.
 // В БД (messages.metadata) хранится только storage_path — подписанные
 // ссылки генерируются на лету и нигде не сохраняются.
-// Версия: 1.1.0 — очистка удаляет файлы, на которые не ссылается ни одно сообщение
+// Версия: 2.0.0 — референсы в отдельном бакете generation-inputs (лимит 10 МБ и только
+//                  изображения на уровне Storage): путь вида in/<user>/<uuid>.<ext>, бакет
+//                  определяется по пути; результаты — по-прежнему generation-media.
+//                  media_files.confirmed_at: референс подтверждён /media/confirm; до этого
+//                  он занимает в квоте inputMaxBytes (столько Storage максимум примет);
+//                  signUrls / removeObjects работают с путями из обоих бакетов
+//          1.1.0 — очистка удаляет файлы, на которые не ссылается ни одно сообщение
 //          1.0.0
 // ============================================
 
@@ -11,10 +17,15 @@ import { supabaseFetch, supabaseRPC } from './supabase-client';
 import type { ISupabaseConfig } from './supabase-client';
 import { HttpError } from './http-error';
 
+/** Результаты генераций */
 export const MEDIA_BUCKET = 'generation-media';
+/** Референсы пользователя (file_size_limit = MEDIA_LIMITS.inputMaxBytes, только изображения) */
+export const INPUT_BUCKET = 'generation-inputs';
+/** Префикс пути референса: по нему выбирается бакет */
+const INPUT_PREFIX = 'in/';
 
 export const MEDIA_LIMITS = {
-  /** Максимальный размер одного референса */
+  /** Максимальный размер одного референса (= file_size_limit бакета generation-inputs) */
   inputMaxBytes: 10 * 1024 * 1024,
   /** Максимальный размер результата генерации */
   outputMaxBytes: 50 * 1024 * 1024,
@@ -44,6 +55,8 @@ export interface IMediaFileRow {
   mime: string;
   size_bytes: number;
   status: 'uploaded' | 'attached';
+  /** Референс подтверждён /media/confirm (у результатов — NULL) */
+  confirmed_at: string | null;
 }
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -72,7 +85,7 @@ const EXT_TO_MIME: Record<string, string> = {
 };
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const STORAGE_PATH_RE = /^\d+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{2,4}$/;
+export const STORAGE_PATH_RE = /^(?:in\/)?\d+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{2,4}$/;
 
 export function isAllowedMime(mime: string): boolean {
   return Object.prototype.hasOwnProperty.call(MIME_TO_EXT, mime);
@@ -94,10 +107,28 @@ export function mediaTypeFromMime(mime: string): MediaType | null {
   return null;
 }
 
-export function buildStoragePath(userId: number, mime: string): string {
+export function buildStoragePath(userId: number, mime: string, kind: MediaKind): string {
   const ext = extFromMime(mime);
   if (!ext) throw new HttpError(400, 'Unsupported mime type');
-  return `${userId}/${crypto.randomUUID()}.${ext}`;
+  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+  return kind === 'input' ? INPUT_PREFIX + path : path;
+}
+
+/** Бакет объекта по его пути */
+export function bucketForPath(path: string): string {
+  return path.startsWith(INPUT_PREFIX) ? INPUT_BUCKET : MEDIA_BUCKET;
+}
+
+/** Пути, разложенные по бакетам */
+function groupByBucket(paths: string[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const p of paths) {
+    const bucket = bucketForPath(p);
+    const list = groups.get(bucket);
+    if (list) list.push(p);
+    else groups.set(bucket, [p]);
+  }
+  return groups;
 }
 
 export function assertStoragePaths(paths: unknown, max: number): string[] {
@@ -129,7 +160,7 @@ function encodePath(path: string): string {
 /** Одноразовая ссылка, по которой клиент грузит файл напрямую в Storage (минуя лимит тела запроса Vercel) */
 export async function createSignedUploadUrl(path: string, config: ISupabaseConfig): Promise<string> {
   const res = await fetch(
-    `${storageBase(config)}/object/upload/sign/${MEDIA_BUCKET}/${encodePath(path)}`,
+    `${storageBase(config)}/object/upload/sign/${bucketForPath(path)}/${encodePath(path)}`,
     {
       method: 'POST',
       headers: { ...storageHeaders(config), 'Content-Type': 'application/json' },
@@ -150,7 +181,7 @@ export async function headObject(
   config: ISupabaseConfig
 ): Promise<{ exists: boolean; size: number; mime: string }> {
   const res = await fetch(
-    `${storageBase(config)}/object/authenticated/${MEDIA_BUCKET}/${encodePath(path)}`,
+    `${storageBase(config)}/object/authenticated/${bucketForPath(path)}/${encodePath(path)}`,
     { method: 'HEAD', headers: storageHeaders(config) }
   );
   if (!res.ok) return { exists: false, size: 0, mime: '' };
@@ -167,20 +198,21 @@ export async function signUrls(
   expiresIn: number,
   config: ISupabaseConfig
 ): Promise<Record<string, string>> {
-  if (paths.length === 0) return {};
-  const res = await fetch(`${storageBase(config)}/object/sign/${MEDIA_BUCKET}`, {
-    method: 'POST',
-    headers: { ...storageHeaders(config), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expiresIn, paths }),
-  });
-  if (!res.ok) {
-    throw new Error(`Storage sign error ${res.status}: ${(await res.text()).substring(0, 200)}`);
-  }
-  const data = await res.json();
   const map: Record<string, string> = {};
-  for (const item of Array.isArray(data) ? data : []) {
-    if (item?.path && item?.signedURL) {
-      map[item.path] = `${storageBase(config)}${item.signedURL}`;
+  for (const [bucket, bucketPaths] of groupByBucket(paths)) {
+    const res = await fetch(`${storageBase(config)}/object/sign/${bucket}`, {
+      method: 'POST',
+      headers: { ...storageHeaders(config), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn, paths: bucketPaths }),
+    });
+    if (!res.ok) {
+      throw new Error(`Storage sign error ${res.status}: ${(await res.text()).substring(0, 200)}`);
+    }
+    const data = await res.json();
+    for (const item of Array.isArray(data) ? data : []) {
+      if (item?.path && item?.signedURL) {
+        map[item.path] = `${storageBase(config)}${item.signedURL}`;
+      }
     }
   }
   return map;
@@ -193,7 +225,7 @@ export async function uploadObject(
   mime: string,
   config: ISupabaseConfig
 ): Promise<void> {
-  const res = await fetch(`${storageBase(config)}/object/${MEDIA_BUCKET}/${encodePath(path)}`, {
+  const res = await fetch(`${storageBase(config)}/object/${bucketForPath(path)}/${encodePath(path)}`, {
     method: 'POST',
     headers: {
       ...storageHeaders(config),
@@ -210,15 +242,17 @@ export async function uploadObject(
 
 /** Удаление объектов. При ошибке бросает исключение — записи в media_files остаются для повторной попытки */
 export async function removeObjects(paths: string[], config: ISupabaseConfig): Promise<void> {
-  for (let i = 0; i < paths.length; i += 100) {
-    const chunk = paths.slice(i, i + 100);
-    const res = await fetch(`${storageBase(config)}/object/${MEDIA_BUCKET}`, {
-      method: 'DELETE',
-      headers: { ...storageHeaders(config), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefixes: chunk }),
-    });
-    if (!res.ok) {
-      throw new Error(`Storage remove error ${res.status}: ${(await res.text()).substring(0, 200)}`);
+  for (const [bucket, bucketPaths] of groupByBucket(paths)) {
+    for (let i = 0; i < bucketPaths.length; i += 100) {
+      const chunk = bucketPaths.slice(i, i + 100);
+      const res = await fetch(`${storageBase(config)}/object/${bucket}`, {
+        method: 'DELETE',
+        headers: { ...storageHeaders(config), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefixes: chunk }),
+      });
+      if (!res.ok) {
+        throw new Error(`Storage remove error ${res.status}: ${(await res.text()).substring(0, 200)}`);
+      }
     }
   }
 }
@@ -240,15 +274,23 @@ export async function getOwnedFiles(
   if (paths.length === 0) return [];
   const rows = await supabaseFetch(
     `media_files?user_id=eq.${userId}&storage_path=in.${inList(paths)}` +
-      `&select=id,user_id,chat_id,storage_path,kind,mime,size_bytes,status`,
+      `&select=id,user_id,chat_id,storage_path,kind,mime,size_bytes,status,confirmed_at`,
     { method: 'GET' },
     config
   );
   return Array.isArray(rows) ? rows : [];
 }
 
+/**
+ * Занятое место: результаты и подтверждённые референсы — по факту,
+ * неподтверждённые референсы — не меньше inputMaxBytes (столько Storage максимум примет).
+ */
 export async function getUserMediaUsage(userId: number, config: ISupabaseConfig): Promise<number> {
-  const used = await supabaseRPC('get_user_media_usage', { p_user_id: userId }, config);
+  const used = await supabaseRPC(
+    'get_user_media_usage',
+    { p_user_id: userId, p_unconfirmed_bytes: MEDIA_LIMITS.inputMaxBytes },
+    config
+  );
   return Number(used) || 0;
 }
 
