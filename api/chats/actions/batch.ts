@@ -1,292 +1,214 @@
 // ============================================
-// api/chats/actions/batch.ts
-// Описание: Массовые операции с сообщениями (с user_uuid)
-// Версия: 3.0.1 - FIXED
+// api/_lib/validators.ts
+// Описание: Все валидации для Edge-функций
+// Версия: 2.1.0 - длина сообщения до 100 000 символов (MAX_MESSAGE_CHARS);
+//                 normalizeOrganizerTopic ('all' или тема)
+//          2.0.0 - TypeScript
 // ============================================
 
-import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
-import { getSupabaseConfig, supabaseFetch, canUserSync, getUserUuid } from '../../_lib/supabase-client';
-import { isValidUUID, isValidTopic, validateTopic, validateMessageLength } from '../../_lib/validators';
+// ==========================================
+// UUID валидация
+// ==========================================
 
-export const config = { runtime: 'edge' };
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-interface IBatchRequest {
-  action: 'batch_messages' | 'create_chat_batch';
-  chatId?: string;
-  topicId?: string;
-  chatTitle?: string;
-  maxContext?: number;
-  userRenamed?: boolean;
-  messages: Array<{
-    id?: string;
-    text: string;
-    type?: string;
-    is_favorite?: boolean;
-  }>;
-  chat?: {
-    id?: string;
-    topic_id?: string;
-    title?: string;
-    max_context?: number;
-    user_renamed?: boolean;
+export function isValidUUID(uuid: string): boolean {
+  if (!uuid || typeof uuid !== 'string') return false;
+  return UUID_REGEX.test(uuid);
+}
+
+export function validateUUID(uuid: string, fieldName: string = 'ID'): boolean {
+  if (!isValidUUID(uuid)) {
+    throw new Error(`Invalid ${fieldName} format`);
+  }
+  return true;
+}
+
+// ==========================================
+// Топик валидация
+// ==========================================
+
+const ALLOWED_TOPICS = ['code', 'creative', 'fast', 'kitchen', 'analytics'] as const;
+
+export type TopicId = typeof ALLOWED_TOPICS[number];
+
+export function isValidTopic(topic: string): boolean {
+  if (!topic || typeof topic !== 'string') return false;
+  return ALLOWED_TOPICS.includes(topic as TopicId);
+}
+
+export function validateTopic(topic: string): boolean {
+  if (!isValidTopic(topic)) {
+    throw new Error(`Invalid topic: ${topic}. Allowed: ${ALLOWED_TOPICS.join(', ')}`);
+  }
+  return true;
+}
+
+/**
+ * Раздел органайзера: 'all' (общий, по умолчанию) или одна из тем.
+ * null — значение недопустимо.
+ */
+export function normalizeOrganizerTopic(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === '' || raw === 'all') return 'all';
+  return typeof raw === 'string' && isValidTopic(raw) ? raw : null;
+}
+
+// ==========================================
+// Размер изображения
+// ==========================================
+
+export interface IImageSizeValidation {
+  valid: boolean;
+  sizeInMB?: number;
+  sizeInBytes?: number;
+}
+
+export function validateImageSize(
+  base64String: string,
+  maxSizeMB: number = 5
+): IImageSizeValidation {
+  if (!base64String) return { valid: true };
+
+  // Убираем data:image/...;base64, если есть
+  const cleanBase64 = base64String.includes(',')
+    ? base64String.split(',')[1]
+    : base64String;
+
+  const base64Length = cleanBase64.length;
+  const sizeInBytes = Math.ceil((base64Length * 3) / 4);
+  const sizeInMB = sizeInBytes / (1024 * 1024);
+
+  return {
+    valid: sizeInMB <= maxSizeMB,
+    sizeInMB: Math.round(sizeInMB * 100) / 100,
+    sizeInBytes
   };
 }
 
-/**
- * Массовое добавление сообщений
- */
-async function batchAddMessages(
-  userId: number,
-  userUuid: string,
-  chatId: string,
-  messages: any[],
-  config: any
-): Promise<{ success: boolean; count: number; error?: string }> {
-  try {
-    if (!isValidUUID(chatId)) {
-      return { success: false, count: 0, error: 'Invalid Chat ID format' };
-    }
+// ==========================================
+// Размер аудио
+// ==========================================
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return { success: false, count: 0, error: 'No messages to save' };
-    }
+export interface IAudioSizeValidation {
+  valid: boolean;
+  sizeInMB?: number;
+  sizeInBytes?: number;
+  error?: string;
+}
 
-    const canSync = await canUserSync(userId, config);
-    if (!canSync) {
-      return {
-        success: false,
-        count: 0,
-        error: 'Синхронизация недоступна для вашего тарифного плана'
-      };
-    }
-
-    const chatCheck = await supabaseFetch(
-      `chats?id=eq.${chatId}&user_id=eq.${userId}&select=id`,
-      { method: 'GET' },
-      config
-    );
-
-    if (!chatCheck || !Array.isArray(chatCheck) || chatCheck.length === 0) {
-      return { success: false, count: 0, error: 'Chat not found or access denied' };
-    }
-
-    let savedCount = 0;
-
-    for (const msg of messages) {
-      const validation = validateMessageLength(msg.text, 10000);
-      if (!validation.valid) {
-        console.warn('Skipping invalid message:', validation.error);
-        continue;
-      }
-
-      const msgId = msg.id || crypto.randomUUID();
-      const msgType = msg.type || 'user-msg';
-
-      try {
-        await supabaseFetch(
-          'messages',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              id: msgId,
-              chat_id: chatId,
-              msg_type: msgType,
-              text: msg.text,
-              is_favorite: msg.is_favorite || false,
-            })
-          },
-          config
-        );
-        savedCount++;
-      } catch (err) {
-        console.error('Failed to save message:', (err as Error).message);
-      }
-    }
-
-    if (savedCount > 0) {
-      await supabaseFetch(
-        `chats?id=eq.${chatId}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ updated_at: new Date().toISOString() })
-        },
-        config
-      );
-    }
-
-    return { success: true, count: savedCount, error: null };
-  } catch (err) {
-    console.error('Batch add messages error:', (err as Error).message);
-    return { success: false, count: 0, error: (err as Error).message };
+export function validateAudioSize(
+  buffer: ArrayBuffer,
+  maxSizeMB: number = 5
+): IAudioSizeValidation {
+  if (!buffer || buffer.byteLength === 0) {
+    return { valid: false, error: 'Audio data is empty' };
   }
+
+  const maxBytes = maxSizeMB * 1024 * 1024;
+  const sizeInMB = buffer.byteLength / (1024 * 1024);
+
+  return {
+    valid: buffer.byteLength <= maxBytes,
+    sizeInMB: Math.round(sizeInMB * 100) / 100,
+    sizeInBytes: buffer.byteLength
+  };
+}
+
+// ==========================================
+// Длина сообщения
+// ==========================================
+
+export interface IMessageLengthValidation {
+  valid: boolean;
+  length?: number;
+  error?: string;
 }
 
 /**
- * Создать чат и добавить batch сообщений
+ * Максимальная длина сообщения. Ответы ИИ бывают длинными (код, документы):
+ * при 10 000 они не сохранялись в облако и пропадали на других устройствах.
  */
-async function createChatWithBatch(
-  userId: number,
-  userUuid: string,
-  chatData: any,
-  messages: any[],
-  config: any
-): Promise<{ success: boolean; chatId?: string; count?: number; error?: string }> {
-  try {
-    const topic = chatData.topic_id || 'fast';
-    validateTopic(topic);
+export const MAX_MESSAGE_CHARS = 100_000;
 
-    const canSync = await canUserSync(userId, config);
-    if (!canSync) {
-      return {
-        success: false,
-        error: 'Синхронизация недоступна для вашего тарифного плана'
-      };
-    }
+export function validateMessageLength(
+  text: string,
+  maxLength: number = MAX_MESSAGE_CHARS
+): IMessageLengthValidation {
+  if (!text || typeof text !== 'string') {
+    return { valid: false, error: 'Message text is required' };
+  }
 
-    const chatId = chatData.id || crypto.randomUUID();
+  const length = text.trim().length;
+  if (length === 0) {
+    return { valid: false, error: 'Message cannot be empty' };
+  }
 
-    // СОЗДАЕМ ЧАТ С user_uuid
-    await supabaseFetch(
-      'chats',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          id: chatId,
-          user_id: userId,
-          user_uuid: userUuid,
-          topic_id: topic,
-          title: chatData.title || `Чат в разделе ${topic}`,
-          max_context: chatData.max_context || 15,
-          user_renamed: chatData.user_renamed || false,
-        })
-      },
-      config
-    );
-
-    let savedCount = 0;
-
-    if (messages && Array.isArray(messages)) {
-      for (const msg of messages) {
-        const validation = validateMessageLength(msg.text);
-        if (!validation.valid) {
-          continue;
-        }
-
-        const msgId = msg.id || crypto.randomUUID();
-        const msgType = msg.type || 'user-msg';
-
-        try {
-          await supabaseFetch(
-            'messages',
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                id: msgId,
-                chat_id: chatId,
-                msg_type: msgType,
-                text: msg.text,
-                is_favorite: msg.is_favorite || false,
-              })
-            },
-            config
-          );
-          savedCount++;
-        } catch (err) {
-          console.error('Failed to save message in batch:', (err as Error).message);
-        }
-      }
-    }
-
+  if (length > maxLength) {
     return {
-      success: true,
-      chatId: chatId,
-      count: savedCount,
-      error: null
+      valid: false,
+      error: `Message too long (${length} chars). Maximum ${maxLength}`
     };
-  } catch (err) {
-    console.error('Create chat with batch error:', (err as Error).message);
-    return { success: false, error: (err as Error).message };
   }
+
+  return { valid: true, length };
 }
 
-export default async function handler(request: Request): Promise<Response> {
-  const corsResponse = handleCORS(request);
-  if (corsResponse) return corsResponse;
+// ==========================================
+// User ID валидация
+// ==========================================
 
-  if (request.method !== 'POST') {
-    return errorResponse('Method Not Allowed', 405);
+export function isValidUserId(userId: any): boolean {
+  if (!userId) return false;
+  const id = parseInt(userId, 10);
+  return Number.isInteger(id) && id > 0;
+}
+
+export function validateUserId(userId: any): number {
+  if (!isValidUserId(userId)) {
+    throw new Error('Invalid user ID');
   }
+  return parseInt(userId, 10);
+}
 
-  try {
-    const auth = await authenticate(request);
-    if (auth.error) {
-      return errorResponse(auth.error, auth.status || 401);
-    }
+// ==========================================
+// Разрешенные действия для чатов
+// ==========================================
 
-    const userId = auth.userId!;
-    const config = getSupabaseConfig('service');
+const ALLOWED_ACTIONS = [
+  'new_message', 'batch_messages', 'delete_chat', 'delete_message',
+  'rename_chat', 'favorite_message', 'update_context', 'new_chat'
+] as const;
 
-    // ПОЛУЧАЕМ UUID ПОЛЬЗОВАТЕЛЯ
-    const userUuid = await getUserUuid(userId, config);
-    if (!userUuid) {
-      console.error(`❌ Не найден UUID для пользователя ${userId}`);
-      return errorResponse('User not found', 404);
-    }
+export type ChatAction = typeof ALLOWED_ACTIONS[number];
 
-    let body: IBatchRequest;
-    try {
-      body = await request.json();
-    } catch (err) {
-      return errorResponse('Invalid JSON body', 400);
-    }
+export function isValidAction(action: string): boolean {
+  if (!action || typeof action !== 'string') return false;
+  return ALLOWED_ACTIONS.includes(action as ChatAction);
+}
 
-    const { action, chatId, topicId, chatTitle, maxContext, userRenamed, messages, chat } = body;
-
-    if (action === 'batch_messages') {
-      if (!chatId || !messages) {
-        return errorResponse('Missing chatId or messages', 400);
-      }
-
-      const result = await batchAddMessages(userId, userUuid, chatId, messages, config);
-      if (!result.success) {
-        return errorResponse(result.error || 'Unknown error', 400);
-      }
-
-      return jsonResponse({
-        success: true,
-        synced: true,
-        count: result.count,
-        chatId: chatId
-      });
-    } else if (action === 'create_chat_batch') {
-      if (!messages) {
-        return errorResponse('Missing messages', 400);
-      }
-
-      const chatData = chat || {
-        id: body.chatId || crypto.randomUUID(),
-        topic_id: topicId || 'fast',
-        title: chatTitle || 'Новый чат',
-        max_context: maxContext || 15,
-        user_renamed: userRenamed || false
-      };
-
-      const result = await createChatWithBatch(userId, userUuid, chatData, messages, config);
-      if (!result.success) {
-        return errorResponse(result.error || 'Unknown error', 400);
-      }
-
-      return jsonResponse({
-        success: true,
-        chatId: result.chatId,
-        count: result.count || 0
-      });
-    } else {
-      return errorResponse('Unknown action', 400);
-    }
-  } catch (err) {
-    console.error('Batch handler error:', (err as Error).message);
-    return errorResponse((err as Error).message, 500);
+export function validateAction(action: string): boolean {
+  if (!isValidAction(action)) {
+    throw new Error(`Invalid action: ${action}. Allowed: ${ALLOWED_ACTIONS.join(', ')}`);
   }
+  return true;
+}
+
+// ==========================================
+// Экспорт типа сообщения
+// ==========================================
+
+const ALLOWED_MSG_TYPES = ['user-msg', 'ai-msg'] as const;
+
+export type MessageType = typeof ALLOWED_MSG_TYPES[number];
+
+export function isValidMessageType(type: string): boolean {
+  if (!type || typeof type !== 'string') return false;
+  return ALLOWED_MSG_TYPES.includes(type as MessageType);
+}
+
+export function validateMessageType(type: string): boolean {
+  if (!isValidMessageType(type)) {
+    throw new Error(`Invalid message type: ${type}. Allowed: ${ALLOWED_MSG_TYPES.join(', ')}`);
+  }
+  return true;
 }
