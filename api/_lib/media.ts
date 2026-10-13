@@ -3,7 +3,8 @@
 // Медиа генераций: приватный бакет Supabase Storage + таблица media_files.
 // В БД (messages.metadata) хранится только storage_path — подписанные
 // ссылки генерируются на лету и нигде не сохраняются.
-// Версия: 1.0.0
+// Версия: 1.1.0 — очистка удаляет файлы, на которые не ссылается ни одно сообщение
+//          1.0.0
 // ============================================
 
 import { supabaseFetch, supabaseRPC } from './supabase-client';
@@ -265,7 +266,10 @@ export async function deleteMediaRows(ids: string[], config: ISupabaseConfig): P
 /**
  * Очистка файлов:
  *  1. загруженные, но так и не отправленные в генерацию (старше uploadedTtlHours);
- *  2. файлы удалённых чатов (chat_id обнулился по FK ON DELETE SET NULL).
+ *  2. файлы удалённых чатов (chat_id обнулился по FK ON DELETE SET NULL);
+ *  3. файлы, на которые не ссылается ни одно сообщение чата (сообщение удалено
+ *     навсегда) — раньше они занимали квоту, пока жив чат (sql/stage5_hygiene.sql).
+ *     Нет функции в БД — шаг пропускается.
  * Вызывается из cron после очистки корзины.
  */
 export async function cleanupMediaFiles(config: ISupabaseConfig): Promise<{ removed: number }> {
@@ -282,10 +286,21 @@ export async function cleanupMediaFiles(config: ISupabaseConfig): Promise<{ remo
     config
   );
 
+  let unreferenced: any[] = [];
+  try {
+    const res = await supabaseRPC('find_unreferenced_media', { p_limit: 500 }, config);
+    unreferenced = Array.isArray(res) ? res : [];
+  } catch (err) {
+    console.warn('cleanupMediaFiles: find_unreferenced_media недоступна:', (err as Error).message);
+  }
+
+  // Один файл может попасть в две выборки — убираем повторы
+  const seen = new Set<string>();
   const rows = [
     ...(Array.isArray(stale) ? stale : []),
     ...(Array.isArray(orphaned) ? orphaned : []),
-  ];
+    ...unreferenced,
+  ].filter((r: any) => r?.id && r?.storage_path && !seen.has(r.id) && seen.add(r.id));
   if (rows.length === 0) return { removed: 0 };
 
   await removeObjects(rows.map((r: any) => r.storage_path), config);
