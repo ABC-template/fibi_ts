@@ -1,7 +1,8 @@
 // ============================================
 // src/services/subscription.ts
 // Сервис для работы с подписками
-// Версия: 1.2.0 — подписка пользователя берётся из данных входа (эндпоинта
+// Версия: 1.3.0 — убраны activateTrial и is_trial (пробного периода больше нет)
+//          1.2.0 — подписка пользователя берётся из данных входа (эндпоинта
 //                  /subscription/user нет); убран cancelSubscription (эндпоинта нет)
 //          1.1.0 — после активации пробной подписки доступ перепроверяется на сервере:
 //                  синхронизация и Realtime включаются сразу, локальные чаты выгружаются
@@ -21,7 +22,6 @@ export interface ITier {
   price_stars: number;
   permanent_tokens: number;
   is_active: boolean;
-  is_trial: boolean;
   is_one_time: boolean;
   description: string | null;
   sort_order: number;
@@ -75,37 +75,6 @@ export class SubscriptionService {
       await applyAccessTransition(result);
     } catch (err) {
       console.error('[SubscriptionService] Не удалось обновить доступ:', err);
-    }
-  }
-
-  /**
-   * Активировать пробный период
-   */
-  async activateTrial(): Promise<{ success: boolean; tier?: string; days?: number; tokens?: number; expires_at?: string; error?: string }> {
-    try {
-      const response = await apiClient.post('/subscription/activate-trial');
-      if (response.success) {
-        if (userStore) userStore.markTrialUsed();
-        // Роль, токен Realtime и синхронизация — сразу, без перезапуска приложения
-        await this.refreshAccess();
-        return {
-          success: true,
-          tier: response.tier,
-          days: response.days,
-          tokens: response.permanent_tokens,
-          expires_at: response.expires_at,
-        };
-      }
-      return {
-        success: false,
-        error: response.error || 'Failed to activate trial',
-      };
-    } catch (err) {
-      console.error('[SubscriptionService] Error activating trial:', err);
-      return {
-        success: false,
-        error: (err as Error).message,
-      };
     }
   }
 
