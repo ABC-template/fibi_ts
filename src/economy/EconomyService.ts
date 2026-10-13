@@ -1,7 +1,8 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 5.1.0 — монеты из игр через /economy/game (клиент больше не начисляет монеты сам)
+// Версия: 5.2.0 — удалён spendCoins (/economy/spend больше нет)
+//          5.1.0 — монеты из игр через /economy/game (клиент больше не начисляет монеты сам)
 //          5.0.0 — spent_today / daily_limit / bypass - добавлены все методы для совместимости
 // ============================================
 
@@ -134,49 +135,6 @@ export class EconomyService {
     } catch (err) {
       console.error('[EconomyService.awardGameCoins] Error:', err);
       return { success: false, awarded: 0, error: (err as Error).message };
-    }
-  }
-
-  /**
-   * Списать монеты (для совместимости с существующим кодом)
-   */
-  async spendCoins(
-    userId: number,
-    amount: number,
-    source: string,
-    description: string,
-    metadata: Record<string, any> = {}
-  ): Promise<ITransactionResult> {
-    try {
-      const result = await apiClient.post('/economy/spend', {
-        userId,
-        amount,
-        source,
-        description,
-        metadata,
-      });
-
-      if (result.success) {
-        return {
-          success: true,
-          newBalance: result.newBalance || 0,
-          transactionId: result.transactionId || null,
-          delta: result.delta || -amount,
-        };
-      }
-
-      return {
-        success: false,
-        newBalance: 0,
-        error: result.error || 'Failed to spend coins',
-      };
-    } catch (err) {
-      console.error('[EconomyService.spendCoins] Error:', err);
-      return {
-        success: false,
-        newBalance: 0,
-        error: (err as Error).message,
-      };
     }
   }
 
