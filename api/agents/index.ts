@@ -1,7 +1,8 @@
 // ============================================
 // api/agents/index.ts
 // Описание: Список активных агентов для пользователей + флаг доступа
-// Версия: 1.3.0 — multi-tier access (allowed_tiers)
+// Версия: 1.4.0 — истёкшая подписка считается trial (раньше агенты PRO показывались доступными)
+//          1.3.0 — multi-tier access (allowed_tiers)
 // ============================================
 
 import { authenticate } from '../_lib/auth';
@@ -36,14 +37,15 @@ export default async function handler(request: Request): Promise<Response> {
 
     if (auth.userId) {
       const userRes = await supabaseFetch(
-        `users?telegram_id=eq.${auth.userId}&select=role,subscription_tier`,
+        `users?telegram_id=eq.${auth.userId}&select=role,subscription_tier,premium_until`,
         { method: 'GET' },
         config
       );
 
       if (userRes && Array.isArray(userRes) && userRes.length > 0) {
         userRole = userRes[0].role || 'trial';
-        userProTier = userRes[0].subscription_tier || null;
+        const expired = !!userRes[0].premium_until && new Date(userRes[0].premium_until).getTime() < Date.now();
+        userProTier = expired ? null : userRes[0].subscription_tier || null;
       }
     }
 
