@@ -1,7 +1,14 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 8.0.0 — без Supabase Auth: пользователь создаётся в public.users (getOrCreateUser),
+// Версия: 9.0.0 — доступ (api/_lib/access-gate.ts): подписка на канал проверяется
+//                  только если в админке включено «Только для подписчиков», и при
+//                  каждом входе заново (результат запоминается в users); Telegram не
+//                  ответил — последний известный результат, проверок не было — пропуск.
+//                  В ответе access { blocked, blockReason, channelRequired, channelUrl }:
+//                  по нему приложение показывает заглушку. Остальное API для
+//                  заблокированного / неподписанного закрыто в authenticate()
+//          8.0.0 — без Supabase Auth: пользователь создаётся в public.users (getOrCreateUser),
 //                  JWT/authUserId/пароль больше не выдаются; для синхронизации отдаётся
 //                  токен Realtime (realtime: { token, expiresAt }); adminPanel — доступ к
 //                  админке по Telegram ID; заблокированным не начисляются бонус и вход дня
@@ -26,6 +33,12 @@ import {
   isAdminTelegramId,
   signRealtimeToken,
 } from '../_lib/index';
+import {
+  accessDecision,
+  getChannelUrl,
+  loadAccessState,
+  refreshChannelMembership,
+} from '../_lib/access-gate';
 
 export const config = { runtime: 'edge' };
 
@@ -66,13 +79,26 @@ export default async function handler(request: Request): Promise<Response> {
     let subscriptionTier: string | null = dbUser.subscription_tier || 'trial';
     const premiumUntil: string | null = dbUser.premium_until || null;
 
-    // Блокировка: вход разрешён (данные доступны), но бонусы дня не начисляются
+    // Доступ: блокировка и подписка на канал (свежая проверка при каждом входе)
+    const adminById = isAdminTelegramId(telegramId);
     let blocked = false;
+    let blockReason: string | null = null;
+    let blockExpiresAt: string | null = null;
+    let channelRequired = false;
     try {
-      const r = await supabaseRPC('is_user_blocked', { p_user_id: telegramId }, config);
-      blocked = r === true || r === 'true';
+      const state = await loadAccessState(telegramId, config, false);
+      blocked = state.blocked && !adminById;
+      blockReason = state.blockReason;
+      blockExpiresAt = state.blockExpiresAt;
+      let channelMember = state.channelMember;
+      if (state.gateEnabled && !blocked && !adminById && !['admin', 'creator'].includes(state.role)) {
+        channelMember = await refreshChannelMembership(telegramId, config, state.channelMember);
+      }
+      // Ключ доступа: без подписки (при включённой галочке) — только заглушка
+      const denied = adminById ? null : accessDecision({ ...state, blocked }, channelMember);
+      channelRequired = denied?.code === 'channel_required';
     } catch (err) {
-      console.warn('⚠️ [auth/check] is_user_blocked:', err);
+      console.warn('⚠️ [auth/check] access state:', err);
     }
 
     // ==========================================
@@ -159,32 +185,9 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 5. Канал = GATE (не роль, tier не сбрасываем)
+    // 5. Канал — см. «Доступ» выше (channelRequired)
     // ==========================================
-    let isMember = true;
-    if (!['admin', 'creator'].includes(role)) {
-      const channelId = process.env.CHANNEL_ID?.trim();
-      const botToken = process.env.BOT_TOKEN?.trim();
-
-      if (channelId && botToken) {
-        try {
-          const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${channelId}&user_id=${telegramId}`;
-          const response = await fetch(url);
-          const data = await response.json();
-          if (data.ok) {
-            const status = data.result?.status;
-            isMember = ['member', 'administrator', 'creator', 'owner'].includes(status);
-          } else {
-            // при ошибке API не блокируем жёстко (чтобы не ломать вход)
-            console.warn('[auth/check] getChatMember not ok:', data);
-            isMember = true;
-          }
-        } catch (err) {
-          console.error('Channel check error:', (err as Error).message);
-          isMember = true;
-        }
-      }
-    }
+    const isMember = !channelRequired;
 
     // ==========================================
     // 6. Лимиты из тарифа
@@ -221,7 +224,7 @@ export default async function handler(request: Request): Promise<Response> {
     // 7. Ежедневный бонус (сброс на значение тарифа)
     // ==========================================
     let bonusAdded = 0;
-    if (!blocked && !limits.bypass && !['admin', 'creator'].includes(role)) {
+    if (!blocked && !channelRequired && !limits.bypass && !['admin', 'creator'].includes(role)) {
       const amount = limits.bonus_tokens_per_day || 0;
       if (amount > 0) {
         try {
@@ -247,7 +250,7 @@ export default async function handler(request: Request): Promise<Response> {
     //     Клиент только показывает результат.
     // ==========================================
     let checkin: any = null;
-    if (!blocked) {
+    if (!blocked && !channelRequired) {
       try {
         const res = await supabaseRPC('daily_checkin', { p_user_id: telegramId }, config);
         if (res?.success) {
@@ -299,7 +302,8 @@ export default async function handler(request: Request): Promise<Response> {
     // 9. Синхронизация и токен Realtime
     //    can_sync — то же правило, что и в API синхронизации (batch, sync-metadata)
     // ==========================================
-    const syncEnabled = await canUserSync(telegramId, config);
+    // Нет доступа (блок / нет подписки) — синхронизация и Realtime не выдаются
+    const syncEnabled = !blocked && !channelRequired && await canUserSync(telegramId, config);
     let realtime: { token: string; expiresAt: number } | null = null;
     if (syncEnabled) {
       try {
@@ -323,6 +327,13 @@ export default async function handler(request: Request): Promise<Response> {
         realtime,
         adminPanel: isAdminTelegramId(telegramId),
         blocked,
+        access: {
+          blocked,
+          blockReason,
+          blockExpiresAt,
+          channelRequired,
+          channelUrl: getChannelUrl(),
+        },
         userId: telegramId,
         userUuid,
         isNewUser,
