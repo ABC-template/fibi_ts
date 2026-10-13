@@ -13,7 +13,9 @@
 // channel_checked_at) и обновляется раз в час. Telegram не ответил — берётся
 // последний известный результат; если проверки ещё не было — пропускаем.
 // Бот должен быть администратором канала, иначе getChatMember не работает.
-// Версия: 1.0.0
+// Версия: 1.1.0 — fetchTelegramMembership / parseTelegramChat (проверка подписки
+//                  на канал спонсора в заданиях)
+//          1.0.0
 // ============================================
 
 import { supabaseFetch, supabaseRPC } from './supabase-client';
@@ -99,18 +101,17 @@ export function getChannelUrl(): string | null {
 }
 
 /**
- * Спросить Telegram, подписан ли пользователь.
- * null — узнать не удалось (нет настроек, сбой сети, бот не админ канала).
+ * Подписан ли пользователь на канал/группу chatId (@username или -100…).
+ * null — узнать не удалось (нет токена, сбой сети, бот не админ канала).
  */
-export async function fetchChannelMembership(userId: number): Promise<boolean | null> {
-  const channelId = process.env.CHANNEL_ID?.trim();
+export async function fetchTelegramMembership(chatId: string, userId: number): Promise<boolean | null> {
   const botToken = process.env.BOT_TOKEN?.trim();
-  if (!channelId || !botToken) return null;
+  if (!chatId || !botToken) return null;
 
   try {
     const url =
       `https://api.telegram.org/bot${botToken}/getChatMember` +
-      `?chat_id=${encodeURIComponent(channelId)}&user_id=${userId}`;
+      `?chat_id=${encodeURIComponent(chatId)}&user_id=${userId}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS) });
     const data: any = await res.json().catch(() => null);
     if (!data?.ok) {
@@ -124,6 +125,25 @@ export async function fetchChannelMembership(userId: number): Promise<boolean | 
     console.warn('[access-gate] getChatMember failed:', (err as Error).message);
     return null;
   }
+}
+
+/** Подписка на канал приложения (CHANNEL_ID) */
+export async function fetchChannelMembership(userId: number): Promise<boolean | null> {
+  const channelId = process.env.CHANNEL_ID?.trim();
+  if (!channelId) return null;
+  return fetchTelegramMembership(channelId, userId);
+}
+
+/**
+ * Канал из ссылки/имени: '@name', 't.me/name', 'https://t.me/name', '-100…'.
+ * null — проверить нельзя (приватная ссылка-приглашение, не Telegram и т.п.).
+ */
+export function parseTelegramChat(target: unknown): string | null {
+  const s = typeof target === 'string' ? target.trim() : '';
+  if (/^@[A-Za-z0-9_]{4,64}$/.test(s)) return s;
+  if (/^-100\d{5,}$/.test(s)) return s;
+  const m = /^(?:https?:\/\/)?t\.me\/([A-Za-z0-9_]{4,64})\/?$/i.exec(s);
+  return m ? `@${m[1]}` : null;
 }
 
 /** Проверить у Telegram и запомнить результат. Возвращает итог (с учётом прошлого). */
