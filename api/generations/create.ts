@@ -1,7 +1,9 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video)
-// Версия: 3.0.0
+// Версия: 3.1.0 — без отдельного сообщения-запроса (user-msg): всё о запросе — в metadata
+//                  результата (под карточкой уже есть промпт, в просмотрщике — параметры)
+//          3.0.0
 //   - фото: отдельный API OpenRouter POST /images с реальными параметрами
 //     (разрешение, соотношение сторон, качество, фон, n, референсы). Ответ идёт
 //     потоком с «пробелами-пульсом»: Vercel требует начать ответ за ~25 с, а
@@ -208,28 +210,6 @@ export default async function handler(request: Request): Promise<Response> {
       size_bytes: f.size_bytes,
     }));
 
-    // 8. user-msg (запрос)
-    const requestMsg = await supabaseFetch(
-      'messages',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          chat_id: body.chat_id,
-          msg_type: 'user-msg',
-          text: prompt,
-          metadata: {
-            kind: 'generation_request',
-            modality,
-            params,
-            prompt,
-            media_inputs: mediaInputsMeta,
-            negative_prompt: negative,
-          },
-        }),
-      },
-      config
-    );
-
     // Привязываем только что загруженные файлы к чату (повторно используемые уже привязаны)
     const toAttach = inputFiles.filter((f) => f.status === 'uploaded').map((f) => f.id);
     if (toAttach.length > 0) {
@@ -240,7 +220,8 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
-    // 9. ai-msg со статусом processing
+    // 8. Сообщение-результат со статусом processing. Отдельного сообщения-запроса нет:
+    //    промпт, параметры и референсы хранятся в metadata результата
     const resultMsg = await supabaseFetch(
       'messages',
       {
@@ -272,7 +253,6 @@ export default async function handler(request: Request): Promise<Response> {
 
     const messageId: string = resultMsg?.id;
     openMessageId = messageId || null;
-    const requestMessageId: string = requestMsg?.id;
 
     const referenceUrls = await signReferenceUrls(
       inputFiles.map((f) => f.storage_path),
@@ -297,7 +277,7 @@ export default async function handler(request: Request): Promise<Response> {
         await updateGenerationStatus(messageId, 'failed', (e as Error).message, config, { cost: 0 });
         openMessageId = null;
         return jsonResponse(
-          await buildResult(config, body.chat_id, requestMessageId, messageId, {
+          await buildResult(config, body.chat_id, messageId, {
             status: 'failed',
             error: (e as Error).message,
           })
@@ -315,7 +295,7 @@ export default async function handler(request: Request): Promise<Response> {
       openMessageId = null;
 
       return jsonResponse(
-        await buildResult(config, body.chat_id, requestMessageId, messageId, {
+        await buildResult(config, body.chat_id, messageId, {
           status: 'processing',
         })
       );
@@ -340,7 +320,6 @@ export default async function handler(request: Request): Promise<Response> {
           negative,
           referenceUrls,
           messageId,
-          requestMessageId,
           config,
         });
       } finally {
@@ -374,20 +353,17 @@ function resolveModeInput(mode: any | null): string {
   return modeAcceptsImages(mode) ? 'references' : 'none';
 }
 
-/** Тело ответа create: строки обоих сообщений + статус */
+/** Тело ответа create: строка сообщения-результата + статус */
 async function buildResult(
   config: any,
   chatId: string,
-  requestMessageId: string,
   messageId: string,
   extra: { status: string; error?: string; cost?: number; media?: IStoredMedia[] }
 ): Promise<Record<string, any>> {
-  const rows = await loadFinalMessages([requestMessageId, messageId], chatId, config);
+  const rows = await loadFinalMessages([messageId], chatId, config);
   return {
     success: true,
     message_id: messageId,
-    request_message_id: requestMessageId,
-    request_message: rows.find((r) => r.id === requestMessageId) || null,
     message: rows.find((r) => r.id === messageId) || null,
     ...extra,
   };
@@ -404,7 +380,6 @@ async function runImageGeneration(ctx: {
   negative: string | null;
   referenceUrls: string[];
   messageId: string;
-  requestMessageId: string;
   config: any;
 }): Promise<Record<string, any>> {
   const { userId, chatId, agent, config, messageId } = ctx;
@@ -452,7 +427,7 @@ async function runImageGeneration(ctx: {
     await updateGenerationStatus(messageId, 'failed', errorText || 'Generation failed', config, { cost: 0 });
   }
 
-  return buildResult(config, chatId, ctx.requestMessageId, messageId, {
+  return buildResult(config, chatId, messageId, {
     status: stored.length > 0 ? 'done' : 'failed',
     cost: finalCost,
     media: stored.length > 0 ? stored : undefined,
