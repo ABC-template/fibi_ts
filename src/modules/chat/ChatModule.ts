@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.2.0 — ограничения доступа применяются к реальным кнопкам (.send-btn/.voice-btn/
+// Версия: 9.3.0 — кнопка «Память чата» в шапке открывает настройку (событие без
+//                  слушателя заменено прямым вызовом); в чатах генерации кнопки и счётчика
+//                  контекста нет — история там не используется
+//          9.2.0 — ограничения доступа применяются к реальным кнопкам (.send-btn/.voice-btn/
 //                  .media-btn/.file-btn); полоска энергии показывает баланс без выдуманных
 //                  «токенов» (символы/4) и не блокирует отправку — цену проверяет сервер;
 //                  причины отказа auth/tier/inactive (вместо устаревшей role);
@@ -1054,15 +1057,19 @@ export class ChatModule {
     }
 
     this.headerManager.setTitle(titleWithIndicator);
+    // «Память чата» — только для текстовых агентов: генерация истории не использует
+    const contextAction = this._isGenerative ? [] : [{
+      id: 'context',
+      icon: 'brain',
+      title: 'Память чата',
+      onClick: () => {
+        // Раньше уходило событие modal:show_context, которое никто не слушал
+        if (this._chatId) (window as any).showContextModal?.(this._chatId);
+      }
+    }];
+
     this.headerManager.setActions([
-      {
-        id: 'context',
-        icon: 'brain',
-        title: 'Память чата',
-        onClick: () => {
-          this.eventBus.emit('modal:show_context', { chatId: this._chatId });
-        }
-      },
+      ...contextAction,
       {
         id: 'new-chat',
         icon: 'message-square-plus',
@@ -1149,7 +1156,7 @@ export class ChatModule {
     const total = tokens.total ?? 0;
 
     let contextCount = 0;
-    if (this._chatId) {
+    if (this._chatId && !this._isGenerative) {
       const found = this.chatStore.findChatById(this._chatId);
       const visible = (found?.chat?.messages || []).filter((m: any) => !m.deleted_at);
       const limit = found?.chat?.maxContext || 15;
