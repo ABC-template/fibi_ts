@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.3.0 — у генеративных агентов (фото/видео/аудио) галочка trial неактивна:
+// Версия: 3.4.0 — «Доступ по тарифам»: тариф trial выбрать нельзя (ничего не выбрано —
+//                  доступен всем, включая trial; выбраны тарифы — только им);
+//                  удалён неиспользуемый loadTiers (старый select min_pro_tier) и импорт ProTier
+//          3.3.0 — у генеративных агентов (фото/видео/аудио) галочка trial неактивна:
 //                  сервер всё равно не пускает trial к генерации
 //          3.2.0 — настройки генерации строятся по возможностям модели (GenerationSettingsPanel):
 //                  режимы, параметры формы, цена; JSON остаётся запасным вариантом
@@ -13,7 +16,7 @@
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
-import type { IAiAgent, IAiAgentInput, AgentModality, ProTier } from '../../../../types/agents';
+import type { IAiAgent, IAiAgentInput, AgentModality } from '../../../../types/agents';
 import type { IModelCapabilities } from '../../../../types/generation';
 import { GenerationSettingsPanel } from './generation-settings';
 
@@ -319,7 +322,8 @@ export class AdminAgentsTab implements IAdminTab {
             <!-- чекбоксы заполняются динамически -->
           </div>
           <div style="font-size:11px;color:var(--app-text-tertiary)">
-            Ничего не выбрано = доступен всем авторизованным. Админ/creator всегда имеют доступ.
+            Ничего не выбрано — доступен всем, включая trial (генерация медиа trial недоступна всегда).
+            Выбраны тарифы — только им. Админ/creator всегда имеют доступ.
           </div>
         </div>
 
@@ -403,27 +407,6 @@ export class AdminAgentsTab implements IAdminTab {
     }
 
     await this.loadModels((agent?.modality || 'text') as AgentModality, agent?.model_id);
-  }
-
-  private async loadTiers(selectedTierKey?: string | null): Promise<void> {
-    const select = document.getElementById('agent-min-pro-tier') as HTMLSelectElement;
-    if (!select) return;
-    select.innerHTML = '<option value="">Загрузка...</option>';
-    select.disabled = true;
-    try {
-      const res = await apiClient.get('/admin/economy/subscriptions');
-      const tiers = (res.tiers || [])
-        .filter((t: any) => !t.is_trial)
-        .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-      const options = tiers
-        .map((t: any) => `<option value="${t.tier_key}" ${t.tier_key === selectedTierKey ? 'selected' : ''}>${t.name || t.tier_key}</option>`)
-        .join('');
-      select.innerHTML = `<option value="">Без ограничений</option>${options}`;
-    } catch (e) {
-      select.innerHTML = '<option value="">Ошибка загрузки тарифов</option>';
-    } finally {
-      select.disabled = false;
-    }
   }
 
   private async loadModels(modality: AgentModality, selectedId?: string): Promise<void> {
@@ -584,8 +567,8 @@ export class AdminAgentsTab implements IAdminTab {
     const container = document.getElementById('agent-allowed-tiers');
     if (!container) return null;
     const checked = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))
-      .filter(el => !el.disabled)
-      .map(el => el.value).filter(Boolean);
+      .map(el => el.value)
+      .filter((v) => v && v !== 'trial');
     return checked.length > 0 ? checked : null;
   }
 
@@ -643,11 +626,14 @@ export class AdminAgentsTab implements IAdminTab {
       container.innerHTML = '';
       markupContainer.innerHTML = '';
       for (const t of tiers) {
-        const checked = agent?.allowed_tiers?.includes(t.tier_key) ? 'checked' : '';
-        container.innerHTML += `
+        // trial в списке доступа не бывает: пустой список уже означает «всем»
+        if (t.tier_key !== 'trial') {
+          const checked = agent?.allowed_tiers?.includes(t.tier_key) ? 'checked' : '';
+          container.innerHTML += `
           <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
             <input type="checkbox" value="${t.tier_key}" ${checked}> ${t.tier_key}
           </label>`;
+        }
 
         const currentMarkup = agent?.markup_by_tier?.[t.tier_key] ?? '';
         markupContainer.innerHTML += `
@@ -658,28 +644,8 @@ export class AdminAgentsTab implements IAdminTab {
               style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
           </div>`;
       }
-      this._syncTrialCheckbox();
-      const modalitySelect = document.getElementById('agent-modality') as HTMLSelectElement | null;
-      if (modalitySelect) modalitySelect.addEventListener('change', () => this._syncTrialCheckbox());
     } catch (e) {
       container.innerHTML = '<span style="color:#e74c3c;font-size:12px">Не удалось загрузить тарифы</span>';
-    }
-  }
-
-  /** Генерация медиа недоступна trial: галочка trial неактивна и снята */
-  private _syncTrialCheckbox(): void {
-    const container = document.getElementById('agent-allowed-tiers');
-    const modality = (document.getElementById('agent-modality') as HTMLSelectElement | null)?.value || 'text';
-    const trial = container?.querySelector<HTMLInputElement>('input[type="checkbox"][value="trial"]');
-    if (!trial) return;
-    const generative = modality !== 'text';
-    trial.disabled = generative;
-    if (generative) trial.checked = false;
-    const label = trial.closest('label') as HTMLElement | null;
-    if (label) {
-      label.style.opacity = generative ? '0.45' : '';
-      label.style.cursor = generative ? 'not-allowed' : 'pointer';
-      label.title = generative ? 'Генерация медиа недоступна тарифу trial' : '';
     }
   }
 
