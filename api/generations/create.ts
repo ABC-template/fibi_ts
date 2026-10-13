@@ -1,7 +1,8 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video)
-// Версия: 3.3.0 — референс принимается только после /media/confirm (confirmed_at)
+// Версия: 3.4.0 — лимит частоты (generation_create)
+//          3.3.0 — референс принимается только после /media/confirm (confirmed_at)
 //          3.2.0 — резерв энергии (sql/energy_holds.sql): перед стартом стоимость
 //                  замораживается атомарно; одна генерация (фото или видео) на
 //                  пользователя — вторая получает 409 { code: 'generation_busy', chat_id }
@@ -33,6 +34,7 @@ import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { getMarkupForTier } from '../_lib/markup-helper';
 import { reserveEnergy, releaseEnergy } from '../_lib/energy-hold';
 import { HttpError } from '../_lib/http-error';
+import { enforceRateLimit } from '../_lib/rate-limit';
 import { keepAliveJson } from '../_lib/keepalive';
 import {
   loadGenerativeAgent,
@@ -118,6 +120,9 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId;
+
+    const limited = await enforceRateLimit('generation_create', userId);
+    if (limited) return limited;
     const body: ICreateBody = await request.json();
 
     if (!body.agent_id || !body.chat_id) {
