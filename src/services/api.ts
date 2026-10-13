@@ -1,7 +1,8 @@
 // ============================================
 // src/services/api.ts
 // Базовый API-клиент. Авторизация — только Telegram initData (заголовок X-Telegram-Init-Data)
-// Версия: 10.1.0 - 403 с кодом blocked / channel_required → событие fibi:access-denied
+// Версия: 10.2.0 - удалён spendCoins (/economy/spend больше нет)
+//          10.1.0 - 403 с кодом blocked / channel_required → событие fibi:access-denied
 //                  (заглушка src/ui/access-gate.ts); у каждой попытки свой таймаут (раньше
 //                  повтор получал уже сработавший сигнал и падал сразу); POST/PATCH/DELETE
 //                  по умолчанию не повторяются (повтор мог выполнить действие дважды);
@@ -254,22 +255,6 @@ export class ApiClient {
   // ==========================================
   // МЕТОДЫ ДЛЯ ЭКОНОМИКИ
   // ==========================================
-
-  async spendCoins(
-    userId: number,
-    amount: number,
-    source: string,
-    description: string,
-    metadata?: Record<string, any>
-  ): Promise<any> {
-    return this.post('/economy/spend', {
-      userId,
-      amount,
-      source,
-      description,
-      metadata: metadata || {},
-    });
-  }
 
   async getBalance(): Promise<any> {
     return this.get('/economy/balance');
