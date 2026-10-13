@@ -1,7 +1,9 @@
 // ============================================
 // src/store/QuestsStore.ts
 // Хранилище заданий (с ежедневным входом и стриком)
-// Версия: 2.4.0 - убраны claimDailyLogin / updateStreak / updateProgress: вызывали
+// Версия: 2.5.0 - submitProof без proofData (доказательство формирует сервер);
+//                 в результате ошибки — retryAt (повтор после отказа не раньше чем через 24 ч)
+//          2.4.0 - убраны claimDailyLogin / updateStreak / updateProgress: вызывали
 //                 несуществующие /users/streak и /quests/progress (вход и прогресс
 //                 считает сервер); submitProof возвращает итог проверки (approved / pseudo / manual /
 //                 ошибка с кодом), а не true/false; в IUserQuest — поля спонсора
@@ -60,6 +62,8 @@ export interface ISubmitProofResult {
   expiresAt?: string | null;
   error?: string;
   code?: string;
+  /** code = 'retry_later': когда можно отправить снова */
+  retryAt?: string | null;
 }
 
 interface IQuestsCacheData {
@@ -304,17 +308,14 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
     return this.claimWithBonus(userQuestId, 0);
   }
 
-  async submitProof(userQuestId: string, proofData?: any): Promise<ISubmitProofResult> {
+  async submitProof(userQuestId: string): Promise<ISubmitProofResult> {
     if (!this.userId) return { ok: false, error: 'Ошибка авторизации' };
 
     try {
-      const result = await apiClient.post('/quests/submit', {
-        userQuestId,
-        proofData: proofData || {},
-      });
+      const result = await apiClient.post('/quests/submit', { userQuestId });
 
       if (!result?.success) {
-        return { ok: false, error: result?.error || 'Не удалось отправить' };
+        return { ok: false, error: result?.error || 'Не удалось отправить', code: result?.code };
       }
 
       const quest = this._data.quests.find(q => q.user_quest_id === userQuestId);
@@ -337,7 +338,19 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
       };
     } catch (err: any) {
       console.error('❌ [QuestsStore.submitProof] Error:', err);
-      return { ok: false, error: err?.message || 'Не удалось отправить', code: err?.details?.code };
+      if (err?.details?.code === 'already_submitted') {
+        const quest = this._data.quests.find(q => q.user_quest_id === userQuestId);
+        if (quest && quest.status !== 'submitted') {
+          quest.status = 'submitted';
+          this.save();
+        }
+      }
+      return {
+        ok: false,
+        error: err?.message || 'Не удалось отправить',
+        code: err?.details?.code,
+        retryAt: err?.details?.retry_at || null,
+      };
     }
   }
 
