@@ -1,6 +1,7 @@
 // ============================================
 // api/quests/submit.ts
 // Спонсорское задание: «Я выполнил — проверить»
+// Версия: 3.1.0 — лимит частоты (quest_submit)
 // Версия: 3.0.0
 //   - только задания типа sponsor (остальные засчитывает сервер по прогрессу)
 //   - из pending / rejected; пока задание на проверке — повторно не отправляется;
@@ -24,6 +25,7 @@ import {
 } from '../_lib/index';
 import { UUID_RE } from '../_lib/media';
 import { fetchTelegramMembership, parseTelegramChat } from '../_lib/access-gate';
+import { enforceRateLimit } from '../_lib/rate-limit';
 
 export const config = { runtime: 'edge' };
 
@@ -45,6 +47,9 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(auth.error || 'Unauthorized', auth.status || 401);
     }
     const userId = auth.userId;
+
+    const limited = await enforceRateLimit('quest_submit', userId);
+    if (limited) return limited;
 
     let body: { userQuestId?: unknown };
     try {
