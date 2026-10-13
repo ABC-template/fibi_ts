@@ -1,7 +1,9 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.3.0 — переходы trial ↔ PRO через access-transition (раньше не срабатывали:
+// Версия: 13.4.0 — заглушка доступа (src/ui/access-gate.ts): блокировка и подписка на
+//                  канал по ответу auth/check, вместо старого экрана «гостя»
+//          13.3.0 — переходы trial ↔ PRO через access-transition (раньше не срабатывали:
 //                  роль сравнивалась уже перезаписанной, а условие ждало sync_token = null)
 //          13.2.0 — после окончания подписки предлагается сохранить медиа в приложении
 //          13.1.0 — ежедневный вход выполняет сервер (auth/check → checkin), клиент только
@@ -62,6 +64,7 @@ import { EconomyModule } from '@/modules/economy/EconomyModule';
 
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
+import { showAccessGate } from '@/ui/access-gate';
 
 console.log('🚀 App v13.0.1 начал загрузку');
 
@@ -486,6 +489,17 @@ async function initApp(): Promise<void> {
             const result = await authService.checkSubscription();
             updateSplashProgress(70, '🔐 Проверка подписки...');
 
+            // Нет доступа: заблокирован или нужна подписка на канал — заглушка поверх всего
+            if (result.access?.blocked) {
+                showAccessGate({
+                    reason: 'blocked',
+                    blockReason: result.access.blockReason,
+                    blockExpiresAt: result.access.blockExpiresAt,
+                });
+            } else if (result.access?.channelRequired) {
+                showAccessGate({ reason: 'channel_required', channelUrl: result.access.channelUrl });
+            }
+
             // ✅ Берём и текущий баланс, и сколько начислили сегодня
             const tokenInfo = (result as any).tokens || { bonus: 0, permanent: 0 };
             const todayBonusAdded = (result as any).today_bonus_added || 0;
@@ -571,12 +585,7 @@ async function initApp(): Promise<void> {
                     }, 5000);
                 }
             } else {
-                if (window.showGuest) {
-                    window.showGuest({
-                        msg: '403',
-                        joke: 'Для доступа к ИИ необходимо подписаться на канал!'
-                    });
-                }
+                showAccessGate({ reason: 'channel_required', channelUrl: result.access?.channelUrl || null });
             }
 
             // ✅ АКТИВАЦИЯ ERUDA
