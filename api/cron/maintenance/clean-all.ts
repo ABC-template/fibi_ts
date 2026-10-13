@@ -1,7 +1,10 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
-// Описание: Объединенная очистка (корзина + логи + usage + pending + медиа)
-// Версия: 2.4.0 - автоодобрение псевдо-заданий, у которых истёк срок проверки
+// Описание: Объединенная очистка (корзина + логи + usage + медиа)
+// Версия: 2.5.0 - убраны шаги pending_deletions / pending_deletion_devices (таблиц в БД
+//                 нет — шаги каждый день падали с ошибкой); медиа без ссылок из
+//                 сообщений тоже удаляются (cleanupMediaFiles)
+//          2.4.0 - автоодобрение псевдо-заданий, у которых истёк срок проверки
 //          2.3.0 - довершение застрявших видео-заданий (вебхук/опрос не сработали)
 //          2.2.0 - TypeScript, очистка файлов генераций и просроченных замков чатов
 // ============================================
@@ -99,56 +102,6 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
-    // 4. ОЧИСТКА СТАРЫХ PENDING DELETIONS (30 дней)
-    // ==========================================
-    console.log('⏳ Очистка старых pending_deletions (> 30 дней)...');
-    let pendingDeleted = 0;
-
-    try {
-      const result = await supabaseRPC('clean_old_pending_deletions', {}, config);
-      pendingDeleted = result || 0;
-      console.log(`✅ Очищено ${pendingDeleted} записей pending_deletions`);
-    } catch (err) {
-      console.error('Ошибка очистки pending_deletions:', (err as Error).message);
-    }
-
-    // ==========================================
-    // 5. ОЧИСТКА ORPHANED PENDING_DELETION_DEVICES
-    // ==========================================
-    console.log('🧹 Очистка orphaned pending_deletion_devices...');
-    let orphanedDevicesCleaned = 0;
-
-    try {
-      const orphaned = await supabaseFetch(
-        `pending_deletion_devices?select=pending_id,device_fingerprint`,
-        { method: 'GET' },
-        config
-      );
-
-      if (orphaned && Array.isArray(orphaned) && orphaned.length > 0) {
-        for (const item of orphaned) {
-          const parentCheck = await supabaseFetch(
-            `pending_deletions?id=eq.${item.pending_id}&select=id,is_cleaned`,
-            { method: 'GET' },
-            config
-          );
-
-          if (!parentCheck || !Array.isArray(parentCheck) || parentCheck.length === 0 || parentCheck[0].is_cleaned === true) {
-            await supabaseFetch(
-              `pending_deletion_devices?pending_id=eq.${item.pending_id}&device_fingerprint=eq.${encodeURIComponent(item.device_fingerprint)}`,
-              { method: 'DELETE' },
-              config
-            );
-            orphanedDevicesCleaned++;
-          }
-        }
-      }
-      console.log(`✅ Очищено ${orphanedDevicesCleaned} orphaned записей pending_deletion_devices`);
-    } catch (err) {
-      console.error('Ошибка очистки orphaned pending_deletion_devices:', (err as Error).message);
-    }
-
-    // ==========================================
     // 6. ОЧИСТКА СТАРЫХ УВЕДОМЛЕНИЙ (60 дней)
     // ==========================================
     console.log('🔔 Очистка старых уведомлений (> 60 дней)...');
@@ -243,8 +196,6 @@ export default async function handler(request: Request): Promise<Response> {
       trash_cleaned: trashCleaned,
       security_logs_deleted: logsDeleted,
       usage_records_deleted: usageDeleted,
-      pending_deletions_cleaned: pendingDeleted,
-      orphaned_devices_cleaned: orphanedDevicesCleaned,
       notifications_cleaned: notificationsDeleted,
       media_files_removed: mediaRemoved,
       video_jobs_finalized: videoFinalized,
