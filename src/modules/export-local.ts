@@ -1,132 +1,106 @@
 // ============================================
 // src/modules/export-local.ts
 // Экспорт архива
-// Версия: 3.1.1 - замена @types → @app-types
+// Версия: 4.0.0 - локальный архив собирается целиком на устройстве (POST /api/chats/export
+//                 удалён: работал без авторизации); чаты из корзины не попадают в архив;
+//                 агент/тип чата и запрос генерации; удалён downloadMultiPartArchive
+//          3.1.1 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
-import type { IChat, IExportArchive } from '@app-types';
+import type { IChat, IMessage, IExportArchive, IExportArchiveMessage, TopicId } from '@app-types';
 
-/**
- * Экспорт локального архива (доступен всем)
- */
-(window as any).exportLocalArchive = async function(): Promise<void> {
-  console.log('📦 Начинаем экспорт локального архива...');
+function notify(message: string): void {
+  const tg = (window as any).tg || (window as any).Telegram?.WebApp;
+  if (tg?.showAlert) tg.showAlert(message);
+  else alert(message);
+}
 
-  if (!chatStore) {
-    if ((window as any).tg?.showAlert) (window as any).tg.showAlert('Ошибка: хранилище не инициализировано');
-    return;
+function toArchiveMessage(m: IMessage): IExportArchiveMessage {
+  const out: IExportArchiveMessage = {
+    id: m.id,
+    type: m.type,
+    text: m.text,
+    is_favorite: m.isFavorite === true,
+    created_at: m.created_at
+  };
+  const meta = m.metadata as any;
+  if (meta?.kind === 'generation') {
+    out.generation = {
+      status: meta.status || null,
+      modality: meta.modality || null,
+      prompt: meta.prompt || null,
+      negative_prompt: meta.negative_prompt || null,
+      params: meta.params || {},
+      media: (Array.isArray(meta.media) ? meta.media : []).map((item: any) => ({
+        type: item.type,
+        mime: item.mime
+      }))
+    };
+  }
+  return out;
+}
+
+/** Архив из чатов на устройстве (без корзины и пустых чатов) */
+function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number } {
+  const topicNames: Record<string, string> = (window as any).topicNames || {};
+  const archive: IExportArchive[] = [];
+  let totalMessages = 0;
+
+  const entries = Object.entries(chatStore.histories || {}) as [TopicId, IChat[]][];
+  for (const [topicId, chats] of entries) {
+    for (const chat of chats || []) {
+      if (chat.deleted_at) continue;
+
+      const messages = (chat.messages || [])
+        .filter((m) => !m.deleted_at)
+        .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+        .map(toArchiveMessage);
+      if (messages.length === 0) continue;
+
+      archive.push({
+        chat_id: chat.id,
+        title: chat.title,
+        topic_id: topicId,
+        topic_name: topicNames[topicId] || topicId,
+        max_context: chat.maxContext || 15,
+        user_renamed: chat.userRenamed || false,
+        pinned: chat.pinned || false,
+        agent_id: chat.agent_id || null,
+        modality: chat.modality || null,
+        created_at: chat.created_at,
+        updated_at: chat.updated_at,
+        messages
+      });
+      totalMessages += messages.length;
+    }
   }
 
-  const allChats = chatStore.histories || {};
-  if (Object.keys(allChats).length === 0) {
-    if ((window as any).tg?.showAlert) {
-      (window as any).tg.showAlert('Нет данных для экспорта');
-    } else {
-      alert('Нет данных для экспорта');
-    }
+  archive.sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
+  return { archive, totalMessages };
+}
+
+/**
+ * Экспорт локального архива (доступен всем, без обращения к серверу)
+ */
+(window as any).exportLocalArchive = async function(): Promise<void> {
+  console.log('📦 Собираем локальный архив...');
+
+  const { archive, totalMessages } = buildLocalArchive();
+  if (archive.length === 0) {
+    notify('Нет данных для экспорта');
     return;
   }
 
   try {
-    const exportData = {
-      chatHistories: allChats,
-      topicNames: (window as any).topicNames || {},
-      exportDate: new Date().toISOString(),
-      appVersion: '3.1.1'
-    };
-
-    const response = await fetch('/api/chats/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(exportData)
-    });
-
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error || 'Ошибка экспорта');
-    }
-
-    if (data.total_parts > 1) {
-      await (window as any).downloadMultiPartArchive(data);
-    } else {
-      (window as any).downloadJSON(data.archive, `versatile_ai_local_archive_${data.total_messages}_messages.json`);
-    }
-
-    if ((window as any).tg?.showAlert) {
-      (window as any).tg.showAlert(`✅ Архив успешно создан! Скачано ${data.total_messages} сообщений.`);
-    }
+    const date = new Date().toISOString().slice(0, 10);
+    (window as any).downloadJSON(archive, `versatile_ai_local_archive_${date}_${totalMessages}_messages.json`);
+    notify(`✅ Архив создан: ${archive.length} чатов, ${totalMessages} сообщений.`);
   } catch (err) {
     console.error('Ошибка экспорта локального архива:', err);
-
-    try {
-      console.log('Пробуем прямой экспорт через браузер...');
-      const fallbackArchive: IExportArchive[] = [];
-      for (const [topicId, chats] of Object.entries(allChats)) {
-        for (const chat of (chats as IChat[] || [])) {
-          fallbackArchive.push({
-            chat_id: chat.id,
-            title: chat.title,
-            topic_id: chat.topic,
-            topic_name: (window as any).topicNames?.[topicId] || topicId,
-            max_context: chat.maxContext || 15,
-            user_renamed: chat.userRenamed || false,
-            pinned: chat.pinned || false,
-            created_at: chat.created_at,
-            updated_at: chat.updated_at,
-            messages: chat.messages || []
-          });
-        }
-      }
-      (window as any).downloadJSON(fallbackArchive, `versatile_ai_local_archive_fallback.json`);
-
-      if ((window as any).tg?.showAlert) {
-        (window as any).tg.showAlert('⚠️ Архив создан в упрощенном формате. Некоторые данные могут отсутствовать.');
-      }
-    } catch (fallbackErr) {
-      console.error('Fallback экспорт не удался:', fallbackErr);
-      if ((window as any).tg?.showAlert) {
-        (window as any).tg.showAlert('❌ Не удалось создать архив. Попробуйте позже.');
-      }
-    }
+    notify('❌ Не удалось сохранить архив. Попробуйте позже.');
   }
-};
-
-/**
- * Скачивание многокомпонентного архива
- */
-(window as any).downloadMultiPartArchive = async function(firstPart: any): Promise<void> {
-  const totalParts = firstPart.total_parts;
-  const allArchiveParts = [firstPart.archive];
-
-  console.log(`📦 Скачиваю архив из ${totalParts} частей...`);
-
-  for (let part = 2; part <= totalParts; part++) {
-    const response = await fetch('/api/chats/export', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Request-Part': part.toString()
-      },
-      body: JSON.stringify({
-        chatHistories: chatStore?.histories || {},
-        topicNames: (window as any).topicNames || {},
-        exportOptions: { part: part.toString() }
-      })
-    });
-
-    const partData = await response.json();
-    if (partData.success && partData.archive) {
-      allArchiveParts.push(partData.archive);
-    } else {
-      console.warn(`Часть ${part} не загрузилась`);
-    }
-  }
-
-  const fullArchive = allArchiveParts.flat();
-  (window as any).downloadJSON(fullArchive, `versatile_ai_local_archive_full_${fullArchive.length}_chats.json`);
 };
 
 /**
@@ -151,9 +125,7 @@ import type { IChat, IExportArchive } from '@app-types';
  */
 (window as any).exportCloudArchive = async function(): Promise<void> {
   if (!userStore.canSync()) {
-    if ((window as any).tg?.showAlert) {
-      (window as any).tg.showAlert('Облачный архив доступен только для PRO-пользователей.\n\nИспользуйте "Экспорт локального архива" для сохранения данных.');
-    }
+    notify('Облачный архив доступен только для PRO-пользователей.\n\nИспользуйте "Экспорт локального архива" для сохранения данных.');
     return;
   }
 
@@ -173,11 +145,14 @@ import type { IChat, IExportArchive } from '@app-types';
 
     if (!response.ok) {
       if (data.fallbackToLocal) {
-        if ((window as any).tg?.showConfirm) {
-          (window as any).tg.showConfirm(
+        const tg = (window as any).tg || (window as any).Telegram?.WebApp;
+        if (tg?.showConfirm) {
+          tg.showConfirm(
             'Облачный архив временно недоступен. Скачать локальный архив?',
             (ok: boolean) => { if (ok) (window as any).exportLocalArchive(); }
           );
+        } else if (confirm('Облачный архив временно недоступен. Скачать локальный архив?')) {
+          (window as any).exportLocalArchive();
         }
       } else {
         throw new Error(data.error || 'Ошибка экспорта');
@@ -208,16 +183,12 @@ import type { IChat, IExportArchive } from '@app-types';
     }
 
     if (data.grace_period_days_left !== null && data.grace_period_days_left > 0) {
-      if ((window as any).tg?.showAlert) {
-        (window as any).tg.showAlert(`⚠️ Ваши данные будут удалены через ${data.grace_period_days_left} дней. Сохраните архив в надежном месте.`);
-      }
+      notify(`⚠️ Ваши данные будут удалены через ${data.grace_period_days_left} дней. Сохраните архив в надежном месте.`);
     }
   } catch (err) {
     console.error('Ошибка экспорта облачного архива:', err);
-    if ((window as any).tg?.showAlert) {
-      (window as any).tg.showAlert('Не удалось загрузить облачный архив. Проверьте подключение к интернету.');
-    }
+    notify('Не удалось загрузить облачный архив. Проверьте подключение к интернету.');
   }
 };
 
-console.log('✅ ExportLocal v3.1.1 загружен (добавлен pinned)');
+console.log('✅ ExportLocal v4.0.0 загружен (локальный архив без сервера)');
