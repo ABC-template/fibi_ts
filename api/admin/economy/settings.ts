@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/economy/settings.ts
 // Глобальные настройки экономики (админ)
-// Версия: 2.0.0 — сохраняются только известные поля с проверкой диапазонов
+// Версия: 2.1.0 — сроки хранения журналов не меньше 7 дней (их чистит cron clean-all)
+//          2.0.0 — сохраняются только известные поля с проверкой диапазонов
 //                  (раньше тело запроса записывалось в economy_settings как есть);
 //                  удалены неиспользуемые поля; добавлены лимиты игр и рекламы
 //          1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId)
@@ -31,8 +32,9 @@ const FIELDS: Record<string, [number, number] | null> = {
   game_coins_daily_cap: [0, 1_000_000],
   ad_reward_daily_limit: [0, 1_000],
   ad_reward_min_interval_sec: [0, 86_400],
-  log_retention_days: [1, 3_650],
-  audit_log_retention_days: [1, 3_650],
+  // Не короче недели: по журналам считаются недельная статистика и дневные лимиты
+  log_retention_days: [7, 3_650],
+  audit_log_retention_days: [7, 3_650],
 };
 
 const SELECT = ['id', ...Object.keys(FIELDS), 'updated_at'].join(',');
