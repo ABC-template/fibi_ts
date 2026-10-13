@@ -4,7 +4,8 @@
 // Версия: 10.1.0 - 403 с кодом blocked / channel_required → событие fibi:access-denied
 //                  (заглушка src/ui/access-gate.ts); у каждой попытки свой таймаут (раньше
 //                  повтор получал уже сработавший сигнал и падал сразу); POST/PATCH/DELETE
-//                  по умолчанию не повторяются (повтор мог выполнить действие дважды)
+//                  по умолчанию не повторяются (повтор мог выполнить действие дважды);
+//                  убраны updateQuestProgress / updateStreak (эндпоинтов нет)
 //          10.0.0 - JWT убран (сервер его больше не принимает); x-sync-token не отправляется
 //                  (сервер его не читал); 401 = initData устарел → просьба перезапустить приложение
 //          9.2.0 - JWT обновляется только на 401 и только один раз (403 больше не
@@ -290,10 +291,6 @@ export class ApiClient {
     return this.get('/quests/my');
   }
 
-  async updateQuestProgress(questId: string, increment: number = 1): Promise<any> {
-    return this.post('/quests/progress', { questId, increment });
-  }
-
   async claimQuestReward(userQuestId: string): Promise<any> {
     return this.post('/quests/claim', { userQuestId });
   }
@@ -304,14 +301,6 @@ export class ApiClient {
 
   async verifyQuest(userQuestId: string, approved: boolean): Promise<any> {
     return this.post('/quests/verify', { userQuestId, approved });
-  }
-
-  // ==========================================
-  // ✅ НОВОЕ: СТРИК
-  // ==========================================
-
-  async updateStreak(): Promise<any> {
-    return this.post('/users/streak', {});
   }
 
   // ==========================================
