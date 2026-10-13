@@ -1,12 +1,14 @@
 // ============================================
 // api/organizer/reminders/get.ts
 // Описание: Получение напоминаний
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.1.0 - фильтр по разделу: 'all' — все записи, тема — её и общие; тема проверяется
+//          2.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
+import { isValidTopic } from '../../_lib/validators';
 
 export const config = { runtime: 'edge' };
 
@@ -31,8 +33,12 @@ export default async function handler(request: Request): Promise<Response> {
     const topicId = searchParams.get('topicId');
 
     let query = `reminders?user_id=eq.${userId}&status=eq.pending&order=trigger_at.asc`;
-    if (topicId) {
-      query += `&topic_id=eq.${topicId}`;
+    // 'all' или пусто — всё; тема — записи этой темы и общие ('all')
+    if (topicId && topicId !== 'all') {
+      if (!isValidTopic(topicId)) {
+        return errorResponse('Invalid topicId', 400);
+      }
+      query += `&topic_id=in.(${topicId},all)`;
     }
 
     const reminders = await supabaseFetch(
