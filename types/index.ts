@@ -1,7 +1,8 @@
 // ============================================
 // types/index.ts
 // Главный экспорт всех типов
-// Версия: 1.1.0 — без IExportRequest / IExportResponse
+// Версия: 1.2.0 — без IBatchRequest
+//          1.1.0 — без IExportRequest / IExportResponse
 // ============================================
 
 // Common
@@ -25,7 +26,6 @@ export type {
   ICreateChatResponse,
   IChatActionRequest,
   IMessageActionRequest,
-  IBatchRequest,
   IUsageLimit,
   IAuthCheckResponse
 } from './api';
