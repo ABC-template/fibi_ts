@@ -1,7 +1,8 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.4.0 - убран chatListModule (модуль удалён)
+// Версия: 2.5.0 - убраны события economy:spend и economy:error
+//          2.4.0 - убран chatListModule (модуль удалён)
 //          2.3.0 - добавлены questsStore и questsModule
 // ============================================
 
@@ -252,9 +253,7 @@ declare global {
 
 import type { 
   IEconomyEarnEvent, 
-  IEconomySpendEvent, 
-  IEconomyBalanceUpdatedEvent,
-  IEconomyErrorEvent 
+  IEconomyBalanceUpdatedEvent
 } from '@/economy/event-types';
 
 declare global {
@@ -270,9 +269,7 @@ declare global {
 declare module '@/core/event-bus' {
   interface EventBus {
     emit<T = any>(event: 'economy:earn', data: IEconomyEarnEvent, sender?: any): void;
-    emit<T = any>(event: 'economy:spend', data: IEconomySpendEvent, sender?: any): void;
     emit<T = any>(event: 'economy:balance:updated', data: IEconomyBalanceUpdatedEvent, sender?: any): void;
-    emit<T = any>(event: 'economy:error', data: IEconomyErrorEvent, sender?: any): void;
   }
 }
 
