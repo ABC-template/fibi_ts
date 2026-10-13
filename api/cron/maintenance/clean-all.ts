@@ -1,7 +1,8 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
 // Описание: Объединенная очистка (корзина + логи + usage + медиа)
-// Версия: 2.6.0 - очистка отработавших окон лимита частоты (clean_rate_limits)
+// Версия: 2.7.0 - очистка журналов по срокам из настроек экономики (clean_old_logs)
+//          2.6.0 - очистка отработавших окон лимита частоты (clean_rate_limits)
 //          2.5.0 - убраны шаги pending_deletions / pending_deletion_devices (таблиц в БД
 //                 нет — шаги каждый день падали с ошибкой); медиа без ссылок из
 //                 сообщений тоже удаляются (cleanupMediaFiles)
@@ -199,6 +200,17 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
+    // 8.6. ЖУРНАЛЫ ПО СРОКАМ ИЗ НАСТРОЕК (log_retention_days / audit_log_retention_days)
+    // ==========================================
+    let oldLogs: Record<string, number> | null = null;
+    try {
+      oldLogs = await supabaseRPC('clean_old_logs', {}, config);
+      console.log('✅ Старые журналы очищены:', JSON.stringify(oldLogs));
+    } catch (err) {
+      console.error('Ошибка очистки журналов:', (err as Error).message);
+    }
+
+    // ==========================================
     // 9. ОТВЕТ
     // ==========================================
 
@@ -211,6 +223,7 @@ export default async function handler(request: Request): Promise<Response> {
       notifications_cleaned: notificationsDeleted,
       media_files_removed: mediaRemoved,
       rate_limits_deleted: rateLimitsDeleted,
+      old_logs: oldLogs,
       video_jobs_finalized: videoFinalized,
       pseudo_quests_approved: pseudoApproved
     };
