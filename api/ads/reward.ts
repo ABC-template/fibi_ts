@@ -2,16 +2,21 @@
 // api/ads/reward.ts
 // Награда за просмотр рекламы Adsgram.
 //
+//   GET  ?userid=<id>&secret=<секрет> → Reward URL: сервер Adsgram сам сообщает
+//                                        о досмотре — ЕДИНСТВЕННЫЙ способ начисления
 //   GET  (с авторизацией приложения)  → состояние кнопки: сумма, остаток на сегодня,
 //                                        сколько секунд ждать до следующего просмотра
-//   POST (с авторизацией приложения)  → начислить после досмотра (режим client)
-//   GET  ?userid=<id>&secret=<секрет> → Reward URL Adsgram (режим server):
-//                                        сервер Adsgram сам сообщает о досмотре
 //
-// Режим — переменная ADS_REWARD_MODE: client (по умолчанию) или server.
-// В режиме server начисление из приложения отключено, иначе награда пришла бы дважды.
+// Версия: 2.0.0 — начисление только по Reward URL от Adsgram. Режим client
+//                  (начисление по запросу приложения) убран: его можно было вызвать
+//                  без просмотра рекламы. Без ADSGRAM_BLOCK_ID и ADSGRAM_REWARD_SECRET
+//                  (не короче 16 символов) реклама выключена. Заблокированным
+//                  пользователям награда не начисляется.
+//          1.0.0
+//
+// Настройка в кабинете Adsgram → блок → Reward URL:
+//   https://<домен>/api/ads/reward?userid=[userId]&secret=<ADSGRAM_REWARD_SECRET>
 // Сумма, дневной лимит и интервал — в БД (economy_rules 'ad:rewarded', economy_settings).
-// Версия: 1.0.0
 // ============================================
 
 import {
@@ -25,8 +30,16 @@ import {
 
 export const config = { runtime: 'edge' };
 
-function rewardMode(): 'client' | 'server' {
-  return process.env.ADS_REWARD_MODE?.trim() === 'server' ? 'server' : 'client';
+const MIN_SECRET_LENGTH = 16;
+
+/** Секрет Reward URL (null — не задан или слишком короткий) */
+function rewardSecret(): string | null {
+  const s = process.env.ADSGRAM_REWARD_SECRET?.trim() || '';
+  return s.length >= MIN_SECRET_LENGTH ? s : null;
+}
+
+function blockId(): string | null {
+  return process.env.ADSGRAM_BLOCK_ID?.trim() || null;
 }
 
 /** Сравнение строк за постоянное время (секрет в URL) */
@@ -47,68 +60,64 @@ export default async function handler(request: Request): Promise<Response> {
   try {
     // ---------- Reward URL от Adsgram ----------
     if (request.method === 'GET' && url.searchParams.has('userid')) {
-      const expected = process.env.ADSGRAM_REWARD_SECRET?.trim();
-      const secret = url.searchParams.get('secret') || '';
-      if (!expected || !safeEqual(secret, expected)) {
+      const expected = rewardSecret();
+      if (!expected) {
+        console.error('[ads/reward] ADSGRAM_REWARD_SECRET не задан или короче 16 символов');
+        return errorResponse('Reward URL is not configured', 503);
+      }
+      if (!safeEqual(url.searchParams.get('secret') || '', expected)) {
         return errorResponse('Forbidden', 403);
       }
-      if (rewardMode() !== 'server') {
-        return jsonResponse({ success: false, error: 'Server reward mode is disabled' }, 200);
-      }
+
       const userId = Number(url.searchParams.get('userid'));
       if (!Number.isSafeInteger(userId) || userId <= 0) {
         return errorResponse('Invalid userid', 400);
       }
-      const result = await supabaseRPC('award_ad_coins', { p_user_id: userId, p_via: 'adsgram_url' }, cfg);
-      return jsonResponse({ success: result?.success === true, awarded: result?.awarded || 0 });
-    }
 
-    // ---------- Запросы из приложения ----------
-    const auth = await authenticate(request);
-    if (auth.error) {
-      return errorResponse(auth.error, auth.status || 401);
-    }
-    const userId = auth.userId!;
-
-    if (request.method === 'GET') {
-      const status = await supabaseRPC('ad_reward_status', { p_user_id: userId }, cfg);
-      return jsonResponse({
-        success: true,
-        mode: rewardMode(),
-        blockId: process.env.ADSGRAM_BLOCK_ID?.trim() || null,
-        enabled: status?.enabled === true && !!process.env.ADSGRAM_BLOCK_ID?.trim(),
-        amount: status?.amount || 0,
-        dailyLimit: status?.daily_limit || 0,
-        remainingToday: status?.remaining_today || 0,
-        waitSeconds: status?.wait_seconds || 0,
-      });
-    }
-
-    if (request.method === 'POST') {
-      if (rewardMode() === 'server') {
-        // Награду начислит Reward URL; приложению остаётся обновить баланс
-        return jsonResponse({ success: true, awarded: 0, reason: 'server_mode' });
-      }
-
+      // Отказы по бизнес-правилам — 200, чтобы Adsgram не повторял запрос
       const blocked = await supabaseRPC('is_user_blocked', { p_user_id: userId }, cfg).catch(() => false);
       if (blocked === true) {
-        return errorResponse('Доступ ограничен', 403);
+        return jsonResponse({ success: false, awarded: 0, reason: 'blocked' });
       }
 
-      const result = await supabaseRPC('award_ad_coins', { p_user_id: userId, p_via: 'client' }, cfg);
-      if (!result || result.success === false) {
-        return jsonResponse({ success: false, awarded: 0, error: result?.error || 'Не удалось начислить' });
+      const result = await supabaseRPC('award_ad_coins', { p_user_id: userId, p_via: 'adsgram' }, cfg);
+      const awarded = Number(result?.awarded) || 0;
+      if (awarded > 0) {
+        console.log(`🎬 [ads/reward] +${awarded} пользователю ${userId}`);
+      } else {
+        console.log(`🎬 [ads/reward] без начисления пользователю ${userId}: ${result?.reason || result?.error || 'unknown'}`);
       }
       return jsonResponse({
-        success: true,
-        awarded: result.awarded || 0,
-        reason: result.reason || null,
-        remainingToday: result.remaining_today ?? null,
-        newBalance: typeof result.new_balance === 'number' ? result.new_balance : undefined,
+        success: result?.success === true,
+        awarded,
+        reason: result?.reason || result?.error || null,
       });
     }
 
-    return errorResponse('Method Not Allowed', 405);
+    // ---------- Состояние для приложения ----------
+    if (request.method !== 'GET') {
+      // Начисление из приложения больше не принимается — только Reward URL
+      return errorResponse('Method Not Allowed', 405);
+    }
+
+    const auth = await authenticate(request);
+    if (auth.error || !auth.userId) {
+      return errorResponse(auth.error || 'Unauthorized', auth.status || 401);
+    }
+
+    const status = await supabaseRPC('ad_reward_status', { p_user_id: auth.userId }, cfg);
+    const configured = !!blockId() && !!rewardSecret();
+
+    return jsonResponse({
+      success: true,
+      blockId: blockId(),
+      enabled: configured && status?.enabled === true,
+      amount: status?.amount || 0,
+      dailyLimit: status?.daily_limit || 0,
+      usedToday: status?.used_today || 0,
+      remainingToday: status?.remaining_today || 0,
+      waitSeconds: status?.wait_seconds || 0,
+    });
   } catch (err) {
     console.error('[ads/reward] Error:', (err as Error).message);
     return errorResponse((err as Error).message, 500);
