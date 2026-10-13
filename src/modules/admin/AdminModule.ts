@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.7.0 — проверка заданий (verifySubmission); убрана пустая вкладка «Лимиты»
+// Версия: 7.8.0 — блокировка и заморозка монет из карточки пользователя
+//                  (blockUserFromList, toggleUserEconomyLock)
+//          7.7.0 — проверка заданий (verifySubmission); убрана пустая вкладка «Лимиты»
 //                  (лимиты — во вкладке «Тарифы»)
 //          7.6.0 — доступ по Telegram ID (userStore.isCreator), а не по роли: роль можно
 //                  переключать для тестов; вкладка «Пользователи» на /admin/users;
@@ -291,6 +293,10 @@ function getInstance(): AdminModule | null {
     getInstance()?.proxy('users', 'adjustBalance', userId, currency),
   resetUserCheckin: (userId: number) =>
     getInstance()?.proxy('users', 'resetCheckin', userId),
+  blockUserFromList: (userId: number, block: boolean) =>
+    getInstance()?.proxy('users', 'setBlocked', userId, block),
+  toggleUserEconomyLock: (userId: number) =>
+    getInstance()?.proxy('users', 'toggleEconomyLock', userId),
 
   // Audit
   nextAuditPage: () => getInstance()?.proxy('audit', 'nextPage'),
