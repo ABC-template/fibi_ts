@@ -1,7 +1,10 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.5.0 - выгрузка в облако берёт только несинхронизированные (локальные) чаты
+// Версия: 3.6.0 - «Отменить» при выгрузке больше не «откатывает»: откат удалял и чаты,
+//                 которые уже были в облаке, и не работал (удаление навсегда требует
+//                 корзины); загруженное остаётся в облаке, остальное — на устройстве
+//          3.5.0 - выгрузка в облако берёт только несинхронизированные (локальные) чаты
 //          3.4.0 - agent_id/modality при слиянии нового чата из облака и при выгрузке
 //                 локальных чатов; metadata и избранное сообщений при выгрузке
 //          3.3.0 - удаление в корзину: 409 от сервера (чат занят) откатывает локальное удаление
@@ -635,11 +638,16 @@ export class ChatService {
           chatStore.setUploadProgress(currentIndex, total);
           continue;
         } else {
-          await this.rollbackUpload(uploaded, localChats);
+          // Остановка: уже загруженные чаты остаются в облаке (это те же данные, что и
+          // на устройстве), остальные остаются только на этом устройстве
           this.hideProgressModal();
           chatStore.clearUploadFlags();
           if ((window as any).uiRenderer) {
-            (window as any).uiRenderer.showToast('❌ Загрузка отменена. Данные откатаны.', 'error', 3000);
+            (window as any).uiRenderer.showToast(
+              `⏸️ Загрузка остановлена: в облаке ${uploaded} из ${total}. Остальные чаты — только на этом устройстве.`,
+              'info',
+              3500
+            );
           }
           return false;
         }
@@ -798,31 +806,6 @@ export class ChatService {
 
     this._markSynced(localChat.id);
     console.log(`✅ Чат ${localChat.id} создан в облаке`);
-  }
-
-  private async rollbackUpload(uploadedCount: number, localChats: any[]): Promise<void> {
-    console.log(`🔄 Откатываем загрузку (${uploadedCount} чатов)...`);
-
-    for (let i = 0; i < uploadedCount && i < localChats.length; i++) {
-      const chat = localChats[i];
-      if (chat) {
-        try {
-          await apiClient.delete('/chats/trash', {
-            body: {
-              id: chat.id,
-              type: 'chat',
-              deviceFingerprint: 'rollback'
-            }
-          });
-          console.log(`🗑️ Удален чат ${chat.id} из облака (откат)`);
-        } catch (err) {
-          console.error(`❌ Не удалось удалить чат ${chat.id}:`, err);
-        }
-      }
-    }
-
-    localStorage.removeItem('sync_token');
-    console.log('✅ Откат завершен');
   }
 
   private showProgressModal(total: number): void {
