@@ -1,7 +1,8 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (Telegram initData; без JWT)
-// Версия: 7.1.0 - в результате previousRole (роль до проверки): app.ts читал user_role уже
+// Версия: 7.2.0 - в результате access (блокировка / нужна подписка на канал, ссылка)
+//          7.1.0 - в результате previousRole (роль до проверки): app.ts читал user_role уже
 //                 после перезаписи, и переходы trial ↔ PRO никогда не срабатывали
 //          7.0.0 - JWT и его таймер обновления убраны; токен Realtime из ответа передаётся
 //                 в syncService; флаг админки (adminPanel) — с сервера; офлайн-режим
@@ -16,8 +17,18 @@ import { userStore } from '@/store/UserStore';
 import { BaseStore } from '@/store/BaseStore';
 import type { IAuthCheckResponse } from '@app-types';
 
+export interface IAccessInfo {
+  blocked: boolean;
+  blockReason: string | null;
+  blockExpiresAt: string | null;
+  channelRequired: boolean;
+  channelUrl: string | null;
+}
+
 export interface IAuthResult {
   isMember: boolean;
+  /** Доступ к приложению (null — офлайн, неизвестно) */
+  access?: IAccessInfo | null;
   role: string;
   /** Роль до этой проверки (из прошлого входа) — для переходов trial ↔ PRO */
   previousRole: string | null;
@@ -106,8 +117,18 @@ export class AuthService {
 
       userStore.save();
 
+      const access = (data as any).access || null;
       return {
         isMember: data.isMember !== false,
+        access: access
+          ? {
+              blocked: access.blocked === true,
+              blockReason: access.blockReason ?? null,
+              blockExpiresAt: access.blockExpiresAt ?? null,
+              channelRequired: access.channelRequired === true,
+              channelUrl: access.channelUrl ?? null,
+            }
+          : null,
         role: data.role || 'trial',
         previousRole,
         syncEnabled: data.syncEnabled === true,
