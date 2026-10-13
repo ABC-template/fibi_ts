@@ -1,7 +1,8 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 9.1.0 — без trial_used (пробного периода больше нет)
+// Версия: 9.2.0 — лимит частоты (auth_check)
+//          9.1.0 — без trial_used (пробного периода больше нет)
 //          9.0.0 — доступ (api/_lib/access-gate.ts): подписка на канал проверяется
 //                  только если в админке включено «Только для подписчиков», и при
 //                  каждом входе заново (результат запоминается в users); Telegram не
@@ -40,6 +41,7 @@ import {
   loadAccessState,
   refreshChannelMembership,
 } from '../_lib/access-gate';
+import { enforceRateLimit } from '../_lib/rate-limit';
 
 export const config = { runtime: 'edge' };
 
@@ -58,6 +60,9 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const telegramId = auth.userId!;
+
+    const limited = await enforceRateLimit('auth_check', telegramId);
+    if (limited) return limited;
     const user = auth.user;
     const config = getSupabaseConfig('service');
 
