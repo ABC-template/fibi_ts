@@ -1,7 +1,9 @@
 // ============================================
 // api/_lib/validators.ts
 // Описание: Все валидации для Edge-функций
-// Версия: 2.1.0 - длина сообщения до 100 000 символов (MAX_MESSAGE_CHARS);
+// Версия: 2.2.0 - удалён неиспользуемый список действий (ALLOWED_ACTIONS, ChatAction,
+//                 isValidAction, validateAction) вместе с маршрутом batch
+//          2.1.0 - длина сообщения до 100 000 символов (MAX_MESSAGE_CHARS);
 //                 normalizeOrganizerTopic ('all' или тема)
 //          2.0.0 - TypeScript
 // ============================================
@@ -168,29 +170,6 @@ export function validateUserId(userId: any): number {
     throw new Error('Invalid user ID');
   }
   return parseInt(userId, 10);
-}
-
-// ==========================================
-// Разрешенные действия для чатов
-// ==========================================
-
-const ALLOWED_ACTIONS = [
-  'new_message', 'batch_messages', 'delete_chat', 'delete_message',
-  'rename_chat', 'favorite_message', 'update_context', 'new_chat'
-] as const;
-
-export type ChatAction = typeof ALLOWED_ACTIONS[number];
-
-export function isValidAction(action: string): boolean {
-  if (!action || typeof action !== 'string') return false;
-  return ALLOWED_ACTIONS.includes(action as ChatAction);
-}
-
-export function validateAction(action: string): boolean {
-  if (!isValidAction(action)) {
-    throw new Error(`Invalid action: ${action}. Allowed: ${ALLOWED_ACTIONS.join(', ')}`);
-  }
-  return true;
 }
 
 // ==========================================
