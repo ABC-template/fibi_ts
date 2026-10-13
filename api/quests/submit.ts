@@ -1,14 +1,15 @@
 // ============================================
 // api/quests/submit.ts
 // Спонсорское задание: «Я выполнил — проверить»
-// Версия: 2.0.0
-//   - auto: подписка на канал спонсора проверяется у Telegram сразу (бот должен быть
-//     админом канала). Подписан — задание одобрено, награду можно забрать; не подписан —
-//     400 { code: 'not_subscribed' }; проверить нельзя (бот не админ, приватная ссылка) —
-//     уходит на ручную проверку (mode: 'manual')
-//   - pseudo: засчитывается автоматически через pseudo_hours (mode: 'pseudo', expiresAt)
-//   - manual: на проверку администратору (mode: 'manual')
-//   - proof_data от клиента — только объект до 2 КБ (раньше без ограничений)
+// Версия: 3.0.0
+//   - только задания типа sponsor (остальные засчитывает сервер по прогрессу)
+//   - из pending / rejected; пока задание на проверке — повторно не отправляется;
+//     после отказа — не раньше чем через 24 ч (code: 'retry_later', retry_at)
+//   - proof_data формирует сервер, от клиента ничего не принимается
+//   - подтверждённая Telegram подписка одобряется в той же транзакции
+//     (submit_quest_proof с p_approve, без отдельного verify_quest)
+//   - ошибки отдаются с code; текст исключения наружу не уходит
+//   2.0.0 — auto: проверка подписки у Telegram; pseudo / manual
 //   1.0.0
 // ============================================
 
@@ -26,22 +27,8 @@ import { fetchTelegramMembership, parseTelegramChat } from '../_lib/access-gate'
 
 export const config = { runtime: 'edge' };
 
-const MAX_PROOF_BYTES = 2_000;
-
-interface ISubmitRequest {
-  userQuestId: string;
-  proofData?: unknown;
-}
-
-function sanitizeProof(raw: unknown): Record<string, any> | null {
-  if (raw === undefined || raw === null) return {};
-  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
-  try {
-    const json = JSON.stringify(raw);
-    return json.length <= MAX_PROOF_BYTES ? JSON.parse(json) : null;
-  } catch {
-    return null;
-  }
+function fail(error: string, code: string, status = 400, extra: Record<string, any> = {}): Response {
+  return jsonResponse({ success: false, error, code, ...extra }, status);
 }
 
 export default async function handler(request: Request): Promise<Response> {
@@ -59,7 +46,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
     const userId = auth.userId;
 
-    let body: ISubmitRequest;
+    let body: { userQuestId?: unknown };
     try {
       body = await request.json();
     } catch {
@@ -70,87 +57,88 @@ export default async function handler(request: Request): Promise<Response> {
     if (!UUID_RE.test(userQuestId)) {
       return errorResponse('userQuestId is required', 400);
     }
-    const proof = sanitizeProof(body?.proofData);
-    if (!proof) {
-      return errorResponse('Proof data is too large or invalid', 400);
-    }
 
     const config = getSupabaseConfig('service');
 
-    // Задание пользователя и его настройки
+    // Задание пользователя и его настройки (быстрые отказы до запроса к Telegram;
+    // окончательная проверка — в submit_quest_proof под блокировкой строки)
     const rows = await supabaseFetch(
       `user_quests?id=eq.${userQuestId}&user_id=eq.${userId}` +
-        `&select=id,status,completed,claimed,quests!inner(type,verification_type,sponsor_target,pseudo_hours,is_active)`,
+        `&select=id,status,completed,claimed,quests!inner(type,verification_type,sponsor_target,is_active)`,
       { method: 'GET' },
       config
     );
     const row = Array.isArray(rows) ? rows[0] : null;
     const quest = row?.quests;
     if (!row || !quest || quest.is_active === false) {
-      return errorResponse('Задание не найдено', 404);
+      return fail('Задание не найдено', 'not_found', 404);
+    }
+    if (quest.type !== 'sponsor') {
+      return fail('Это задание засчитывается автоматически', 'not_submittable');
     }
     if (row.completed || row.claimed) {
-      return errorResponse('Задание уже выполнено', 400);
+      return fail('Задание уже выполнено', 'completed');
+    }
+    if (row.status === 'submitted') {
+      return fail('Задание уже на проверке', 'already_submitted');
     }
 
     const verification = String(quest.verification_type || 'manual');
+    const now = new Date().toISOString();
+
+    let mode: 'approved' | 'pseudo' | 'manual' = verification === 'pseudo' ? 'pseudo' : 'manual';
+    let proofData: Record<string, any> = { method: mode, submitted_at: now };
 
     // ---------- auto: проверка подписки у Telegram ----------
-    let mode: 'approved' | 'pseudo' | 'manual' = verification === 'pseudo' ? 'pseudo' : 'manual';
-    let proofData: Record<string, any> = proof;
-
     if (verification === 'auto') {
       const chat = parseTelegramChat(quest.sponsor_target);
       const member = chat ? await fetchTelegramMembership(chat, userId) : null;
 
       if (member === false) {
-        return jsonResponse(
-          {
-            error: 'Подписка не найдена. Подпишитесь на канал и нажмите «Проверить» ещё раз.',
-            code: 'not_subscribed',
-          },
-          400
+        return fail(
+          'Подписка не найдена. Подпишитесь на канал и нажмите «Проверить» ещё раз.',
+          'not_subscribed'
         );
       }
       if (member === true) {
         mode = 'approved';
-        proofData = { method: 'telegram', chat, checked_at: new Date().toISOString() };
+        proofData = { method: 'telegram', chat, checked_at: now };
       } else {
         // Проверить автоматически нельзя — администратору на проверку
         mode = 'manual';
-        proofData = { ...proof, auto_check: 'unavailable' };
+        proofData = { method: 'manual', auto_check: 'unavailable', submitted_at: now };
       }
     }
 
-    const submitted = await supabaseRPC(
+    const result = await supabaseRPC(
       'submit_quest_proof',
-      { p_user_id: userId, p_user_quest_id: userQuestId, p_proof_data: proofData },
+      {
+        p_user_id: userId,
+        p_user_quest_id: userQuestId,
+        p_proof_data: proofData,
+        p_approve: mode === 'approved',
+      },
       config
     );
-    if (submitted?.success === false) {
-      return errorResponse(submitted.error || 'Failed to submit proof', 400);
-    }
 
-    if (mode === 'approved') {
-      const verified = await supabaseRPC(
-        'verify_quest',
-        { p_user_quest_id: userQuestId, p_approved: true },
-        config
+    if (!result?.success) {
+      return fail(
+        result?.error || 'Не удалось отправить',
+        result?.code || 'submit_failed',
+        400,
+        result?.retry_at ? { retry_at: result.retry_at } : {}
       );
-      if (verified?.success === false) {
-        return errorResponse(verified.error || 'Failed to approve', 400);
-      }
-      return jsonResponse({ success: true, status: 'approved', completed: true, mode });
     }
 
     return jsonResponse({
       success: true,
-      status: submitted?.status || 'submitted',
-      expiresAt: submitted?.expires_at || null,
+      status: result.status,
+      completed: !!result.completed,
+      expiresAt: result.expires_at || null,
       mode,
     });
   } catch (err) {
     console.error('[quests/submit] Error:', err);
-    return errorResponse((err as Error).message, 500);
+    return errorResponse('Failed to submit quest', 500);
   }
 }
