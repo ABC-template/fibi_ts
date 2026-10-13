@@ -1,7 +1,8 @@
 // ============================================
 // api/_lib/index.ts
 // Единая точка входа для всех утилит Edge-функций
-// Версия: 2.2.0 - экспорт jwt (токен Realtime), убран IAuthUserResult
+// Версия: 2.3.0 - убран ChatAction (список действий удалён)
+//          2.2.0 - экспорт jwt (токен Realtime), убран IAuthUserResult
 //          2.1.0 - добавлен checkUsageLimit и incrementUsage в экспорты
 // ============================================
 
@@ -23,7 +24,6 @@ export type { ISupabaseConfig, IUsageLimitResult } from './supabase-client';
 export type {
   TopicId,
   MessageType,
-  ChatAction,
   IImageSizeValidation,
   IAudioSizeValidation,
   IMessageLengthValidation
