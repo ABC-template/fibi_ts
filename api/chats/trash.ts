@@ -1,7 +1,8 @@
 // ============================================
 // api/chats/trash.ts
 // Описание: Работа с корзиной (GET, POST, DELETE) с sync_token
-// Версия: 4.1.0 - удаление навсегда запрещено (409), пока в чате идёт ответ или генерация
+// Версия: 4.2.0 - limit/offset: нечисловые и отрицательные значения больше не ломают запрос (500)
+//          4.1.0 - удаление навсегда запрещено (409), пока в чате идёт ответ или генерация
 //          4.0.0 - при восстановлении сбрасываем pinned
 // ============================================
 
@@ -257,6 +258,13 @@ async function permanentDeleteFromTrash(
   return { success: true, syncToken: newSyncToken };
 }
 
+/** Целое из параметра запроса в пределах [min, max]; нечисло → значение по умолчанию */
+function intParam(raw: string | null, fallback: number, min: number, max: number): number {
+  const n = raw === null || raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
@@ -273,15 +281,15 @@ export default async function handler(request: Request): Promise<Response> {
     // GET - получить корзину
     if (request.method === 'GET') {
       const url = new URL(request.url);
-      const limit = parseInt(url.searchParams.get('limit') || '100', 10);
-      const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+      const limit = intParam(url.searchParams.get('limit'), 100, 1, 500);
+      const offset = intParam(url.searchParams.get('offset'), 0, 0, 1_000_000);
 
-      const trash = await getTrash(userId, config, Math.min(limit, 500), offset);
+      const trash = await getTrash(userId, config, limit, offset);
       return jsonResponse({
         success: true,
         ...trash,
-        limit: Math.min(limit, 500),
-        offset: offset
+        limit,
+        offset
       });
     }
 
