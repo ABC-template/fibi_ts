@@ -3,7 +3,8 @@
 // Пакетная выдача подписанных ссылок на файлы пользователя.
 // Клиент хранит/получает из БД только storage_path и просит ссылки здесь
 // (показ в чате, просмотрщик, «Повторить»). Ссылки живут signTtlSec.
-// Версия: 1.1.0 — в ответе missing: пути, которых больше нет у пользователя
+// Версия: 1.2.0 — ошибки без текста исключения (пути обоих бакетов подписывает signUrls)
+//          1.1.0 — в ответе missing: пути, которых больше нет у пользователя
 //                  (файл удалён из облака) — приложение показывает «Файл удалён»
 //          1.0.0
 // ============================================
@@ -33,7 +34,12 @@ export default async function handler(request: Request): Promise<Response> {
     }
     const userId = auth.userId;
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
     const paths = assertStoragePaths(body?.paths, MAX_PATHS_PER_REQUEST);
 
     const config = getSupabaseConfig('service');
@@ -55,6 +61,6 @@ export default async function handler(request: Request): Promise<Response> {
   } catch (err) {
     if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Media sign error:', err);
-    return errorResponse((err as Error).message || 'Internal error', 500);
+    return errorResponse('Internal error', 500);
   }
 }
