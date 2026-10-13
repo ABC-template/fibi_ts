@@ -1,7 +1,8 @@
 // ============================================
 // src/services/network.ts
 // Обработка офлайн/онлайн
-// Версия: 1.0.0
+// Версия: 1.1.0 — после восстановления сети обновляется сайдбар/чат (ChatListModule удалён)
+//          1.0.0
 // ============================================
 
 import { syncService } from './sync';
@@ -57,9 +58,8 @@ async function handleLongOffline(): Promise<void> {
             await window.fullDataReload();
         } else {
             console.log('✅ Токен актуален, просто обновляем UI');
-            if (window.chatListModule) {
-                window.chatListModule.show();
-            }
+            if (window.renderChatsInDrawer) window.renderChatsInDrawer();
+            (window as any).chatUI?.refreshUI?.();
         }
 
         const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
@@ -87,9 +87,7 @@ export function setupNetworkListeners(): void {
         if (duration < OFFLINE_THRESHOLD) {
             console.log('🌐 Короткий обрыв (< 30 сек), возобновляем Realtime');
             if (syncService.isActive()) {
-                if (window.chatListModule) {
-                    window.chatListModule.show();
-                }
+                (window as any).chatUI?.refreshUI?.();
             } else {
                 const userId = userStore.userId;
                 if (userId && syncService) syncService.subscribe(userId);
