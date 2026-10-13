@@ -1,13 +1,15 @@
 // ============================================
 // src/services/network.ts
 // Обработка офлайн/онлайн
-// Версия: 1.1.0 — после восстановления сети обновляется сайдбар/чат (ChatListModule удалён)
+// Версия: 1.2.0 — sync_token с привязкой к Telegram ID (user-storage)
+//          1.1.0 — после восстановления сети обновляется сайдбар/чат (ChatListModule удалён)
 //          1.0.0
 // ============================================
 
 import { syncService } from './sync';
 import { authService } from './auth';
 import { userStore } from '@/store/UserStore';
+import { userStorage, saveSyncToken } from '@/utils/user-storage';
 
 let offlineBanner: HTMLElement | null = null;
 let offlineStartTime: number | null = null;
@@ -50,11 +52,12 @@ async function handleLongOffline(): Promise<void> {
     try {
         const result = await authService.checkSubscription();
         const syncToken = result.syncToken;
-        let localToken = localStorage.getItem('sync_token');
+        const localToken = userStorage.get('sync_token');
 
         if (syncToken !== localToken) {
             console.log('🔄 Токен изменился за время обрыва → полная перезапись');
-            localStorage.setItem('sync_token', syncToken || '');
+            if (syncToken) saveSyncToken(syncToken);
+            else userStorage.remove('sync_token');
             await window.fullDataReload();
         } else {
             console.log('✅ Токен актуален, просто обновляем UI');
