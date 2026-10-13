@@ -1,7 +1,9 @@
 // ============================================
 // src/services/subscription.ts
 // Сервис для работы с подписками
-// Версия: 1.0.0
+// Версия: 1.1.0 — после активации пробной подписки доступ перепроверяется на сервере:
+//                  синхронизация и Realtime включаются сразу, локальные чаты выгружаются
+//          1.0.0
 // ============================================
 
 import { apiClient } from './api';
@@ -62,6 +64,18 @@ export class SubscriptionService {
     }
   }
 
+  /** Перепроверить доступ на сервере и применить переход trial → PRO */
+  private async refreshAccess(): Promise<void> {
+    try {
+      const { authService } = await import('./auth');
+      const { applyAccessTransition } = await import('./access-transition');
+      const result = await authService.checkSubscription();
+      await applyAccessTransition(result);
+    } catch (err) {
+      console.error('[SubscriptionService] Не удалось обновить доступ:', err);
+    }
+  }
+
   /**
    * Активировать пробный период
    */
@@ -69,11 +83,9 @@ export class SubscriptionService {
     try {
       const response = await apiClient.post('/subscription/activate-trial');
       if (response.success) {
-        // Обновляем пользователя в сторе
-        if (userStore) {
-          userStore.markTrialUsed();
-          userStore.setRole('premium', true);
-        }
+        if (userStore) userStore.markTrialUsed();
+        // Роль, токен Realtime и синхронизация — сразу, без перезапуска приложения
+        await this.refreshAccess();
         return {
           success: true,
           tier: response.tier,
@@ -102,10 +114,7 @@ export class SubscriptionService {
     try {
       const response = await apiClient.post('/subscription/purchase', { tier_key: tierKey });
       if (response.success) {
-        // Обновляем пользователя в сторе
-        if (userStore) {
-          userStore.setRole('premium', true);
-        }
+        await this.refreshAccess();
         return {
           success: true,
           tier: response.tier,
