@@ -1,9 +1,11 @@
 // ============================================
 // src/modules/admin/tabs/AdminAuditTab.ts
+// Версия: 1.1.0 — экранирование user_id / event_type / source / amount
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { escapeHtml } from '@/utils/html';
 
 export class AdminAuditTab implements IAdminTab {
   id = 'audit';
@@ -61,7 +63,7 @@ export class AdminAuditTab implements IAdminTab {
     return `
       <div style="background:var(--app-bg-secondary);border-radius:12px;padding:20px;border:1px solid var(--app-border-color-light)">
         <h3 style="margin:0 0 8px;color:var(--app-text-primary)">📜 Аудит операций</h3>
-        <p style="color:var(--app-text-tertiary);font-size:13px;margin-bottom:16px">Всего: <strong>${this.total}</strong></p>
+        <p style="color:var(--app-text-tertiary);font-size:13px;margin-bottom:16px">Всего: <strong>${Number(this.total) || 0}</strong></p>
 
         <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -80,17 +82,17 @@ export class AdminAuditTab implements IAdminTab {
               ` : this.logs.map(log => `
                 <tr style="border-bottom:1px solid var(--app-border-color-light)">
                   <td style="padding:6px 8px;font-size:11px;color:var(--app-text-tertiary)">${new Date(log.created_at).toLocaleString()}</td>
-                  <td style="padding:6px 8px">${log.user_id}</td>
+                  <td style="padding:6px 8px">${escapeHtml(String(log.user_id ?? ''))}</td>
                   <td style="text-align:center;padding:6px 8px">
                     <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;${
                       log.event_type === 'EARN' ? 'background:rgba(39,174,96,0.15);color:#27ae60' :
                       log.event_type === 'SPEND' ? 'background:rgba(231,76,60,0.15);color:#e74c3c' :
                       'background:rgba(52,152,219,0.15);color:#3498db'
-                    }">${log.event_type}</span>
+                    }">${escapeHtml(String(log.event_type ?? ''))}</span>
                   </td>
-                  <td style="padding:6px 8px;font-size:12px;color:var(--app-text-tertiary)">${log.source || '—'}</td>
+                  <td style="padding:6px 8px;font-size:12px;color:var(--app-text-tertiary)">${escapeHtml(log.source || '—')}</td>
                   <td style="text-align:center;padding:6px 8px;font-weight:700;${log.amount > 0 ? 'color:#27ae60' : 'color:#e74c3c'}">
-                    ${log.amount > 0 ? '+' : ''}${log.amount}
+                    ${log.amount > 0 ? '+' : ''}${Number(log.amount) || 0}
                   </td>
                 </tr>
               `).join('')}
