@@ -1,13 +1,16 @@
 // ============================================
 // api/chats/trash.ts
 // Описание: Работа с корзиной (GET, POST, DELETE) с sync_token
-// Версия: 4.0.0 - при восстановлении сбрасываем pinned
+// Версия: 4.1.0 - удаление навсегда запрещено (409), пока в чате идёт ответ или генерация
+//          4.0.0 - при восстановлении сбрасываем pinned
 // ============================================
 
 import { authenticate } from '../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken } from '../_lib/supabase-client';
 import { isValidUUID, validateUUID } from '../_lib/validators';
+import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../_lib/chat-lock';
+import { HttpError } from '../_lib/http-error';
 
 export const config = { runtime: 'edge' };
 
@@ -182,6 +185,9 @@ async function permanentDeleteFromTrash(
       return { success: false, error: 'Chat not found or not in trash' };
     }
 
+    // Пока в чате идёт ответ или генерация, удалять нельзя (бросает 409)
+    await assertChatsNotBusy(userId, [id], config);
+
     // Удаляем все сообщения чата
     await supabaseFetch(
       `messages?chat_id=eq.${id}`,
@@ -218,6 +224,9 @@ async function permanentDeleteFromTrash(
     if (!chatCheck || !Array.isArray(chatCheck) || chatCheck.length === 0) {
       return { success: false, error: 'Access denied' };
     }
+
+    // Пока в чате идёт ответ или генерация, удалять нельзя (бросает 409)
+    await assertChatsNotBusy(userId, [chatId], config, MESSAGE_DELETE_BUSY_MESSAGE);
 
     // Удаляем сообщение
     await supabaseFetch(
@@ -328,6 +337,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     return errorResponse('Method Not Allowed', 405);
   } catch (err) {
+    if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Trash handler error:', (err as Error).message);
     return errorResponse((err as Error).message, 500);
   }
