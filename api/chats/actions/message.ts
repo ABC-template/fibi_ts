@@ -1,7 +1,10 @@
 // ============================================
 // api/chats/actions/message.ts
 // Описание: Работа с сообщениями (создание, удаление) с sync_token
-// Версия: 3.2.0 - служебные поля генерации в metadata (job_id, key_index, lock_token,
+// Версия: 3.3.0 - удаление сообщения запрещено (409), пока в чате идёт ответ или
+//                 генерация (иначе можно было стереть сообщение-задание и обойти
+//                 ограничения); hold_id (заморозка энергии) — служебное поле
+//          3.2.0 - служебные поля генерации в metadata (job_id, key_index, lock_token,
 //                 charged, finalizing и др.) от клиента не принимаются; metadata
 //                 существующего сообщения-генерации клиент не перезаписывает (раньше
 //                 можно было поставить charged и не заплатить за видео); незавершённый
@@ -15,6 +18,8 @@ import { authenticate } from '../../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken } from '../../_lib/supabase-client';
 import { isValidUUID, validateUUID, validateMessageLength } from '../../_lib/validators';
+import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../../_lib/chat-lock';
+import { HttpError } from '../../_lib/http-error';
 
 export const config = { runtime: 'edge' };
 
@@ -42,6 +47,7 @@ const SERVER_METADATA_KEYS = [
   'job_id',
   'key_index',
   'lock_token',
+  'hold_id',
   'charged',
   'charge',
   'finalizing',
@@ -211,6 +217,9 @@ async function deleteMessage(
       return { success: false, error: 'Access denied' };
     }
 
+    // Пока в чате идёт ответ или генерация, сообщения не удаляются (бросает 409)
+    await assertChatsNotBusy(userId, [chatId], config, MESSAGE_DELETE_BUSY_MESSAGE);
+
     const msgCheck = await supabaseFetch(
       `messages?id=eq.${messageId}&chat_id=eq.${chatId}&deleted_at=is.null&select=id`,
       { method: 'GET' },
@@ -249,6 +258,7 @@ async function deleteMessage(
     console.log(`🗑️ Сообщение ${messageId} помечено как удалённое`);
     return { success: true, syncToken: newSyncToken, error: null };
   } catch (err) {
+    if (err instanceof HttpError) throw err;
     console.error('Delete message error:', (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
@@ -315,6 +325,7 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Unknown action', 400);
     }
   } catch (err) {
+    if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Message handler error:', (err as Error).message);
     return errorResponse((err as Error).message, 500);
   }
