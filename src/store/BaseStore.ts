@@ -1,7 +1,8 @@
 // ============================================
 // src/store/BaseStore.ts
 // Базовый класс для всех хранилищ с изоляцией данных
-// Версия: 4.2.0 - при переполнении хранилища пользователь видит предупреждение
+// Версия: 4.3.0 - sync_token перенесён в src/utils/user-storage.ts (с привязкой к Telegram ID)
+//          4.2.0 - при переполнении хранилища пользователь видит предупреждение
 //                  (раньше ошибка молча уходила в консоль)
 //          4.1.0 - JWT убран (авторизация только по Telegram initData)
 //          4.0.0 - FIXED
@@ -138,31 +139,7 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
   }
 
   // ==========================================
-  // SYNC TOKEN (БЕЗ ПРИВЯЗКИ К ПОЛЬЗОВАТЕЛЮ!)
-  // ==========================================
-
-  saveSyncToken(token: string | null): void {
-    if (!token) {
-      localStorage.removeItem('sync_token');
-      return;
-    }
-    localStorage.setItem('sync_token', token);
-    console.log(`🔄 SyncToken сохранен: ${token.substring(0, 8)}...`);
-    this._emitChange('sync:token_updated', { token: token.substring(0, 8) + '...' });
-  }
-
-  getSyncToken(): string | null {
-    return localStorage.getItem('sync_token');
-  }
-
-  clearSyncToken(): void {
-    localStorage.removeItem('sync_token');
-    console.log(`🗑️ SyncToken удален`);
-    this._emitChange('sync:token_cleared', {});
-  }
-
-  // ==========================================
-  // ОЧИСТКА (данные + sync_token)
+  // ОЧИСТКА
   // ==========================================
 
   clear(): void {
@@ -172,9 +149,7 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
     this._data = {} as T;
     this.save();
 
-    localStorage.removeItem('sync_token');
-    
-    console.log(`🧹 Данные ${this.storeName} и sync_token очищены для пользователя ${id}`);
+    console.log(`🧹 Данные ${this.storeName} очищены для пользователя ${id}`);
     this._emitChange('store:cleared', { store: this.storeName });
   }
 
