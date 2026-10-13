@@ -1,7 +1,11 @@
 // ============================================
 // src/modules/ad/AdModule.ts
 // Реклама Adsgram (rewarded): показ и награда монетами.
-// Версия: 2.0.0
+// Версия: 3.0.0
+//   - монеты начисляет только Reward URL Adsgram (сервер → сервер); приложение после
+//     досмотра лишь ждёт начисления (опрос состояния до ~12 с) и обновляет баланс.
+//     Начисление по запросу приложения убрано: его можно было вызвать без рекламы
+//   2.0.0
 //   - настоящий SDK Adsgram (sad.min.js, Adsgram.init({ blockId }).show())
 //     вместо несуществующих showRewardedAd/showInterstitialAd
 //   - blockId и состояние (сумма, остаток на сегодня, ожидание) — с сервера
@@ -17,13 +21,18 @@ const SDK_URL = 'https://sad.adsgram.ai/js/sad.min.js';
 
 export interface IAdStatus {
   enabled: boolean;
-  mode: 'client' | 'server';
   blockId: string | null;
   amount: number;
   dailyLimit: number;
+  /** Сколько наград уже получено сегодня (по нему видно, что Adsgram начислил) */
+  usedToday: number;
   remainingToday: number;
   waitSeconds: number;
 }
+
+/** Ждём начисления от Adsgram: столько попыток с таким шагом */
+const AWARD_POLL_ATTEMPTS = 6;
+const AWARD_POLL_STEP_MS = 2000;
 
 export interface IAdRewardResult {
   shown: boolean;
@@ -58,10 +67,10 @@ export class AdModule {
       if (!res?.success) return null;
       this.status = {
         enabled: res.enabled === true,
-        mode: res.mode === 'server' ? 'server' : 'client',
         blockId: res.blockId || null,
         amount: Number(res.amount) || 0,
         dailyLimit: Number(res.dailyLimit) || 0,
+        usedToday: Number(res.usedToday) || 0,
         remainingToday: Number(res.remainingToday) || 0,
         waitSeconds: Number(res.waitSeconds) || 0,
       };
@@ -102,8 +111,8 @@ export class AdModule {
   }
 
   /**
-   * Показать rewarded-рекламу. Награду начисляет сервер; здесь — показ,
-   * запрос награды и обновление баланса.
+   * Показать rewarded-рекламу. Награду начисляет Adsgram через Reward URL;
+   * здесь — показ, ожидание начисления и обновление баланса.
    */
   async showRewarded(): Promise<IAdRewardResult> {
     if (this.busy) return { shown: false, awarded: 0, error: 'Реклама уже показывается' };
@@ -140,35 +149,16 @@ export class AdModule {
 
       if (!done) return { shown: true, awarded: 0, reason: 'not_completed' };
 
-      if (status.mode === 'server') {
-        // Награда придёт через Reward URL — обновим баланс чуть позже
-        setTimeout(() => void this._reloadBalance(), 2500);
-        toast?.(`🎉 Спасибо! +${status.amount} 🪙 скоро поступят`, 'success', 2200);
-        return { shown: true, awarded: 0, reason: 'server_mode' };
+      // Награду начисляет Adsgram через Reward URL — ждём, пока она появится
+      const awarded = await this._waitForAward(status.usedToday, status.amount);
+      if (awarded) {
+        toast?.(`🎉 +${status.amount} 🪙 за просмотр`, 'success', 2000);
+        return { shown: true, awarded: status.amount };
       }
-
-      const res = await apiClient.post('/ads/reward', {});
-      const awarded = Number(res?.awarded) || 0;
-
-      if (awarded > 0) {
-        if (typeof res.newBalance === 'number') {
-          const store = (window as any).economyStore;
-          store?.updateCoinBalance?.(res.newBalance);
-          eventBus.emit('economy:balance:updated', {
-            userId: 0,
-            newBalance: res.newBalance,
-            delta: awarded,
-            source: 'ad:rewarded',
-          });
-        }
-        toast?.(`🎉 +${awarded} 🪙 за просмотр`, 'success', 2000);
-      } else if (res?.reason === 'daily_limit') {
-        toast?.('🎬 Лимит просмотров на сегодня исчерпан', 'info', 2200);
-      } else if (res?.reason === 'too_soon') {
-        toast?.('⏳ Слишком часто — попробуйте чуть позже', 'info', 2000);
-      }
-
-      return { shown: true, awarded, reason: res?.reason || null };
+      // Adsgram иногда сообщает с задержкой — обновим баланс ещё раз позже
+      setTimeout(() => void this._reloadBalance(), 30_000);
+      toast?.('🎬 Спасибо! Монеты поступят в течение минуты', 'info', 2500);
+      return { shown: true, awarded: 0, reason: 'pending' };
     } catch (err) {
       const message = (err as Error).message || 'Ошибка рекламы';
       console.error('❌ [Ad]', message);
@@ -178,6 +168,25 @@ export class AdModule {
       this.busy = false;
       void this.getStatus(true).then(() => eventBus.emit('ad:status_updated', this.status));
     }
+  }
+
+  /** true — начисление пришло (счётчик наград за день вырос); баланс обновлён */
+  private async _waitForAward(usedBefore: number, amount: number): Promise<boolean> {
+    for (let i = 0; i < AWARD_POLL_ATTEMPTS; i++) {
+      await new Promise((r) => setTimeout(r, AWARD_POLL_STEP_MS));
+      const st = await this.getStatus(true);
+      if (st && st.usedToday > usedBefore) {
+        await this._reloadBalance();
+        eventBus.emit('economy:balance:updated', {
+          userId: 0,
+          newBalance: (window as any).economyStore?.getCoinBalance?.() ?? 0,
+          delta: amount,
+          source: 'ad:rewarded',
+        });
+        return true;
+      }
+    }
+    return false;
   }
 
   private async _reloadBalance(): Promise<void> {
