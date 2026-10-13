@@ -1,7 +1,9 @@
 // ============================================
 // api/chats/actions/message.ts
 // Описание: Работа с сообщениями (создание, удаление) с sync_token
-// Версия: 3.3.0 - удаление сообщения запрещено (409), пока в чате идёт ответ или
+// Версия: 3.4.0 - новые сообщения в облако — только при разрешённой синхронизации
+//                 (can_sync: PRO/admin); удалять своё можно всегда
+//          3.3.0 - удаление сообщения запрещено (409), пока в чате идёт ответ или
 //                 генерация (иначе можно было стереть сообщение-задание и обойти
 //                 ограничения); hold_id (заморозка энергии) — служебное поле
 //          3.2.0 - служебные поля генерации в metadata (job_id, key_index, lock_token,
@@ -16,7 +18,7 @@
 
 import { authenticate } from '../../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
-import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken } from '../../_lib/supabase-client';
+import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken, canUserSync } from '../../_lib/supabase-client';
 import { isValidUUID, validateUUID, validateMessageLength } from '../../_lib/validators';
 import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../../_lib/chat-lock';
 import { HttpError } from '../../_lib/http-error';
@@ -293,6 +295,9 @@ export default async function handler(request: Request): Promise<Response> {
     if (action === 'new_message') {
       if (!chatId || !message) {
         return errorResponse('Missing chatId or message', 400);
+      }
+      if (!(await canUserSync(userId, config))) {
+        return errorResponse('Синхронизация недоступна для вашего тарифа', 403);
       }
 
       const result = await addMessage(userId, chatId, message, config);
