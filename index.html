@@ -100,9 +100,11 @@
     <!-- ==========================================
          ВНЕШНИЕ БИБЛИОТЕКИ
     ========================================== -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
-    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <!-- Версии зафиксированы: «последняя» версия с CDN может сломать приложение или
+         подменить код без нашего ведома. DOMPurify 3.2.4 — с исправлениями обходов очистки -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js" defer></script>
+    <script src="https://unpkg.com/lucide@0.460.0" defer></script>
     <!-- ✅ Eruda загружается статически, но НЕ инициализируется автоматически -->
     <!-- Инициализация происходит в app.ts после проверки роли -->
     <script src="https://cdn.jsdelivr.net/npm/eruda@3.4.1/eruda.min.js"></script>
