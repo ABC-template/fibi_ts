@@ -1,10 +1,12 @@
 // ============================================
 // src/core/header-manager.ts
 // Управление динамическим хедером
-// Версия: 5.1.0 - добавлены window.updateHeader, updateChatTitle, getDefaultHeader
+// Версия: 5.2.0 - заголовок (название чата) экранируется
+//          5.1.0 - добавлены window.updateHeader, updateChatTitle, getDefaultHeader
 // ============================================
 
 import { eventBus } from './event-bus';
+import { escapeHtml } from '@/utils/html';
 
 export interface IHeaderAction {
     id: string;
@@ -60,7 +62,7 @@ export class HeaderManager {
                     max-width: 100%;
                     text-align: left;
                 ">
-                    ${title}
+                    ${escapeHtml(title)}
                 </span>
             `;
             centerEl.style.cssText = `
