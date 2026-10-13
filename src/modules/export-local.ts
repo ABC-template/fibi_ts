@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/export-local.ts
 // Экспорт архива
-// Версия: 4.0.0 - локальный архив собирается целиком на устройстве (POST /api/chats/export
+// Версия: 4.1.0 - облачный архив: 429 (лимит частоты) — понятное сообщение; если часть
+//                 большого архива не пришла, файл не сохраняется (раньше — молча без неё)
+//          4.0.0 - локальный архив собирается целиком на устройстве (POST /api/chats/export
 //                 удалён: работал без авторизации); чаты из корзины не попадают в архив;
 //                 агент/тип чата и запрос генерации; удалён downloadMultiPartArchive
 //          3.1.1 - замена @types → @app-types
@@ -135,13 +137,27 @@ function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number
     return;
   }
 
-  try {
-    const response = await fetch('/api/chats/export', {
+  const fetchPart = (part: number): Promise<Response> =>
+    fetch('/api/chats/export', {
       method: 'GET',
-      headers: { 'X-Telegram-Init-Data': initData }
+      headers: part === 1
+        ? { 'X-Telegram-Init-Data': initData }
+        : { 'X-Telegram-Init-Data': initData, 'X-Request-Part': String(part) }
     });
 
+  const rateLimitedText = (retryAfter: number): string => {
+    const minutes = Math.max(1, Math.ceil((Number(retryAfter) || 60) / 60));
+    return `⏳ Архив скачивали слишком часто. Попробуйте через ${minutes} мин.`;
+  };
+
+  try {
+    const response = await fetchPart(1);
     const data = await response.json();
+
+    if (response.status === 429) {
+      notify(rateLimitedText(data.retry_after));
+      return;
+    }
 
     if (!response.ok) {
       if (data.fallbackToLocal) {
@@ -161,19 +177,19 @@ function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number
     }
 
     if (data.total_parts > 1) {
+      // Архив без пропусков: если часть не пришла, файл не сохраняем
       const allParts = [data.archive];
       for (let part = 2; part <= data.total_parts; part++) {
-        const partResponse = await fetch('/api/chats/export', {
-          method: 'GET',
-          headers: {
-            'X-Telegram-Init-Data': initData,
-            'X-Request-Part': part.toString()
-          }
-        });
-        const partData = await partResponse.json();
-        if (partData.success && partData.archive) {
-          allParts.push(partData.archive);
+        const partResponse = await fetchPart(part);
+        const partData = await partResponse.json().catch(() => ({}));
+        if (partResponse.status === 429) {
+          notify(rateLimitedText(partData.retry_after));
+          return;
         }
+        if (!partResponse.ok || !partData.success || !Array.isArray(partData.archive)) {
+          throw new Error(partData.error || `Часть ${part} из ${data.total_parts} не загружена`);
+        }
+        allParts.push(partData.archive);
       }
 
       const fullArchive = allParts.flat();
@@ -187,8 +203,8 @@ function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number
     }
   } catch (err) {
     console.error('Ошибка экспорта облачного архива:', err);
-    notify('Не удалось загрузить облачный архив. Проверьте подключение к интернету.');
+    notify(`Не удалось загрузить облачный архив: ${(err as Error).message || 'проверьте подключение к интернету'}.`);
   }
 };
 
-console.log('✅ ExportLocal v4.0.0 загружен (локальный архив без сервера)');
+console.log('✅ ExportLocal v4.1.0 загружен (локальный архив без сервера)');
