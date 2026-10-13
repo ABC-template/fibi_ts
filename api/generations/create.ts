@@ -1,7 +1,8 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video)
-// Версия: 3.2.0 — резерв энергии (sql/energy_holds.sql): перед стартом стоимость
+// Версия: 3.3.0 — референс принимается только после /media/confirm (confirmed_at)
+//          3.2.0 — резерв энергии (sql/energy_holds.sql): перед стартом стоимость
 //                  замораживается атомарно; одна генерация (фото или видео) на
 //                  пользователя — вторая получает 409 { code: 'generation_busy', chat_id }
 //                  со ссылкой на чат, где идёт первая; после результата заморозка
@@ -512,7 +513,7 @@ async function failStaleGenerations(chatId: string, config: any): Promise<void> 
 
 /**
  * Референсы: должны существовать, принадлежать пользователю, быть изображениями.
- * Свежие (uploaded) подходят всегда; уже привязанные (attached) — только к этому же чату
+ * Свежие (uploaded) — только подтверждённые /media/confirm; уже привязанные (attached) — только к этому же чату
  * (так работает «Повторить»).
  */
 async function loadInputFiles(
@@ -531,6 +532,10 @@ async function loadInputFiles(
   for (const row of rows) {
     if (row.kind !== 'input' || mediaTypeFromMime(row.mime) !== 'image') {
       throw new HttpError(400, 'Invalid reference file');
+    }
+    // Без /media/confirm фактические размер и тип файла не проверены
+    if (!row.confirmed_at) {
+      throw new HttpError(400, 'Reference file is not confirmed');
     }
     if (row.status === 'attached' && row.chat_id !== chatId) {
       throw new HttpError(400, 'Reference file belongs to another chat');
