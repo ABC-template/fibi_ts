@@ -14,7 +14,8 @@
 //        → заморозка монет (economy_locked); полная блокировка — /admin/economy/blocks
 //
 // Вся логика изменения — в SQL (admin_set_role, admin_adjust_*), с записью в system_logs.
-// Версия: 1.1.0 — в списке: blocked / block_reason / block_expires_at (user_blocks),
+// Версия: 1.2.0 — без trial_used
+//          1.1.0 — в списке: blocked / block_reason / block_expires_at (user_blocks),
 //                  channel_member, is_admin_id; действие economy_lock
 //          1.0.0
 // ============================================
@@ -38,7 +39,6 @@ const USER_FIELDS = [
   'economy_locked',
   'streak',
   'last_checkin_date',
-  'trial_used',
   'channel_member',
   'created_at',
 ].join(',');
