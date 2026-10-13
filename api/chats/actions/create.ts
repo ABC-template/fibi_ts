@@ -1,7 +1,8 @@
 // ============================================
 // api/chats/actions/create.ts
 // Описание: Создание нового чата (с user_uuid, sync_token и agent_id)
-// Версия: 5.2.0 — повторное создание того же чата (id уже есть у этого пользователя)
+// Версия: 5.3.0 — название чата: строка до 200 символов (как в rename)
+//          5.2.0 — повторное создание того же чата (id уже есть у этого пользователя)
 //                  считается успехом: повтор после сбоя сети больше не падает;
 //                  первое сообщение проверяется по длине и не дублируется
 //          5.1.0 — валидация topic_id пропускается для чатов с agent_id
@@ -43,6 +44,9 @@ interface ICreateChatRequest {
   action?: string;
 }
 
+/** Как в rename (update.ts) */
+const MAX_TITLE_LENGTH = 200;
+
 async function createChat(
   userId: number,
   userUuid: string,
@@ -55,7 +59,14 @@ async function createChat(
     }
     const chatId = chatData.id || crypto.randomUUID();
     const topic = chatData.topic_id || 'fast';
-    const title = chatData.title || `Чат в разделе ${topic}`;
+    if (chatData.title !== undefined && chatData.title !== null && typeof chatData.title !== 'string') {
+      return { success: false, error: 'Invalid title' };
+    }
+    const rawTitle = typeof chatData.title === 'string' ? chatData.title.trim() : '';
+    if (rawTitle.length > MAX_TITLE_LENGTH) {
+      return { success: false, error: `Title too long (max ${MAX_TITLE_LENGTH} characters)` };
+    }
+    const title = rawTitle || `Чат в разделе ${topic}`;
     const maxContext = chatData.max_context || 15;
     const userRenamed = chatData.user_renamed || false;
     const pinned = chatData.pinned || false;
