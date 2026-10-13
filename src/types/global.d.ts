@@ -1,7 +1,8 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.5.0 - убраны события economy:spend и economy:error
+// Версия: 2.6.0 - убран downloadMultiPartArchive (локальный архив собирается на устройстве)
+//          2.5.0 - убраны события economy:spend и economy:error
 //          2.4.0 - убран chatListModule (модуль удалён)
 //          2.3.0 - добавлены questsStore и questsModule
 // ============================================
@@ -123,7 +124,6 @@ declare global {
         // ==========================================
         exportLocalArchive: () => Promise<void>;
         exportCloudArchive: () => Promise<void>;
-        downloadMultiPartArchive: (firstPart: any) => Promise<void>;
         downloadJSON: (data: any, filename: string) => void;
 
         // ==========================================
