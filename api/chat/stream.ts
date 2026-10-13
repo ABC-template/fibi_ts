@@ -1,7 +1,9 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.6.1 — IAgent без устаревших allowed_roles / min_pro_tier
+// Версия: 3.6.2 — потолок ответа по реальным тарифам (trial/basic/pro/full/ultimate); для
+//                  full/ultimate раньше срабатывал запасной потолок 4096
+//          3.6.1 — IAgent без устаревших allowed_roles / min_pro_tier
 //          3.6.0 — резерв энергии (sql/energy_holds.sql): перед запросом энергия
 //                  замораживается атомарно в БД (параллельные запросы в разных чатах
 //                  больше не тратят один баланс дважды); max_tokens — по замороженному;
@@ -234,12 +236,13 @@ const MAX_HISTORY_CHARS = 400_000;
 /** Если цену модели узнать не удалось — вход не больше стольких токенов */
 const MAX_INPUT_TOKENS_WITHOUT_PRICE = 16_000;
 /** Потолок длины ответа по тарифу (токены) */
+/** Потолок длины ответа (токены) по тарифу: ключи — subscription_tiers.tier_key */
 const HARD_CAP_BY_TIER: Record<string, number> = {
   trial: 1500,
   basic: 3000,
-  plus: 4000,
   pro: 6000,
-  ultra: 8000,
+  full: 8000,
+  ultimate: 8000,
 };
 
 async function getAgentById(
@@ -568,7 +571,7 @@ export default async function handler(request: Request): Promise<Response> {
     // Потолок ответа: окно контекста модели и тариф
     const capTokens = Math.min(
       agent.context_length ? Math.floor(agent.context_length * 0.4) : 4096,
-      HARD_CAP_BY_TIER[userProTier || 'trial'] ?? 4096
+      HARD_CAP_BY_TIER[userProTier || 'trial'] ?? HARD_CAP_BY_TIER.trial
     );
     // Сколько выходных токенов можно оплатить энергией energy при цене модели
     function completionTokensFor(energy: number): number {
