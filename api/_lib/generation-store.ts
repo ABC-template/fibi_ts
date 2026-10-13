@@ -4,11 +4,14 @@
 // списание энергии, обновление сообщений и завершение видео-задания.
 // finalizeVideoJob идемпотентна: вебхук OpenRouter и опрос статуса из приложения
 // могут прийти одновременно — результат сохранится и будет оплачен ровно один раз.
-// Версия: 1.1.0 — списание за генерацию «до нуля» (p_allow_partial), возвращается факт
+// Версия: 1.2.0 — резерв энергии: списание через settle_energy (снимает заморозку
+//                  hold_id из metadata), при провале задания заморозка снимается
+//                  без списания; истёкшая подписка — коэффициент как у trial
+//          1.1.0 — списание за генерацию «до нуля» (p_allow_partial), возвращается факт
 //          1.0.0
 // ============================================
 
-import { supabaseFetch, supabaseRPC } from './supabase-client';
+import { supabaseFetch } from './supabase-client';
 import type { ISupabaseConfig } from './supabase-client';
 import { getMarkupForTier } from './markup-helper';
 import {
@@ -21,6 +24,7 @@ import {
   uploadObject,
 } from './media';
 import { releaseChatLockByToken, VIDEO_LOCK_TTL_SEC } from './chat-lock';
+import { releaseEnergy, settleEnergy } from './energy-hold';
 import { downloadVideo, energyForUsd, estimateUsd, getVideoJob, readPricing } from './openrouter-media';
 
 export interface IStoredMedia {
@@ -200,42 +204,26 @@ export async function persistBytes(
 // ============================================
 
 /**
- * Списание энергии за успешную генерацию. Возвращает фактически списанную сумму
- * (0 для admin/creator). Если списать не удалось, результат всё равно отдаётся,
- * а сбой пишется в system_logs.
+ * Списание энергии за успешную генерацию: снимает заморозку holdId и списывает
+ * факт. Возвращает фактически списанную сумму (0 для admin/creator). Если списать
+ * не удалось, результат всё равно отдаётся, а сбой пишется в system_logs.
  */
 export async function chargeForGeneration(
   userId: number,
   amount: number,
   modality: string,
   chatId: string,
-  config: ISupabaseConfig
+  config: ISupabaseConfig,
+  holdId: string | null = null
 ): Promise<number> {
-  try {
-    const spend = await supabaseRPC(
-      'spend_abstract_tokens',
-      {
-        p_user_id: userId,
-        p_amount: amount,
-        p_source: 'generation',
-        p_description: `Генерация (${modality})`,
-        // Результат уже получен: списываем сколько есть, недоплату пишет БД
-        p_allow_partial: true,
-      },
-      config
-    );
+  // Результат уже получен: списываем сколько есть, недоплату пишет БД
+  const res = await settleEnergy(holdId, userId, amount, 'generation', `Генерация (${modality})`, config);
+  if (res.success) return res.charged;
 
-    if (spend?.success) {
-      if (spend.bypass) return 0;
-      return typeof spend.charged === 'number' ? spend.charged : amount;
-    }
-
-    await logGenerationIssue(userId, 'generation_charge_failed', `Не удалось списать ${amount} за успешную генерацию: ${spend?.error || 'unknown'}`, { amount, chat_id: chatId }, config);
-    return 0;
-  } catch (err) {
-    await logGenerationIssue(userId, 'generation_charge_failed', `Не удалось списать ${amount} за успешную генерацию: ${(err as Error).message}`, { amount, chat_id: chatId }, config);
-    return 0;
-  }
+  await logGenerationIssue(userId, 'generation_charge_failed', `Не удалось списать ${amount} за успешную генерацию: ${res.error || 'unknown'}`, { amount, chat_id: chatId }, config);
+  // Заморозку всё равно снимаем, иначе энергия «висит» до истечения срока
+  await releaseEnergy(holdId, config);
+  return 0;
 }
 
 export async function logGenerationIssue(
@@ -328,6 +316,7 @@ async function failVideoMessage(
     config
   );
   await releaseChatLockByToken(row.chats.user_id, row.chat_id, meta.lock_token, config);
+  await releaseEnergy(meta.hold_id, config);
   await touchChat(row.chat_id, config);
 
   const fresh = await loadMessage(row.id, config);
@@ -460,6 +449,8 @@ export async function finalizeVideoJob(
   }
 
   await releaseChatLockByToken(userId, row.chat_id, meta.lock_token, config);
+  // Обычно заморозку уже сняло списание; страховка (например, агент удалён)
+  await releaseEnergy(meta.hold_id, config);
   await touchChat(row.chat_id, config);
 
   const fresh = await loadMessage(messageId, config);
@@ -479,14 +470,19 @@ async function chargeForVideo(
     config
   );
   const agent = Array.isArray(agents) ? agents[0] : null;
-  if (!agent) return 0;
+  if (!agent) {
+    await releaseEnergy(meta.hold_id, config);
+    return 0;
+  }
 
   const users = await supabaseFetch(
-    `users?telegram_id=eq.${userId}&select=subscription_tier`,
+    `users?telegram_id=eq.${userId}&select=subscription_tier,premium_until`,
     { method: 'GET' },
     config
   );
-  const tier = (Array.isArray(users) && users[0]?.subscription_tier) || null;
+  const u = Array.isArray(users) ? users[0] : null;
+  const expired = !!u?.premium_until && new Date(u.premium_until).getTime() < Date.now();
+  const tier = (!expired && u?.subscription_tier) || null;
   const markup = getMarkupForTier(agent, tier);
 
   const pricing = readPricing(agent.generation_config);
@@ -497,5 +493,5 @@ async function chargeForVideo(
       : estimateUsd(pricing, meta.params || {});
 
   const amount = energyForUsd(usd, pricing, agent, markup);
-  return chargeForGeneration(userId, amount, 'video', row.chat_id, config);
+  return chargeForGeneration(userId, amount, 'video', row.chat_id, config, meta.hold_id || null);
 }
