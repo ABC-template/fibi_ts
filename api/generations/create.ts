@@ -1,7 +1,13 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video)
-// Версия: 3.1.0 — без отдельного сообщения-запроса (user-msg): всё о запросе — в metadata
+// Версия: 3.2.0 — резерв энергии (sql/energy_holds.sql): перед стартом стоимость
+//                  замораживается атомарно; одна генерация (фото или видео) на
+//                  пользователя — вторая получает 409 { code: 'generation_busy', chat_id }
+//                  со ссылкой на чат, где идёт первая; после результата заморозка
+//                  снимается и списывается факт, при ошибке — снимается без списания;
+//                  истёкшая подписка считается trial при расчёте коэффициента
+//          3.1.0 — без отдельного сообщения-запроса (user-msg): всё о запросе — в metadata
 //                  результата (под карточкой уже есть промпт, в просмотрщике — параметры)
 //          3.0.0
 //   - фото: отдельный API OpenRouter POST /images с реальными параметрами
@@ -24,7 +30,7 @@ import { authenticate } from '../_lib/auth';
 import { handleCORS, errorResponse, jsonResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { getMarkupForTier } from '../_lib/markup-helper';
-import { checkTokenAvailability } from '../_lib/tokens';
+import { reserveEnergy, releaseEnergy } from '../_lib/energy-hold';
 import { HttpError } from '../_lib/http-error';
 import { keepAliveJson } from '../_lib/keepalive';
 import {
@@ -48,6 +54,14 @@ import {
   acquireChatLock,
   chatBusyResponse,
 } from '../_lib/chat-lock';
+
+/** Заморозка энергии живёт дольше задания: видео — замок + 5 минут, фото — 10 минут */
+const VIDEO_HOLD_TTL_SEC = VIDEO_LOCK_TTL_SEC + 5 * 60;
+const IMAGE_HOLD_TTL_SEC = 10 * 60;
+/** Фактическая стоимость может превысить оценку: замораживаем с запасом */
+const HOLD_MARGIN = 1.25;
+
+export const GENERATION_BUSY_MESSAGE = 'Дождитесь окончания генерации.';
 import type { IChatLock } from '../_lib/chat-lock';
 import {
   appBaseUrl,
@@ -59,7 +73,6 @@ import {
   submitVideoJob,
 } from '../_lib/openrouter-media';
 import {
-  VIDEO_MAX_AGE_MS,
   chargeForGeneration,
   finalizeVideoJob,
   loadFinalMessages,
@@ -90,6 +103,8 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   let lock: IChatLock | null = null;
+  // Заморозка энергии: снимается в finally, пока не передана заданию
+  let holdId: string | null = null;
   // Сообщение без финального статуса: если обработчик упадёт, в catch оно
   // помечается failed, а не висит в «Генерация...»
   let openMessageId: string | null = null;
@@ -166,26 +181,49 @@ export default async function handler(request: Request): Promise<Response> {
 
     const inputFiles = await loadInputFiles(userId, body.chat_id, inputPaths, config);
 
-    // 5. Оценка стоимости и проверка энергии
-    const markup = getMarkupForTier(agent, user?.subscription_tier || null);
+    // 5. Оценка стоимости
+    const premiumExpired = !!user?.premium_until && new Date(user.premium_until).getTime() < Date.now();
+    const tier = premiumExpired ? null : user?.subscription_tier || null;
+    const markup = getMarkupForTier(agent, tier);
     const pricing = readPricing(gen);
     const estimatedCost = energyForUsd(estimateUsd(pricing, params), pricing, agent, markup);
 
-    const tokenCheck = await checkTokenAvailability(userId, estimatedCost, config);
-    if (!tokenCheck.available) {
-      return errorResponse(
-        tokenCheck.reason === 'daily_limit' ? 'Daily limit exceeded' : 'Insufficient energy',
+    // 6. Заморозка энергии + одна генерация на пользователя (атомарно в БД)
+    const reservation = await reserveEnergy(
+      userId,
+      estimatedCost,
+      Math.ceil(estimatedCost * HOLD_MARGIN),
+      'generation',
+      body.chat_id,
+      modality === 'video' ? VIDEO_HOLD_TTL_SEC : IMAGE_HOLD_TTL_SEC,
+      config
+    );
+    if (!reservation.ok) {
+      if (reservation.reason === 'generation_busy') {
+        return jsonResponse(
+          {
+            error: GENERATION_BUSY_MESSAGE,
+            code: 'generation_busy',
+            chat_id: reservation.busyChatId,
+          },
+          409
+        );
+      }
+      const free = Math.max(0, reservation.total - reservation.held);
+      return jsonResponse(
+        {
+          error: reservation.reason === 'daily_limit'
+            ? `⏳ Дневной лимит тарифа: нужно ~${estimatedCost} ⚡, сегодня потрачено ${reservation.spentToday} / ${reservation.dailyLimit} ⚡.`
+            : `⚠️ Недостаточно энергии: нужно ~${estimatedCost} ⚡, доступно ${free} ⚡.` +
+              (reservation.held > 0 ? ` Ещё ${reservation.held} ⚡ заняты идущими запросами.` : ''),
+          code: reservation.reason === 'daily_limit' ? 'daily_limit' : 'insufficient_energy',
+          needed: estimatedCost,
+          available: free,
+        },
         429
       );
     }
-
-    // 6. Одно активное видео на пользователя
-    if (modality === 'video') {
-      const active = await findActiveVideo(userId, config);
-      if (active) {
-        return errorResponse('У вас уже идёт генерация видео. Дождитесь результата.', 409);
-      }
-    }
+    holdId = reservation.holdId;
 
     // 7. Замок чата: дальше всё под ним. Если замок свободен, а в чате висят
     //    сообщения pending/processing — прошлая попытка умерла.
@@ -243,6 +281,8 @@ export default async function handler(request: Request): Promise<Response> {
             error: null,
             model_id: agent.model_id,
             progress: 0.3,
+            // Заморозка энергии: снимается при завершении (списание или отказ)
+            hold_id: holdId || undefined,
             // Видео: замок снимается при завершении задания, а не в этой функции
             lock_token: modality === 'video' ? lock.token : undefined,
           },
@@ -276,6 +316,7 @@ export default async function handler(request: Request): Promise<Response> {
       } catch (e) {
         await updateGenerationStatus(messageId, 'failed', (e as Error).message, config, { cost: 0 });
         openMessageId = null;
+        // Замок и заморозку снимет finally
         return jsonResponse(
           await buildResult(config, body.chat_id, messageId, {
             status: 'failed',
@@ -290,8 +331,9 @@ export default async function handler(request: Request): Promise<Response> {
         config
       );
 
-      // Замок теперь принадлежит заданию: его снимет finalizeVideoJob
+      // Замок и заморозка теперь принадлежат заданию: их снимет finalizeVideoJob
       lock = null;
+      holdId = null;
       openMessageId = null;
 
       return jsonResponse(
@@ -303,7 +345,9 @@ export default async function handler(request: Request): Promise<Response> {
 
     // ---------- Фото: поток с пульсом, пока модель работает ----------
     const imageLock = lock;
+    const imageHoldId = holdId;
     lock = null;
+    holdId = null;
     openMessageId = null;
 
     return keepAliveJson(
@@ -320,9 +364,12 @@ export default async function handler(request: Request): Promise<Response> {
           negative,
           referenceUrls,
           messageId,
+          holdId: imageHoldId,
           config,
         });
       } finally {
+        // Списание (settle) уже сняло заморозку; иначе — снимаем без списания
+        await releaseEnergy(imageHoldId, config);
         await imageLock.release();
       }
       },
@@ -342,6 +389,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
     return errorResponse((err as Error).message || 'Internal error', 500);
   } finally {
+    if (holdId && dbConfig) await releaseEnergy(holdId, dbConfig);
     if (lock) await lock.release();
   }
 }
@@ -380,6 +428,7 @@ async function runImageGeneration(ctx: {
   negative: string | null;
   referenceUrls: string[];
   messageId: string;
+  holdId: string | null;
   config: any;
 }): Promise<Record<string, any>> {
   const { userId, chatId, agent, config, messageId } = ctx;
@@ -408,7 +457,7 @@ async function runImageGeneration(ctx: {
     // Списание — только после того, как результат сохранён
     const usd = costUsd !== null && costUsd > 0 ? costUsd : estimateUsd(ctx.pricing, ctx.params);
     const amount = energyForUsd(usd, ctx.pricing, agent, ctx.markup);
-    finalCost = await chargeForGeneration(userId, amount, 'image', chatId, config);
+    finalCost = await chargeForGeneration(userId, amount, 'image', chatId, config, ctx.holdId);
 
     await patchMessage(
       messageId,
@@ -435,20 +484,6 @@ async function runImageGeneration(ctx: {
   });
 }
 
-/** Активное (не просроченное) видео-задание пользователя в любом его чате */
-async function findActiveVideo(userId: number, config: any): Promise<boolean> {
-  const cutoff = new Date(Date.now() - VIDEO_MAX_AGE_MS).toISOString();
-  const rows = await supabaseFetch(
-    `messages?select=id,chats!inner(user_id)&chats.user_id=eq.${userId}` +
-      `&msg_type=eq.ai-msg&deleted_at=is.null` +
-      `&metadata->>kind=eq.generation&metadata->>modality=eq.video` +
-      `&metadata->>status=in.(pending,processing)&created_at=gt.${encodeURIComponent(cutoff)}&limit=1`,
-    { method: 'GET' },
-    config
-  );
-  return Array.isArray(rows) && rows.length > 0;
-}
-
 /**
  * Сообщения pending/processing в чате, когда замок свободен, — следы упавшей
  * попытки. Видео-задания доводит до конца finalizeVideoJob (оно же закроет просроченные),
@@ -467,6 +502,7 @@ async function failStaleGenerations(chatId: string, config: any): Promise<void> 
         await finalizeVideoJob(row.id, config);
       } else {
         await updateGenerationStatus(row.id, 'failed', 'Генерация прервана', config, { cost: 0 });
+        await releaseEnergy(row.metadata?.hold_id, config);
       }
     }
   } catch (err) {
