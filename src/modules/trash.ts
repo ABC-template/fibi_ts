@@ -1,12 +1,15 @@
 // ============================================
 // src/modules/trash.ts
 // Работа с корзиной (ТОЛЬКО ЧАТЫ)
-// Версия: 2.0.2 - замена @types → @app-types
+// Версия: 2.1.0 - название и тема чата экранируются; кнопки — через addEventListener
+//                 (id чата больше не вставляется в onclick)
+//          2.0.2 - замена @types → @app-types
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
+import { escapeHtml } from '@/utils/html';
 import type { UUID } from '@app-types';
 
 let _trashSubscriptions: Array<() => void> = [];
@@ -210,23 +213,28 @@ _subscribeTrashEvents();
       item.innerHTML = `
         <div style="flex:1; overflow:hidden; min-width:0;">
           <div style="font-weight:500; font-size:13px; color:var(--text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-            ${chat.title || 'Без названия'}
+            ${escapeHtml(chat.title || 'Без названия')}
           </div>
           <div style="font-size:11px; color:var(--hint-color);">
-            ${chat.topic || 'unknown'} • ${dateStr} • ${msgCount} сообщений
+            ${escapeHtml(chat.topic || 'unknown')} • ${escapeHtml(dateStr)} • ${msgCount} сообщений
           </div>
         </div>
         <div style="display:flex; gap:4px; flex-shrink:0; margin-left:8px;">
-          <button class="btn" style="padding:4px 10px; font-size:11px; border-radius:6px; background:#27ae60; color:white; border:none; cursor:pointer;"
-                  onclick="window.restoreFromTrash('${chat.id}')">
+          <button class="btn" data-trash-action="restore" style="padding:4px 10px; font-size:11px; border-radius:6px; background:#27ae60; color:white; border:none; cursor:pointer;">
             ↩️
           </button>
-          <button class="btn" style="padding:4px 10px; font-size:11px; border-radius:6px; background:#e74c3c; color:white; border:none; cursor:pointer;"
-                  onclick="window.permanentDelete('${chat.id}')">
+          <button class="btn" data-trash-action="delete" style="padding:4px 10px; font-size:11px; border-radius:6px; background:#e74c3c; color:white; border:none; cursor:pointer;">
             🗑️
           </button>
         </div>
       `;
+      const chatId = chat.id;
+      item.querySelector('[data-trash-action="restore"]')?.addEventListener('click', () => {
+        (window as any).restoreFromTrash(chatId);
+      });
+      item.querySelector('[data-trash-action="delete"]')?.addEventListener('click', () => {
+        (window as any).permanentDelete(chatId);
+      });
       list.appendChild(item);
     }
   }
