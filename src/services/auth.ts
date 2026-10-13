@@ -1,7 +1,9 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (Telegram initData; без JWT)
-// Версия: 7.2.1 - без trial_used
+// Версия: 7.3.0 - роль, срок хранения облака и sync_token хранятся с привязкой к Telegram ID
+//                 (userStorage); удалены неиспользуемые checkSession/logout и ключи session_*
+//          7.2.1 - без trial_used
 //          7.2.0 - в результате access (блокировка / нужна подписка на канал, ссылка)
 //          7.1.0 - в результате previousRole (роль до проверки): app.ts читал user_role уже
 //                 после перезаписи, и переходы trial ↔ PRO никогда не срабатывали
@@ -15,7 +17,7 @@
 
 import { apiClient } from './api';
 import { userStore } from '@/store/UserStore';
-import { BaseStore } from '@/store/BaseStore';
+import { userStorage } from '@/utils/user-storage';
 import type { IAuthCheckResponse } from '@app-types';
 
 export interface IAccessInfo {
@@ -54,8 +56,6 @@ export interface IAuthResult {
 }
 
 export class AuthService {
-  private readonly SESSION_TIMEOUT = 25 * 60 * 1000;
-
   getUserId(): number | null {
     const user = (window as any).Telegram?.WebApp?.initDataUnsafe?.user;
     return user?.id || null;
@@ -67,7 +67,7 @@ export class AuthService {
 
   async checkSubscription(): Promise<IAuthResult> {
     // Читаем до того, как ответ сервера перезапишет user_role
-    const previousRole = localStorage.getItem('user_role');
+    const previousRole = userStorage.get('user_role');
     try {
       const data = await apiClient.get<IAuthCheckResponse>('/auth/check');
       
@@ -106,14 +106,12 @@ export class AuthService {
       }
 
       if (data.dataDeadline) {
-        localStorage.setItem('data_deadline', data.dataDeadline);
+        userStorage.set('data_deadline', data.dataDeadline);
       } else {
-        localStorage.removeItem('data_deadline');
+        userStorage.remove('data_deadline');
       }
 
-      localStorage.setItem('user_role', data.role || 'trial');
-      localStorage.setItem('session_active', 'true');
-      localStorage.setItem('session_start', String(Date.now()));
+      userStorage.set('user_role', data.role || 'trial');
 
       userStore.save();
 
@@ -152,8 +150,7 @@ export class AuthService {
   // ==========================================
 
   getSyncToken(): string | null {
-    const tempStore = new BaseStore('temp');
-    return tempStore.getSyncToken();
+    return userStorage.get('sync_token');
   }
 
   // ==========================================
@@ -161,8 +158,7 @@ export class AuthService {
   // ==========================================
 
   needFullReload(serverToken: string | null): boolean {
-    const tempStore = new BaseStore('temp');
-    const localToken = tempStore.getSyncToken();
+    const localToken = this.getSyncToken();
     
     console.log(`🔍 needFullReload: localToken=${localToken ? localToken.substring(0, 8) + '...' : 'null'}, serverToken=${serverToken ? serverToken.substring(0, 8) + '...' : 'null'}`);
     
@@ -186,40 +182,6 @@ export class AuthService {
   }
 
   // ==========================================
-  // ПРОВЕРКА СЕССИИ
-  // ==========================================
-
-  checkSession(): 'new_session' | 'current_session' {
-    const sessionStart = parseInt(localStorage.getItem('session_start') || '0');
-    const isActive = localStorage.getItem('session_active') === 'true';
-    const isExpired = (Date.now() - sessionStart) > this.SESSION_TIMEOUT;
-
-    if (!isActive || isExpired) {
-      localStorage.setItem('session_active', 'true');
-      localStorage.setItem('session_start', String(Date.now()));
-      return 'new_session';
-    }
-    return 'current_session';
-  }
-
-  // ==========================================
-  // ВЫХОД
-  // ==========================================
-
-  logout(): void {
-    const tempStore = new BaseStore('temp');
-    tempStore.clearSyncToken();
-    localStorage.removeItem('session_active');
-
-    if ((window as any).syncService) {
-      (window as any).syncService.setRealtimeToken(null);
-      (window as any).syncService.unsubscribe();
-    }
-
-    console.log('👋 Выход выполнен');
-  }
-
-  // ==========================================
   // ОФЛАЙН-РЕЖИМ
   // ==========================================
 
@@ -237,7 +199,7 @@ export class AuthService {
       previousRole,
       syncEnabled: false,
       syncToken: this.getSyncToken() || null,
-      dataDeadline: localStorage.getItem('data_deadline') || null,
+      dataDeadline: userStorage.get('data_deadline') || null,
       isNewUser: false,
       serverModels: {}
     };
@@ -262,4 +224,4 @@ export class AuthService {
 }
 
 export const authService = new AuthService();
-console.log('✅ AuthService v7.0.0 загружен');
+console.log('✅ AuthService v7.3.0 загружен');
