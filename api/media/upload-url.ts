@@ -4,7 +4,11 @@
 // режима, создаём запись в media_files и выдаём одноразовую ссылку,
 // по которой клиент грузит файл прямо в Storage.
 // Дальше клиент вызывает /api/media/confirm.
-// Версия: 1.0.0
+// Версия: 2.0.0 — референс грузится в бакет generation-inputs (Storage сам не примет
+//                  больше inputMaxBytes и не-изображение); квота проверяется с запасом
+//                  inputMaxBytes (заявленному размеру не верим: фактический узнаём в confirm);
+//                  ошибки без текста исключения
+//          1.0.0
 // ============================================
 
 import { authenticate } from '../_lib/auth';
@@ -38,12 +42,17 @@ export default async function handler(request: Request): Promise<Response> {
     }
     const userId = auth.userId;
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
     const mime = String(body?.mime || '').toLowerCase().trim();
     const size = Number(body?.size);
 
     if (!mime || !Number.isFinite(size) || size <= 0) {
-      return errorResponse('agent_id, mode, mime and size are required', 400);
+      return errorResponse('mime and size are required', 400);
     }
 
     // Пока референсами могут быть только изображения
@@ -75,12 +84,14 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Too many pending uploads', 429);
     }
 
+    // Заявленный размер — только подсказка: по ссылке можно залить до inputMaxBytes,
+    // поэтому до подтверждения файл занимает в квоте именно столько
     const used = await getUserMediaUsage(userId, config);
-    if (used + size > MEDIA_LIMITS.userQuotaBytes) {
+    if (used + MEDIA_LIMITS.inputMaxBytes > MEDIA_LIMITS.userQuotaBytes) {
       return errorResponse('Storage quota exceeded', 413);
     }
 
-    const storagePath = buildStoragePath(userId, mime);
+    const storagePath = buildStoragePath(userId, mime, 'input');
 
     const row = await supabaseFetch(
       'media_files',
@@ -115,6 +126,6 @@ export default async function handler(request: Request): Promise<Response> {
   } catch (err) {
     if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Media upload-url error:', err);
-    return errorResponse((err as Error).message || 'Internal error', 500);
+    return errorResponse('Internal error', 500);
   }
 }
