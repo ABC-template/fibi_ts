@@ -1,12 +1,15 @@
 // ============================================
 // src/economy/EconomyStore.ts
 // Хранилище для UI (кеш балансов)
-// Версия: 4.0.0 — spent_today/daily_limit/bypass | old: 3.0.2 - миграция старых данных + защита
+// Версия: 4.1.0 — config: IExchangeConfig (обмен для текущего пользователя); при ошибке
+//                  загрузки обмен считается выключенным, а не берётся из старого кэша
+//          4.0.0 — spent_today/daily_limit/bypass | old: 3.0.2 - миграция старых данных + защита
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
 import { eventBus } from '@/core/event-bus';
 import type { IEconomyBalanceUpdatedEvent } from './event-types';
+import type { IExchangeConfig } from './EconomyService';
 
 interface IEconomyStoreData {
   coins: {
@@ -26,13 +29,7 @@ interface IEconomyStoreData {
     coins: any[];
     tokens: any[];
   };
-  config: {
-    exchange_enabled: boolean;
-    exchange_rate: number;
-    max_exchange_percent: number;
-    bonus_tokens_per_day: number;
-    whitelist_enabled: boolean;
-  } | null;
+  config: IExchangeConfig | null;
 }
 
 export class EconomyStore extends BaseStore<IEconomyStoreData> {
@@ -185,11 +182,9 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     try {
       const { economyService } = await import('./EconomyService');
       const result = await economyService.getConfig();
-      if (result?.success) {
-        this._data.config = result.config;
-        this.save();
-        this._emitChange('economy:config:loaded', result.config);
-      }
+      this._data.config = result.config;
+      this.save();
+      this._emitChange('economy:config:loaded', result.config);
     } catch (err) {
       console.error('❌ Ошибка загрузки конфига:', err);
     }
@@ -253,7 +248,7 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     }
   }
 
-  getConfig(): any {
+  getConfig(): IExchangeConfig | null {
     try {
       return this._data?.config || null;
     } catch (err) {
