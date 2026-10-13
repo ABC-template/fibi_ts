@@ -1,7 +1,8 @@
 // ============================================
 // src/economy/event-types.ts
 // Описание: Типы событий для экономической системы
-// Версия: 1.0.1 - замена @types → @app-types
+// Версия: 1.1.0 - удалены IEconomySpendEvent и IEconomyErrorEvent
+//          1.0.1 - замена @types → @app-types
 // ============================================
 
 import type { UUID } from '@app-types';
@@ -27,17 +28,6 @@ export interface IEconomyGameEvent {
 }
 
 /**
- * Событие: запрос на списание монет
- */
-export interface IEconomySpendEvent {
-  userId: number;
-  source: string;
-  amount: number;
-  metadata?: Record<string, any>;
-  currency?: string;
-}
-
-/**
  * Событие: баланс обновлен (для UI)
  */
 export interface IEconomyBalanceUpdatedEvent {
@@ -46,14 +36,4 @@ export interface IEconomyBalanceUpdatedEvent {
   delta: number;
   source: string;
   transactionId?: UUID;
-}
-
-/**
- * Событие: ошибка в экономической операции
- */
-export interface IEconomyErrorEvent {
-  userId: number;
-  source: string;
-  error: string;
-  metadata?: Record<string, any>;
 }
