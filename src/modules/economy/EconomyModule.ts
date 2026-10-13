@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.2.1 — экранирование description/source в истории транзакций
+// Версия: 2.3.0 — без пробного периода (activateTrial / trialUsed / is_trial);
+//                  обмен показывается, только если сервер сказал, что он доступен
+//                  этому пользователю; названия и описания тарифов экранируются
+//          2.2.1 — экранирование description/source в истории транзакций
 //          2.2.0 — блок «Смотреть рекламу» (Adsgram) на вкладке монет
 //          2.1.0 — window.economyModule указывает на настоящий экземпляр (тот, что
 //                 создаёт загрузчик модулей); фантомный экземпляр с пустым div удалён —
@@ -100,7 +103,6 @@ export class EconomyModule {
   private _render(): void {
     const isPremium = this.userStore.isPro();
     const premiumUntil = this.userStore.premiumUntil;
-    const trialUsed = this.userStore.trialUsed;
 
     this.container.innerHTML = `
       <div class="economy-container">
@@ -164,7 +166,7 @@ export class EconomyModule {
     const config = this.economyStore.getConfig();
     const transactions = this.economyStore.getTransactions('coins');
 
-    const isExchangeEnabled = config?.exchange_enabled !== false;
+    const isExchangeEnabled = config?.exchange_enabled === true;
     const exchangeRate = config?.exchange_rate || 1;
     const maxPercent = config?.max_exchange_percent || 80;
 
@@ -483,7 +485,6 @@ export class EconomyModule {
 
   async openSubscriptionModal(): Promise<void> {
     const isPremium = this.userStore.isPro();
-    const trialUsed = this.userStore.trialUsed;
     const tiers = this.subscriptionStore.getActiveTiers();
 
     if (tiers.length === 0) {
@@ -507,9 +508,6 @@ export class EconomyModule {
         
         <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
           ${tiers.map((tier: any) => {
-            const isTrial = tier.is_trial;
-            const isDisabled = isTrial && trialUsed;
-            // ✅ ИСПРАВЛЕНО
             const isCurrent = isPremium && currentTier === tier.tier_key;
             
             return `
@@ -517,30 +515,24 @@ export class EconomyModule {
                 background: var(--app-bg-tertiary); 
                 border-radius: 12px; 
                 padding: 16px; 
-                border: 2px solid ${isCurrent ? 'var(--app-accent-primary)' : isTrial && !trialUsed ? 'var(--app-accent-primary)' : 'var(--app-border-color)'};
-                opacity: ${isDisabled ? '0.5' : '1'};
+                border: 2px solid ${isCurrent ? 'var(--app-accent-primary)' : 'var(--app-border-color)'};
               ">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                   <div>
                     <div style="font-weight: 600; font-size: 16px; color: var(--app-text-primary);">
-                      ${tier.name}
+                      ${escapeHtml(tier.name)}
                     </div>
                     <div style="font-size: 13px; color: var(--app-text-secondary);">
                       ${tier.days} дней • ${tier.price_stars === 0 ? 'Бесплатно' : tier.price_stars + ' ⭐'}
                     </div>
                     ${tier.description ? `
                       <div style="font-size: 12px; color: var(--app-text-tertiary); margin-top: 4px;">
-                        ${tier.description}
+                        ${escapeHtml(tier.description)}
                       </div>
                     ` : ''}
                     ${tier.permanent_tokens > 0 ? `
                       <div style="font-size: 12px; color: #f1c40f; margin-top: 4px;">
                         🎁 +${tier.permanent_tokens} постоянных токенов
-                      </div>
-                    ` : ''}
-                    ${isTrial && trialUsed ? `
-                      <div style="font-size: 11px; color: #e74c3c; margin-top: 4px;">
-                        ✓ Пробный период уже использован
                       </div>
                     ` : ''}
                   </div>
@@ -550,13 +542,12 @@ export class EconomyModule {
                         ✓ Активен
                       </span>
                     ` : `
-                      <button 
-                        class="btn" 
-                        style="padding: 8px 16px; font-size: 13px; ${isTrial ? 'background: var(--app-gradient-primary);' : ''}"
-                        onclick="window.economyModule.purchaseSubscription('${tier.tier_key}')"
-                        ${isDisabled ? 'disabled' : ''}
+                      <button
+                        class="btn"
+                        style="padding: 8px 16px; font-size: 13px;"
+                        onclick="window.economyModule.purchaseSubscription('${escapeHtml(tier.tier_key)}')"
                       >
-                        ${isTrial ? '🎁 Активировать' : '💎 Купить'}
+                        💎 Купить
                       </button>
                     `}
                   </div>
@@ -598,20 +589,9 @@ export class EconomyModule {
     }
 
     try {
-      let result;
-      
-      if (tier.is_trial) {
-        result = await this.subscriptionService.activateTrial();
-      } else {
-        result = await this.subscriptionService.purchaseSubscription(tierKey);
-      }
+      const result = await this.subscriptionService.purchaseSubscription(tierKey);
 
       if (result.success) {
-        // Обновляем локальные данные
-        if (tier.is_trial) {
-          this.userStore.markTrialUsed();
-        }
-        
         this.userStore.setRole('premium', true);
         
         // Обновляем токены
@@ -624,9 +604,7 @@ export class EconomyModule {
         }
 
         this.uiRenderer?.showToast(
-          tier.is_trial 
-            ? `🎉 Пробный период активирован на ${result.days} дней! +${result.tokens} ⚡`
-            : `✅ Куплен ${tier.name} на ${result.days} дней! +${result.tokens} ⚡`,
+          `✅ Куплен ${tier.name} на ${result.days} дней! +${result.tokens} ⚡`,
           'success',
           3000
         );
