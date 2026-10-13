@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.2.0 — блок «Смотреть рекламу» (Adsgram) на вкладке монет
+// Версия: 2.2.1 — экранирование description/source в истории транзакций
+//          2.2.0 — блок «Смотреть рекламу» (Adsgram) на вкладке монет
 //          2.1.0 — window.economyModule указывает на настоящий экземпляр (тот, что
 //                 создаёт загрузчик модулей); фантомный экземпляр с пустым div удалён —
 //                 кнопки вкладок/обмена в разметке вызывали его и ничего не происходило
@@ -19,6 +20,7 @@ import { subscriptionStore } from '@/store/SubscriptionStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { modalManager } from '@/core/modal-manager';
 import { adModule } from '@/modules/ad/AdModule';
+import { escapeHtml } from '@/utils/html';
 
 type TabType = 'coins' | 'tokens';
 
@@ -295,10 +297,10 @@ export class EconomyModule {
       return `
         <div class="transaction">
           <div class="info">
-            <div class="desc">${t.description || t.source || 'Транзакция'}</div>
-            <div class="meta">${dateStr} ${timeStr} • ${t.source || ''}</div>
+            <div class="desc">${escapeHtml(t.description || t.source || 'Транзакция')}</div>
+            <div class="meta">${dateStr} ${timeStr} • ${escapeHtml(t.source || '')}</div>
           </div>
-          <div class="${amountClass}">${sign}${t.amount}</div>
+          <div class="${amountClass}">${sign}${Number(t.amount) || 0}</div>
         </div>
       `;
     }).join('');
