@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.5.0 — «пульс» сервера вырезается, ошибка до первого слова показывается
+// Версия: 4.6.0 — Markdown только через utils/html: если DOMPurify не загрузился,
+//                  ответ показывается текстом (раньше сырой HTML модели шёл в innerHTML)
+//          4.5.0 — «пульс» сервера вырезается, ошибка до первого слова показывается
 //                  понятным текстом; обрыв, если 40 с не приходит ничего;
 //                  вместо «signal is aborted» — «Сервер не ответил вовремя»
 //          4.4.0 — chatId уходит на сервер (замок чата); обработка 409:
@@ -16,6 +18,7 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { eventBus } from '@/core/event-bus';
+import { renderMarkdown } from '@/utils/html';
 import type { UUID, TopicId } from '@app-types';
 
 let streamCallCounter = 0;
@@ -220,58 +223,10 @@ const STREAM_ERROR_MARK = '\u0001';
           if (generatedAiMsgId) {
             patcher.updateMessageText(generatedAiMsgId, accumulatedText);
           } else {
-            if (typeof (window as any).marked !== 'undefined') {
-              try {
-                let rawHTML = (window as any).marked.parse(accumulatedText);
-                let safeHTML = rawHTML;
-                if (typeof (window as any).DOMPurify !== 'undefined') {
-                  safeHTML = (window as any).DOMPurify.sanitize(rawHTML, {
-                    ALLOWED_TAGS: [
-                      'p', 'br', 'strong', 'em', 'u', 'i', 'b',
-                      'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                      'ul', 'ol', 'li', 'blockquote',
-                      'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                      'span', 'div', 'img', 'hr', 'sub', 'sup'
-                    ],
-                    ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
-                    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
-                  });
-                }
-                msgDiv.innerHTML = safeHTML;
-              } catch (markErr) {
-                console.warn(`⚠️ [СТРИМ #${callId}] Ошибка marked:`, markErr);
-                msgDiv.textContent = accumulatedText;
-              }
-            } else {
-              msgDiv.textContent = accumulatedText;
-            }
+            msgDiv.innerHTML = renderMarkdown(accumulatedText);
           }
         } else {
-          if (typeof (window as any).marked !== 'undefined') {
-            try {
-              let rawHTML = (window as any).marked.parse(accumulatedText);
-              let safeHTML = rawHTML;
-              if (typeof (window as any).DOMPurify !== 'undefined') {
-                safeHTML = (window as any).DOMPurify.sanitize(rawHTML, {
-                  ALLOWED_TAGS: [
-                    'p', 'br', 'strong', 'em', 'u', 'i', 'b',
-                    'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                    'ul', 'ol', 'li', 'blockquote',
-                    'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                    'span', 'div', 'img', 'hr', 'sub', 'sup'
-                  ],
-                  ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
-                  FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
-                });
-              }
-              msgDiv.innerHTML = safeHTML;
-            } catch (markErr) {
-              console.warn(`⚠️ [СТРИМ #${callId}] Ошибка marked:`, markErr);
-              msgDiv.textContent = accumulatedText;
-            }
-          } else {
-            msgDiv.textContent = accumulatedText;
-          }
+          msgDiv.innerHTML = renderMarkdown(accumulatedText);
         }
         smartScroll();
       }
@@ -409,20 +364,7 @@ const STREAM_ERROR_MARK = '\u0001';
 
       const disconnectNotice = `${accumulatedText}\n\n[⚠️ Соединение разорвано]`;
 
-      if (typeof (window as any).marked !== 'undefined') {
-        try {
-          let rawHTML = (window as any).marked.parse(disconnectNotice);
-          if (typeof (window as any).DOMPurify !== 'undefined') {
-            msgDiv.innerHTML = (window as any).DOMPurify.sanitize(rawHTML);
-          } else {
-            msgDiv.innerHTML = rawHTML;
-          }
-        } catch {
-          msgDiv.textContent = disconnectNotice;
-        }
-      } else {
-        msgDiv.textContent = disconnectNotice;
-      }
+      msgDiv.innerHTML = renderMarkdown(disconnectNotice);
 
       const safeFinalText = typeof disconnectNotice === 'string' ? disconnectNotice : String(disconnectNotice);
 
