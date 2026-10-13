@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.3.1 — убран неиспользуемый импорт IAiAgentWithAccess (тип удалён)
+// Версия: 9.3.2 — окно «Доступ ограничен»: название чата экранируется (самоXSS); текст про
+//                  тариф без устаревших названий Plus/Ultra
+//          9.3.1 — убран неиспользуемый импорт IAiAgentWithAccess (тип удалён)
 //          9.3.0 — кнопка «Память чата» в шапке открывает настройку (событие без
 //                  слушателя заменено прямым вызовом); в чатах генерации кнопки и счётчика
 //                  контекста нет — история там не используется
@@ -23,6 +25,7 @@ import { eventBus } from '@/core/event-bus';
 import { navigationState } from '@/core/navigation-state';
 import { moduleLoader } from '@/core/module-loader';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { escapeHtml } from '@/utils/html';
 import { ChatPatcher } from './ChatPatcher';
 import { GenerationController } from './generation';
 import { economyStore } from '@/economy/EconomyStore';
@@ -387,7 +390,8 @@ export class ChatModule {
   }
 
   private _showAccessDeniedModal(): void {
-    const agentName = this._getAgentName();
+    // Название — из названия чата (вводит пользователь): только экранированное
+    const agentName = escapeHtml(this._getAgentName());
 
     let title = '🔒 Доступ ограничен';
     let description = `Для отправки сообщений агенту "${agentName}" требуется:`;
@@ -401,7 +405,7 @@ export class ChatModule {
       description = `Чтобы пользоваться агентом "${agentName}", перезапустите приложение и войдите заново.`;
       actionLabel = '🔄 Понятно';
     } else if (this._agentReason === 'tier') {
-      description = `Для использования агента "${agentName}" требуется подписка: PRO (Plus или Ultra).`;
+      description = `Для использования агента "${agentName}" требуется подходящая подписка.`;
     } else if (this._agentReason === 'not_found') {
       title = '❌ Агент не найден';
       description = 'Этот агент больше не доступен. Пожалуйста, выберите другого агента.';
