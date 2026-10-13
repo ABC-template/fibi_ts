@@ -1,10 +1,33 @@
 // ============================================
 // src/modules/admin/tabs/AdminQuestsTab.ts
-// Полноценное управление квестами
+// Полноценное управление квестами + проверка заданий (ручные и псевдо)
+// Версия: 2.0.0 — блок «На проверке»: одобрить / отклонить (POST /quests/verify);
+//                  псевдо-задания одобряются автоматически по сроку (cron), здесь — досрочно
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function questTitle(q: any): string {
+  if (!q) return '—';
+  const t = q.title;
+  return (typeof t === 'object' && t ? t.ru || t.en : t) || q.external_id || '—';
+}
+
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
 
 export class AdminQuestsTab implements IAdminTab {
   id = 'quests';
@@ -13,6 +36,8 @@ export class AdminQuestsTab implements IAdminTab {
   priority = 30;
 
   private quests: any[] = [];
+  private submissions: any[] = [];
+  private busyIds = new Set<string>();
   private loading = false;
   private filterType = 'all';
   private filterActive = 'all';
@@ -25,8 +50,12 @@ export class AdminQuestsTab implements IAdminTab {
     if (this.loading) return;
     this.loading = true;
     try {
-      const res = await apiClient.get('/admin/quests');
+      const [res, subs] = await Promise.all([
+        apiClient.get('/admin/quests'),
+        apiClient.get('/admin/quests/submissions').catch(() => null),
+      ]);
       if (res.success) this.quests = res.quests || [];
+      if (subs?.success) this.submissions = subs.submissions || [];
     } catch (e) {
       console.error('[AdminQuestsTab]', e);
     } finally {
@@ -79,6 +108,8 @@ export class AdminQuestsTab implements IAdminTab {
             <div style="font-size:11px;color:var(--app-text-tertiary)">Активных</div>
           </div>
         </div>
+
+        ${this.renderSubmissions()}
 
         <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
           <select onchange="window.adminModule.setQuestFilter('type', this.value)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);font-size:13px">
@@ -144,6 +175,68 @@ export class AdminQuestsTab implements IAdminTab {
         </div>
       </div>
     `;
+  }
+
+  private renderSubmissions(): string {
+    const list = this.submissions;
+    const header = `<h4 style="margin:0 0 10px;color:var(--app-text-primary)">🕵️ На проверке (${list.length})</h4>`;
+    if (list.length === 0) {
+      return `<div style="background:var(--app-bg-tertiary);border-radius:10px;padding:12px;margin-bottom:16px">
+        ${header}<div style="font-size:12px;color:var(--app-text-tertiary)">Заданий на проверке нет</div></div>`;
+    }
+
+    const items = list.map((s: any) => {
+      const q = s.quest || {};
+      const isPseudo = q.verification_type === 'pseudo';
+      const user = s.user?.username ? '@' + s.user.username : `ID ${s.user_id}`;
+      const proof = s.proof_data && typeof s.proof_data === 'object' && Object.keys(s.proof_data).length > 0
+        ? Object.entries(s.proof_data)
+            .map(([k, v]) => `<div style="word-break:break-all"><b>${esc(k)}:</b> ${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</div>`)
+            .join('')
+        : '<span style="color:var(--app-text-tertiary)">без подтверждения</span>';
+      const busy = this.busyIds.has(s.id);
+      const btn = 'padding:6px 12px;font-size:12px;border:none;border-radius:8px;cursor:pointer;';
+      return `
+        <div style="border:1px solid var(--app-border-color-light);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--app-bg-secondary)">
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div style="font-weight:600;color:var(--app-text-primary)">${esc(questTitle(q))}</div>
+            <div style="font-weight:700;color:#d4af37">${Number(q.reward_coins) || 0} 🪙</div>
+          </div>
+          <div style="font-size:12px;color:var(--app-text-secondary);margin:4px 0">
+            ${esc(user)} · отправлено ${esc(fmtDate(s.updated_at))}
+            ${isPseudo ? ` · автоодобрение ${esc(fmtDate(s.expires_at))}` : ''}
+          </div>
+          <div style="font-size:12px;margin-bottom:8px">${proof}</div>
+          <div style="display:flex;gap:8px">
+            <button ${busy ? 'disabled' : ''} onclick="window.adminModule.verifySubmission('${esc(s.id)}', true)"
+              style="${btn}background:rgba(39,174,96,0.15);color:#27ae60">✅ Одобрить</button>
+            <button ${busy ? 'disabled' : ''} onclick="window.adminModule.verifySubmission('${esc(s.id)}', false)"
+              style="${btn}background:rgba(231,76,60,0.15);color:#e74c3c">❌ Отклонить</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `<div style="background:var(--app-bg-tertiary);border-radius:10px;padding:12px;margin-bottom:16px">${header}${items}</div>`;
+  }
+
+  async verify(userQuestId: string, approved: boolean): Promise<void> {
+    if (this.busyIds.has(userQuestId)) return;
+    if (!approved && !confirm('Отклонить задание? Пользователь не получит награду.')) return;
+    this.busyIds.add(userQuestId);
+    try {
+      const res = await apiClient.post('/quests/verify', { userQuestId, approved });
+      if (res?.success) {
+        this.submissions = this.submissions.filter((x) => x.id !== userQuestId);
+      } else {
+        alert(res?.error || 'Не удалось изменить статус');
+      }
+    } catch (e) {
+      alert((e as Error).message || 'Не удалось изменить статус');
+      // Задание могли уже обработать (автоодобрение) — обновим список
+      await this.loadData();
+    } finally {
+      this.busyIds.delete(userQuestId);
+    }
   }
 
   async toggleActive(id: string, state: boolean): Promise<void> {
