@@ -51,17 +51,7 @@ export interface IGenerationResultMetadata {
   created_via?: 'form';
 }
 
-/** Metadata сообщения-запроса */
-export interface IGenerationRequestMetadata {
-  kind: 'generation_request';
-  modality: GenerationModality;
-  params: GenerationParams;
-  prompt: string;
-  negative_prompt?: string | null;
-  media_inputs?: IGenerationMedia[];
-}
-
-export type IGenerationMetadata = IGenerationResultMetadata | IGenerationRequestMetadata;
+export type IGenerationMetadata = IGenerationResultMetadata;
 
 /**
  * Как режим использует загруженные изображения (соответствует API OpenRouter):
@@ -183,9 +173,7 @@ export interface IGenerationServerMessage {
 export interface ICreateGenerationResponse {
   success: boolean;
   message_id?: UUID;
-  request_message_id?: UUID;
-  /** Итоговые строки обоих сообщений (null, если их не удалось перечитать) */
-  request_message?: IGenerationServerMessage | null;
+  /** Итоговая строка сообщения-результата (null, если её не удалось перечитать) */
   message?: IGenerationServerMessage | null;
   status?: GenerationStatus;
   error?: string;
