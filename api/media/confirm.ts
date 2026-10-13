@@ -3,7 +3,10 @@
 // Шаг 2 загрузки референса: проверяем, что файл реально лежит в Storage,
 // сверяем фактические размер и mime с заявленными, обновляем размер в
 // media_files. Нарушителей (чужой тип, превышение размера/квоты) удаляем.
-// Версия: 1.0.0
+// Версия: 2.0.0 — подтверждение ставит confirmed_at (без него /generations/create
+//                  референс не примет, а квота считает его как inputMaxBytes);
+//                  повторное подтверждение отклоняется; ошибки без текста исключения
+//          1.0.0
 // ============================================
 
 import { authenticate } from '../_lib/auth';
@@ -37,7 +40,12 @@ export default async function handler(request: Request): Promise<Response> {
     }
     const userId = auth.userId;
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
     const fileId = body?.file_id;
     if (typeof fileId !== 'string' || !UUID_RE.test(fileId)) {
       return errorResponse('file_id is required', 400);
@@ -46,7 +54,7 @@ export default async function handler(request: Request): Promise<Response> {
     const config = getSupabaseConfig('service');
 
     const rows = await supabaseFetch(
-      `media_files?id=eq.${fileId}&user_id=eq.${userId}&kind=eq.input&status=eq.uploaded` +
+      `media_files?id=eq.${fileId}&user_id=eq.${userId}&kind=eq.input&status=eq.uploaded&confirmed_at=is.null` +
         `&select=id,storage_path,mime`,
       { method: 'GET' },
       config
@@ -72,7 +80,10 @@ export default async function handler(request: Request): Promise<Response> {
 
     await supabaseFetch(
       `media_files?id=eq.${row.id}`,
-      { method: 'PATCH', body: JSON.stringify({ size_bytes: info.size }) },
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ size_bytes: info.size, confirmed_at: new Date().toISOString() }),
+      },
       config
     );
 
@@ -91,6 +102,6 @@ export default async function handler(request: Request): Promise<Response> {
   } catch (err) {
     if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Media confirm error:', err);
-    return errorResponse((err as Error).message || 'Internal error', 500);
+    return errorResponse('Internal error', 500);
   }
 }
