@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/ui/chat-ui.ts
 // Управление чатами (компактная версия)
-// Версия: 4.2.0 - нельзя удалить чат, пока в нём идёт генерация
+// Версия: 4.3.0 - убрано обращение к удалённому ChatListModule
+//          4.2.0 - нельзя удалить чат, пока в нём идёт генерация
 //          4.1.3 - замена @types → @app-types
 // ============================================
 
@@ -49,9 +50,6 @@ export class ChatUI {
 
     private _updateLists(): void {
         if ((window as any).renderChatsInDrawer) (window as any).renderChatsInDrawer();
-        if ((window as any).chatListModule) {
-            (window as any).chatListModule._renderRecentChats();
-        }
         if ((window as any).profileUI?.renderHistoryChatsList) {
             (window as any).profileUI.renderHistoryChatsList((window as any).profileUI?.currentFilter || 'all');
         }
