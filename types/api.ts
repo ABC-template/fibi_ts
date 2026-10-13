@@ -1,7 +1,8 @@
 // ============================================
 // types/api.ts
 // Типы для API запросов и ответов
-// Версия: 2.0.0 — удалены IExportRequest / IExportResponse (локальный экспорт без сервера)
+// Версия: 2.1.0 — удалён IBatchRequest (маршрут batch удалён)
+//          2.0.0 — удалены IExportRequest / IExportResponse (локальный экспорт без сервера)
 //                  и дубль IExportArchive (он в types/chat.ts)
 // ============================================
 
@@ -53,17 +54,6 @@ export interface IMessageActionRequest {
   chatId: UUID;
   message?: ICreateMessageData;
   messageId?: UUID;
-}
-
-/** Batch операции */
-export interface IBatchRequest {
-  action: 'batch_messages' | 'create_chat_batch';
-  chatId?: UUID;
-  topicId?: TopicId;
-  chatTitle?: string;
-  maxContext?: number;
-  userRenamed?: boolean;
-  messages: ICreateMessageData[];
 }
 
 /** Трекинг лимитов */
