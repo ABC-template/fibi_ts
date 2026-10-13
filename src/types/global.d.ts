@@ -1,7 +1,8 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.3.0 - добавлены questsStore и questsModule
+// Версия: 2.4.0 - убран chatListModule (модуль удалён)
+//          2.3.0 - добавлены questsStore и questsModule
 // ============================================
 
 import type { TopicId, TopicFilter, UUID } from '@app-types';
@@ -177,7 +178,6 @@ declare global {
         // ==========================================
         // MODULES INSTANCES
         // ==========================================
-        chatListModule: any;
         chatModule: any;
         organizerModule: any;
         profileModule: any;
