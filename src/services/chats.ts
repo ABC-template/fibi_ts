@@ -1,7 +1,8 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.7.0 - sync_token с привязкой к Telegram ID (user-storage); удалены флаги upload_*
+// Версия: 3.8.0 - диалог ошибки выгрузки без innerHTML и inline onclick (самоXSS через название чата)
+//          3.7.0 - sync_token с привязкой к Telegram ID (user-storage); удалены флаги upload_*
 //          3.6.0 - «Отменить» при выгрузке больше не «откатывает»: откат удалял и чаты,
 //                 которые уже были в облаке, и не работал (удаление навсегда требует
 //                 корзины); загруженное остаётся в облаке, остальное — на устройстве
@@ -907,24 +908,39 @@ export class ChatService {
         animation: fadeIn 0.2s ease;
       `;
 
-      modal.innerHTML = `
-        <div style="background: var(--bg-color); padding: 24px; border-radius: 16px; max-width: 360px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-          <div style="font-size: 32px; margin-bottom: 8px;">⚠️</div>
-          <h4 style="margin: 0 0 4px 0; color: var(--text-color); font-size: 16px;">${message}</h4>
-          <p style="color: var(--hint-color); font-size: 13px; margin: 0 0 16px 0; word-break: break-word;">${error}</p>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
-            ${options.map(opt => `
-              <button class="btn" style="padding: 8px 16px; font-size: 13px; min-width: 80px; ${opt === 'Отменить' ? 'background: var(--danger-color);' : ''}" 
-                      onclick="this.closest('div[style]').parentElement.remove(); window._errorResolve('${opt}')">
-                ${opt}
-              </button>
-            `).join('')}
-          </div>
-        </div>
-      `;
+      // Название чата и текст ошибки — данные: только textContent, без HTML
+      const card = document.createElement('div');
+      card.style.cssText = 'background: var(--bg-color); padding: 24px; border-radius: 16px; max-width: 360px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3);';
 
+      const icon = document.createElement('div');
+      icon.style.cssText = 'font-size: 32px; margin-bottom: 8px;';
+      icon.textContent = '⚠️';
+
+      const title = document.createElement('h4');
+      title.style.cssText = 'margin: 0 0 4px 0; color: var(--text-color); font-size: 16px;';
+      title.textContent = message;
+
+      const details = document.createElement('p');
+      details.style.cssText = 'color: var(--hint-color); font-size: 13px; margin: 0 0 16px 0; word-break: break-word;';
+      details.textContent = error;
+
+      const buttons = document.createElement('div');
+      buttons.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;';
+      for (const opt of options) {
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.style.cssText = `padding: 8px 16px; font-size: 13px; min-width: 80px;${opt === 'Отменить' ? ' background: var(--danger-color);' : ''}`;
+        btn.textContent = opt;
+        btn.addEventListener('click', () => {
+          modal.remove();
+          resolve(opt);
+        });
+        buttons.appendChild(btn);
+      }
+
+      card.append(icon, title, details, buttons);
+      modal.appendChild(card);
       document.body.appendChild(modal);
-      (window as any)._errorResolve = resolve;
     });
   }
 }
