@@ -1,7 +1,8 @@
 /* ============================================
    src/modules/chat/chat.css
    Стили чата (сообщения, капсула, кнопки)
-   Версия: 1.0.0
+   Версия: 1.1.0 — убраны стили сообщения-запроса генерации (его больше нет)
+            1.0.0
    ============================================ */
 
 /* ===== ОБЩИЕ ===== */
@@ -530,12 +531,6 @@
     background: var(--app-bg-secondary); color: var(--app-text-primary);
 }
 .gen-btn-primary { background: var(--app-gradient-primary); color: #fff; }
-
-/* Дополнение к сообщению-запросу */
-.gen-req-extra { margin-top: 6px; }
-.gen-req-negative { font-size: 12px; opacity: 0.8; }
-.gen-req-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.gen-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; background: rgba(255, 255, 255, 0.15); }
 
 /* Просмотрщик */
 .gen-viewer {
