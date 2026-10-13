@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/ui/organizer-ui.ts
 // Интерфейс органайзера
-// Версия: 3.2.0 - анализ трекера: отдельный новый чат в «Быстрых», сообщение сохраняется,
+// Версия: 3.3.0 - текст напоминаний и значения трекеров экранируются
+//          3.2.0 - анализ трекера: отдельный новый чат в «Быстрых», сообщение сохраняется,
 //                 в streamAiResponse уходит chatId (раньше — объект чата, ответ терялся)
 //          3.1.0 - с использованием конфига
 // ============================================
@@ -10,6 +11,7 @@ import { organizerStore } from '@/store/OrganizerStore';
 import { organizerService } from '@/services/organizer';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
+import { escapeHtml } from '@/utils/html';
 import { 
   getActiveTopics, 
   getTopicLabel, 
@@ -335,7 +337,7 @@ export class OrganizerUI {
       infoDiv.style.cssText = 'display: flex; flex-direction: column; flex: 1; overflow: hidden; gap: 2px; text-align: left;';
       infoDiv.innerHTML = `
         <span style="font-size: 10px; font-weight: bold; color: var(--button-color);">⏰ ${dateStr}, ${timeStr}</span>
-        <span style="font-size: 12px; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2;">${rem.task_text}</span>
+        <span style="font-size: 12px; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2;">${escapeHtml(rem.task_text)}</span>
       `;
 
       const delBtn = document.createElement('button');
@@ -547,7 +549,7 @@ export class OrganizerUI {
       const topRow = document.createElement('div');
       topRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; font-weight: bold;';
       topRow.innerHTML = `
-        <span style="color: var(--text-color);">${dateString}: <span style="color: var(--button-color);">${log.value}</span></span>
+        <span style="color: var(--text-color);">${dateString}: <span style="color: var(--button-color);">${escapeHtml(log.value)}</span></span>
         <button style="background: transparent; border: none; outline: none; font-size: 10px; cursor: pointer; opacity: 0.5; padding: 0;" onclick="window.organizerUI.deleteTrackerLog('${log.id}', '${trackerId}')">🗑️</button>
       `;
 
