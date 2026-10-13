@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/dashboard/DashboardModule.ts
 // Главная страница (заглушка)
-// Версия: 2.1.0 - исправлен импорт
+// Версия: 2.2.0 - плитки «Чат AI» → раздел «Агенты», «Избранное» → окно избранного
+//                 (вели в удалённый раздел chat-list)
+//          2.1.0 - исправлен импорт
 // ============================================
 
 import { headerManager } from '@/core/header-manager';
@@ -40,7 +42,7 @@ export class DashboardModule {
 
         <!-- Быстрый доступ -->
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
-          <div onclick="window.navigation.switchTab('chat-list')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
+          <div onclick="window.navigation.switchTab('agents')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
             <div style="font-size:32px; margin-bottom:8px;">💬</div>
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Чат AI</div>
             <div style="font-size:12px; color:var(--app-text-tertiary);">Общайся с ИИ</div>
@@ -50,7 +52,7 @@ export class DashboardModule {
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Органайзер</div>
             <div style="font-size:12px; color:var(--app-text-tertiary);">To-Do, трекеры</div>
           </div>
-          <div onclick="window.navigation.switchTab('chat-list')" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
+          <div onclick="window.showFavoritesModal()" style="background:var(--app-bg-secondary); padding:20px; border-radius:16px; text-align:center; cursor:pointer; border:1px solid var(--app-border-color-light); transition:all 0.2s;">
             <div style="font-size:32px; margin-bottom:8px;">⭐</div>
             <div style="font-size:14px; font-weight:600; color:var(--app-text-primary);">Избранное</div>
             <div style="font-size:12px; color:var(--app-text-tertiary);">Лучшие ответы</div>
