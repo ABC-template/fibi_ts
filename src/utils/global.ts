@@ -1,7 +1,8 @@
 // ============================================
 // src/utils/global.ts
 // Глобальные функции для window
-// Версия: 1.2.0 - добавлен questsStore
+// Версия: 1.3.0 - sync_token с привязкой к Telegram ID (user-storage)
+//          1.2.0 - добавлен questsStore
 // ============================================
 
 import type { TopicId } from '@app-types';
@@ -10,6 +11,7 @@ import { questsStore } from '@/store/QuestsStore';
 import { userStore } from '@/store/UserStore';
 import { organizerStore } from '@/store/OrganizerStore';
 import { chatService } from '@/services/chats';
+import { saveSyncToken } from '@/utils/user-storage';
 import { authService } from '@/services/auth';
 import { syncService } from '@/services/sync';
 import { uiRenderer } from '@/modules/ui/renderer';
@@ -110,8 +112,7 @@ export function setupGlobalFunctions(): void {
         try {
             const result = await authService.checkSubscription();
             if (result.syncToken) {
-                localStorage.setItem('sync_token', result.syncToken);
-                console.log(`✅ sync_token обновлен: ${result.syncToken.substring(0, 8)}...`);
+                saveSyncToken(result.syncToken);
                 return result.syncToken;
             }
             return null;
