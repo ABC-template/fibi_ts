@@ -1,7 +1,11 @@
 // ============================================
 // src/modules/admin/tabs/AdminUsersTab.ts
 // Админ-панель → «Пользователи»: поиск, смена роли, монеты и энергия
-// Версия: 2.0.0
+// Версия: 2.1.0
+//   - полная блокировка (закрывает всё API) и заморозка монет — кнопками в карточке;
+//     в карточке видно: заблокирован (причина, до какого числа), монеты заморожены,
+//     подписка на канал
+//   2.0.0
 //   - API /admin/users (список, роль, баланс, сброс входа) вместо несуществующих эндпоинтов
 //   - роль: trial / premium / admin; creator не меняется. Premium — тариф и срок
 //     (по умолчанию первый платный тариф и его срок)
@@ -105,13 +109,23 @@ export class AdminUsersTab implements IAdminTab {
           <span>⚡ <b>${energy}</b> <span style="color:var(--app-text-tertiary)">(${u.token_balance_bonus ?? 0} бонус + ${u.token_balance_permanent ?? 0})</span></span>
           <span>🔥 ${u.streak ?? 0}</span>
           ${u.data_deadline ? `<span style="color:#e67e22">☁️ облако удалится ${fmtDate(u.data_deadline)}</span>` : ''}
-          ${u.economy_locked ? '<span style="color:#e74c3c">🔒 экономика заблокирована</span>' : ''}
+          ${u.economy_locked ? '<span style="color:#e67e22">🧊 монеты заморожены</span>' : ''}
+          ${u.channel_member === false ? '<span style="color:#e67e22">📢 не подписан на канал</span>' : ''}
+          ${u.blocked
+            ? `<span style="color:#e74c3c">⛔ заблокирован${u.block_expires_at ? ` до ${fmtDate(u.block_expires_at)}` : ' бессрочно'}${u.block_reason ? ` — ${esc(u.block_reason)}` : ''}</span>`
+            : ''}
         </div>
 
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           ${btn('🪙 ±', `window.adminModule.adjustUserBalance(${u.telegram_id}, 'coins')`, 'Начислить или списать монеты')}
           ${btn('⚡ ±', `window.adminModule.adjustUserBalance(${u.telegram_id}, 'tokens')`, 'Начислить или списать постоянную энергию')}
           ${btn('🔄 Вход', `window.adminModule.resetUserCheckin(${u.telegram_id})`, 'Сбросить ежедневный вход (тест)')}
+          ${btn(u.economy_locked ? '🧊 Разморозить' : '🧊 Заморозить', `window.adminModule.toggleUserEconomyLock(${u.telegram_id})`, 'Заморозка монет: нельзя получать и тратить монеты')}
+          ${u.is_admin_id || isCreator
+            ? ''
+            : u.blocked
+              ? btn('✅ Разблокировать', `window.adminModule.blockUserFromList(${u.telegram_id}, false)`, 'Снять блокировку')
+              : btn('⛔ Заблокировать', `window.adminModule.blockUserFromList(${u.telegram_id}, true)`, 'Полная блокировка: приложение закрыто')}
         </div>
       </div>`;
   }
@@ -217,6 +231,43 @@ export class AdminUsersTab implements IAdminTab {
       alert('Готово: перезапустите приложение у пользователя');
     } catch (e) {
       alert((e as Error).message || 'Ошибка сброса');
+    }
+  }
+
+  /** Полная блокировка (user_blocks): закрывает всё API, кроме входа */
+  async setBlocked(userId: number, block: boolean): Promise<void> {
+    try {
+      if (block) {
+        const reason = prompt('Причина блокировки (видна пользователю):', '');
+        if (reason === null) return;
+        const daysAnswer = prompt('Срок, дней (пусто — бессрочно):', '');
+        if (daysAnswer === null) return;
+        const days = daysAnswer.trim() ? parseInt(daysAnswer, 10) : null;
+        if (days !== null && (!Number.isInteger(days) || days < 1)) {
+          alert('Срок — целое число дней');
+          return;
+        }
+        await apiClient.post('/admin/economy/blocks', { user_id: userId, reason: reason.trim() || null, days });
+      } else {
+        if (!confirm('Снять блокировку?')) return;
+        await apiClient.delete(`/admin/economy/blocks?user_id=${userId}`);
+      }
+      await this.loadData(this.search);
+    } catch (e) {
+      alert((e as Error).message || 'Ошибка');
+    }
+  }
+
+  /** Заморозка монет (economy_locked): приложение доступно, монеты — нет */
+  async toggleEconomyLock(userId: number): Promise<void> {
+    const user = this.users.find((x) => x.telegram_id === userId);
+    const locked = !(user?.economy_locked === true);
+    if (!confirm(locked ? 'Заморозить монеты пользователя?' : 'Разморозить монеты?')) return;
+    try {
+      await apiClient.post('/admin/users', { action: 'economy_lock', user_id: userId, locked });
+      await this.loadData(this.search);
+    } catch (e) {
+      alert((e as Error).message || 'Ошибка');
     }
   }
 
