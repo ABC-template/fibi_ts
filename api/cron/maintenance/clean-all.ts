@@ -1,7 +1,8 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
 // Описание: Объединенная очистка (корзина + логи + usage + медиа)
-// Версия: 2.5.0 - убраны шаги pending_deletions / pending_deletion_devices (таблиц в БД
+// Версия: 2.6.0 - очистка отработавших окон лимита частоты (clean_rate_limits)
+//          2.5.0 - убраны шаги pending_deletions / pending_deletion_devices (таблиц в БД
 //                 нет — шаги каждый день падали с ошибкой); медиа без ссылок из
 //                 сообщений тоже удаляются (cleanupMediaFiles)
 //          2.4.0 - автоодобрение псевдо-заданий, у которых истёк срок проверки
@@ -187,6 +188,17 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     // ==========================================
+    // 8.5. СЧЁТЧИКИ ЛИМИТА ЧАСТОТЫ (отработавшие окна)
+    // ==========================================
+    let rateLimitsDeleted = 0;
+    try {
+      rateLimitsDeleted = Number(await supabaseRPC('clean_rate_limits', {}, config)) || 0;
+      console.log(`✅ Удалено счётчиков лимита частоты: ${rateLimitsDeleted}`);
+    } catch (err) {
+      console.error('Ошибка очистки счётчиков лимита частоты:', (err as Error).message);
+    }
+
+    // ==========================================
     // 9. ОТВЕТ
     // ==========================================
 
@@ -198,6 +210,7 @@ export default async function handler(request: Request): Promise<Response> {
       usage_records_deleted: usageDeleted,
       notifications_cleaned: notificationsDeleted,
       media_files_removed: mediaRemoved,
+      rate_limits_deleted: rateLimitsDeleted,
       video_jobs_finalized: videoFinalized,
       pseudo_quests_approved: pseudoApproved
     };
