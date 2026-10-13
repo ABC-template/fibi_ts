@@ -1,7 +1,11 @@
 // ============================================
 // src/store/QuestsStore.ts
 // Хранилище заданий (с ежедневным входом и стриком)
-// Версия: 2.3.0 - исправлены методы работы с EconomyStore
+// Версия: 2.4.0 - убраны claimDailyLogin / updateStreak / updateProgress: вызывали
+//                 несуществующие /users/streak и /quests/progress (вход и прогресс
+//                 считает сервер); submitProof возвращает итог проверки (approved / pseudo / manual /
+//                 ошибка с кодом), а не true/false; в IUserQuest — поля спонсора
+//          2.3.0 - исправлены методы работы с EconomyStore
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -43,6 +47,19 @@ export interface IUserQuest {
   completed_at?: string;
   claimed_at?: string;
   external_id?: string;
+  sponsor_name?: string | null;
+  sponsor_target?: string | null;
+  sponsor_action_required?: string | null;
+}
+
+/** Итог «Проверить» по спонсорскому заданию */
+export interface ISubmitProofResult {
+  ok: boolean;
+  /** approved — можно забрать награду; pseudo — засчитается позже; manual — у администратора */
+  mode?: 'approved' | 'pseudo' | 'manual';
+  expiresAt?: string | null;
+  error?: string;
+  code?: string;
 }
 
 interface IQuestsCacheData {
@@ -165,98 +182,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   }
 
   // ==========================================
-  // ЕЖЕДНЕВНЫЙ ВХОД + СТРИК
-  // ==========================================
-
-  async claimDailyLogin(): Promise<{ 
-    success: boolean; 
-    streak: number; 
-    bonus: number; 
-    claimed: boolean;
-    reward: number;
-  }> {
-    if (!this.userId) {
-      console.warn('⚠️ [claimDailyLogin] Нет userId');
-      return { success: false, streak: 0, bonus: 0, claimed: false, reward: 0 };
-    }
-
-    try {
-      const quest = this.getQuestByExternalId('daily_login');
-      if (quest?.claimed) {
-        console.log('ℹ️ [claimDailyLogin] daily_login уже получен сегодня');
-        return { success: true, streak: 0, bonus: 0, claimed: true, reward: 0 };
-      }
-
-      const progressResult = await this.updateProgress('daily_login', 1);
-      if (!progressResult) {
-        console.warn('⚠️ [claimDailyLogin] Не удалось обновить прогресс');
-        return { success: false, streak: 0, bonus: 0, claimed: false, reward: 0 };
-      }
-
-      const streakResult = await this.updateStreak();
-      if (!streakResult.success) {
-        console.warn('⚠️ [claimDailyLogin] Не удалось обновить стрик');
-        return { success: false, streak: 0, bonus: 0, claimed: false, reward: 0 };
-      }
-
-      const dailyQuest = this.getQuestByExternalId('daily_login');
-      if (!dailyQuest) {
-        console.warn('⚠️ [claimDailyLogin] daily_login не найден');
-        return { success: false, streak: 0, bonus: 0, claimed: false, reward: 0 };
-      }
-
-      const bonus = streakResult.bonus || 0;
-      const totalReward = dailyQuest.reward_coins + bonus;
-
-      const claimResult = await this.claimWithBonus(dailyQuest.user_quest_id, bonus);
-
-      if (!claimResult.success) {
-        console.warn('⚠️ [claimDailyLogin] Не удалось забрать награду:', claimResult.error);
-        return { success: false, streak: 0, bonus: 0, claimed: false, reward: 0 };
-      }
-
-      const updatedQuest = this.getQuestByExternalId('daily_login');
-      if (updatedQuest) {
-        updatedQuest.claimed = true;
-        updatedQuest.claimed_at = new Date().toISOString();
-        this.save();
-      }
-
-      console.log(`✅ [claimDailyLogin] Успешно! Стрик: ${streakResult.streak}, Бонус: ${bonus}, Награда: ${totalReward}`);
-
-      return {
-        success: true,
-        streak: streakResult.streak || 0,
-        bonus: bonus,
-        claimed: true,
-        reward: totalReward,
-      };
-    } catch (err) {
-      console.error('❌ [claimDailyLogin] Ошибка:', err);
-      return { success: false, streak: 0, bonus: 0, claimed: false, reward: 0 };
-    }
-  }
-
-  // ==========================================
-  // ОБНОВЛЕНИЕ СТРИКА (вызов API)
-  // ==========================================
-
-  async updateStreak(): Promise<{ success: boolean; streak: number; bonus: number; alreadyClaimed: boolean }> {
-    try {
-      const result = await apiClient.updateStreak();
-      return {
-        success: result.success === true,
-        streak: result.streak || 0,
-        bonus: result.bonus || 0,
-        alreadyClaimed: result.already_claimed || false,
-      };
-    } catch (err) {
-      console.error('❌ [updateStreak] Ошибка:', err);
-      return { success: false, streak: 0, bonus: 0, alreadyClaimed: false };
-    }
-  }
-
-  // ==========================================
   // ЗАБРАТЬ НАГРАДУ С БОНУСОМ
   // ==========================================
 
@@ -375,58 +300,12 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   // ДЕЙСТВИЯ
   // ==========================================
 
-  async updateProgress(questId: string, increment: number = 1): Promise<boolean> {
-    if (!this.userId) {
-      console.warn('⚠️ [updateProgress] Нет userId');
-      return false;
-    }
-
-    const quest = this.getQuestByExternalId(questId);
-    if (quest && (quest.completed || quest.claimed)) {
-      console.log(`ℹ️ [updateProgress] Квест ${questId} уже выполнен или получен`);
-      return true;
-    }
-
-    try {
-      const result = await apiClient.post('/quests/progress', {
-        questId,
-        increment,
-      });
-
-      if (result.success) {
-        const q = this.getQuestByExternalId(questId);
-        if (q) {
-          q.progress = result.progress || 0;
-          q.completed = result.completed || false;
-          q.claimed = result.claimed || false;
-          this.save();
-
-          console.log(`✅ [updateProgress] Квест ${questId} обновлён: progress=${q.progress}, completed=${q.completed}`);
-        } else {
-          console.log(`🔄 [updateProgress] Квест ${questId} не найден в кеше, делаем синхронизацию`);
-          await this.sync();
-        }
-
-        if (result.completed) {
-          this._emitChange('quests:quest_completed', { questId });
-        }
-
-        return true;
-      }
-
-      return false;
-    } catch (err) {
-      console.error('❌ [QuestsStore.updateProgress] Error:', err);
-      return false;
-    }
-  }
-
   async claim(userQuestId: string): Promise<{ reward: number } | null> {
     return this.claimWithBonus(userQuestId, 0);
   }
 
-  async submitProof(userQuestId: string, proofData?: any): Promise<boolean> {
-    if (!this.userId) return false;
+  async submitProof(userQuestId: string, proofData?: any): Promise<ISubmitProofResult> {
+    if (!this.userId) return { ok: false, error: 'Ошибка авторизации' };
 
     try {
       const result = await apiClient.post('/quests/submit', {
@@ -434,24 +313,31 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
         proofData: proofData || {},
       });
 
-      if (result.success) {
-        const quest = this._data.quests.find(q => q.user_quest_id === userQuestId);
-        if (quest) {
-          quest.status = 'submitted';
-          if (result.expiresAt) {
-            quest.expires_at = result.expiresAt;
-          }
-          this.save();
-        }
-
-        this._emitChange('quests:proof_submitted', { userQuestId });
-        return true;
+      if (!result?.success) {
+        return { ok: false, error: result?.error || 'Не удалось отправить' };
       }
 
-      return false;
-    } catch (err) {
+      const quest = this._data.quests.find(q => q.user_quest_id === userQuestId);
+      if (quest) {
+        if (result.status === 'approved') {
+          quest.status = 'approved';
+          quest.completed = true;
+        } else {
+          quest.status = 'submitted';
+          if (result.expiresAt) quest.expires_at = result.expiresAt;
+        }
+        this.save();
+      }
+
+      this._emitChange('quests:proof_submitted', { userQuestId });
+      return {
+        ok: true,
+        mode: result.mode || (result.status === 'approved' ? 'approved' : 'manual'),
+        expiresAt: result.expiresAt || null,
+      };
+    } catch (err: any) {
       console.error('❌ [QuestsStore.submitProof] Error:', err);
-      return false;
+      return { ok: false, error: err?.message || 'Не удалось отправить', code: err?.details?.code };
     }
   }
 
