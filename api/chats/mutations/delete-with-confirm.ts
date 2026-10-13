@@ -1,13 +1,17 @@
 // ============================================
 // api/chats/mutations/delete-with-confirm.ts
 // Описание: Удаление с подтверждением (упрощенная версия)
-// Версия: 3.0.0 - TypeScript
+// Версия: 3.1.0 - удаление чата/сообщения запрещено (409), пока в чате идёт ответ
+//                 или генерация (раньше удаление сообщения-задания давало бесплатное видео)
+//          3.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken } from '../../_lib/supabase-client';
 import { isValidUUID, validateUUID } from '../../_lib/validators';
+import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../../_lib/chat-lock';
+import { HttpError } from '../../_lib/http-error';
 
 export const config = { runtime: 'edge' };
 
@@ -39,6 +43,9 @@ async function deleteChatHard(
       return { success: false, error: 'Chat not found or not in trash' };
     }
 
+    // Пока в чате идёт ответ или генерация, удалять нельзя (бросает 409)
+    await assertChatsNotBusy(userId, [chatId], config);
+
     // Удаляем все сообщения чата
     await supabaseFetch(
       `messages?chat_id=eq.${chatId}`,
@@ -61,6 +68,7 @@ async function deleteChatHard(
 
     return { success: true, syncToken: newSyncToken };
   } catch (err) {
+    if (err instanceof HttpError) throw err;
     console.error('Delete chat hard error:', (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
@@ -101,6 +109,9 @@ async function deleteMessageHard(
       return { success: false, error: 'Access denied' };
     }
 
+    // Пока в чате идёт ответ или генерация, удалять нельзя (бросает 409)
+    await assertChatsNotBusy(userId, [chatId], config, MESSAGE_DELETE_BUSY_MESSAGE);
+
     // Удаляем сообщение
     await supabaseFetch(
       `messages?id=eq.${messageId}`,
@@ -126,6 +137,7 @@ async function deleteMessageHard(
 
     return { success: true, syncToken: newSyncToken };
   } catch (err) {
+    if (err instanceof HttpError) throw err;
     console.error('Delete message hard error:', (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
@@ -189,6 +201,7 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Unknown action', 400);
     }
   } catch (err) {
+    if (err instanceof HttpError) return errorResponse(err.message, err.status);
     console.error('Delete with confirm error:', (err as Error).message);
     return errorResponse((err as Error).message, 500);
   }
