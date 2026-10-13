@@ -1,7 +1,9 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 5.2.0 — удалён spendCoins (/economy/spend больше нет)
+// Версия: 5.3.0 — конфиг обмена: exchange_enabled = доступен этому пользователю (сервер),
+//                  при ошибке — выключен; без bonus_tokens_per_day / whitelist_enabled
+//          5.2.0 — удалён spendCoins (/economy/spend больше нет)
 //          5.1.0 — монеты из игр через /economy/game (клиент больше не начисляет монеты сам)
 //          5.0.0 — spent_today / daily_limit / bypass - добавлены все методы для совместимости
 // ============================================
@@ -48,14 +50,24 @@ export interface IExchangeResult {
 
 export interface IConfigResult {
   success: boolean;
-  config: {
-    exchange_enabled: boolean;
-    exchange_rate: number;
-    max_exchange_percent: number;
-    bonus_tokens_per_day: number;
-    whitelist_enabled: boolean;
-  };
+  config: IExchangeConfig;
 }
+
+/** Обмен монет на энергию для текущего пользователя (GET /economy/config) */
+export interface IExchangeConfig {
+  /** Обмен доступен этому пользователю (общий флаг + белый список) */
+  exchange_enabled: boolean;
+  exchange_rate: number;
+  max_exchange_percent: number;
+  min_exchange_amount: number;
+}
+
+const EXCHANGE_OFF: IExchangeConfig = {
+  exchange_enabled: false,
+  exchange_rate: 0,
+  max_exchange_percent: 100,
+  min_exchange_amount: 1,
+};
 
 export interface IHistoryResult {
   success: boolean;
@@ -239,42 +251,20 @@ export class EconomyService {
   async getConfig(): Promise<IConfigResult> {
     try {
       const result = await apiClient.get('/economy/config');
-
-      if (result.success) {
-        return {
-          success: true,
-          config: {
-            exchange_enabled: result.config?.exchange_enabled !== false,
-            exchange_rate: result.config?.exchange_rate || 1,
-            max_exchange_percent: result.config?.max_exchange_percent || 80,
-            bonus_tokens_per_day: result.config?.bonus_tokens_per_day || 5,
-            whitelist_enabled: result.config?.whitelist_enabled || false,
-          },
-        };
-      }
-
+      const c = result?.success ? result.config : null;
+      if (!c) return { success: false, config: EXCHANGE_OFF };
       return {
         success: true,
         config: {
-          exchange_enabled: true,
-          exchange_rate: 1,
-          max_exchange_percent: 80,
-          bonus_tokens_per_day: 5,
-          whitelist_enabled: false,
+          exchange_enabled: c.exchange_enabled === true,
+          exchange_rate: Number(c.exchange_rate) || 0,
+          max_exchange_percent: Number(c.max_exchange_percent) || 100,
+          min_exchange_amount: Number(c.min_exchange_amount) || 1,
         },
       };
     } catch (err) {
       console.error('[EconomyService.getConfig] Error:', err);
-      return {
-        success: true,
-        config: {
-          exchange_enabled: true,
-          exchange_rate: 1,
-          max_exchange_percent: 80,
-          bonus_tokens_per_day: 5,
-          whitelist_enabled: false,
-        },
-      };
+      return { success: false, config: EXCHANGE_OFF };
     }
   }
 
