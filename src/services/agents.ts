@@ -1,11 +1,12 @@
 // ============================================
 // src/services/agents.ts
 // Описание: Работа с ИИ-агентами (админка + пользовательская часть)
-// Версия: 1.0.1 - исправлен импорт apiClient
+// Версия: 1.1.0 - пользовательский список агентов типизирован как IPublicAgent
+//          1.0.1 - исправлен импорт apiClient
 // ============================================
 
 import { apiClient } from './api';
-import type { IAiAgent, IAiAgentInput, IAiAgentWithAccess, AgentModality } from '../../types/agents';
+import type { IAiAgent, IAiAgentInput, IPublicAgent, AgentModality } from '../../types/agents';
 
 export interface OpenRouterModelOption {
   id: string;
@@ -43,7 +44,7 @@ export async function fetchAllAgents(): Promise<IAiAgent[]> {
  * Получить активные агенты + флаг доступа (для пользователей)
  */
 export async function fetchAgentsWithAccess(): Promise<{
-  agents: IAiAgentWithAccess[];
+  agents: IPublicAgent[];
   user_role: string;
   user_pro_tier: string | null;
 }> {
