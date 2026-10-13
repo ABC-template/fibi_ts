@@ -8,7 +8,10 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.3.0 — без сообщения-запроса (всё о запросе — в карточке результата и просмотрщике);
+// Версия: 3.4.0 — одна генерация на пользователя: сервер отвечает 409 generation_busy
+//                  с chat_id — в форме «Дождитесь окончания генерации» и кнопка
+//                  «Перейти в чат» (если генерация идёт в другом чате)
+//          3.3.0 — без сообщения-запроса (всё о запросе — в карточке результата и просмотрщике);
 //                  приветствие убирается при первой генерации; заглушка «Генерируется…»
 //                  больше не остаётся после результата (флаг запроса снимается до сверки)
 //          3.2.0 — медиа можно сохранить в приложении (IndexedDB) и открывать без облака;
@@ -83,6 +86,12 @@ export interface IGenerationPreset {
   media_inputs?: IGenerationMedia[];
 }
 
+/** Сообщение над формой: текст или текст с кнопкой */
+type FormNotice =
+  | string
+  | { text: string; action?: { label: string; onClick: () => void } }
+  | null;
+
 interface IRefItem {
   id: number;
   status: 'uploading' | 'ready' | 'error';
@@ -145,7 +154,7 @@ export class GenerationController {
   }
 
   /** Открыть форму (с пресетом — для «Повторить») */
-  async open(preset: IGenerationPreset | null = null, notice: string | null = null): Promise<void> {
+  async open(preset: IGenerationPreset | null = null, notice: FormNotice = null): Promise<void> {
     if (!this.host.hasAccess()) {
       this.host.showAccessDenied();
       return;
@@ -284,7 +293,7 @@ export class GenerationController {
     return Math.min(limit, REFERENCE_LIMITS.maxPerRequest);
   }
 
-  private async _renderForm(preset: IGenerationPreset | null, notice: string | null): Promise<void> {
+  private async _renderForm(preset: IGenerationPreset | null, notice: FormNotice): Promise<void> {
     document.getElementById('generation-form-overlay')?.remove();
 
     const agent = await this._loadAgent();
@@ -831,11 +840,39 @@ export class GenerationController {
     if (hint) hint.textContent = reason && this._readPrompt() ? reason : '';
   }
 
-  private _setNotice(text: string | null): void {
+  /** Сообщение над формой; с action — ещё и кнопка под текстом */
+  private _setNotice(notice: FormNotice): void {
     const el = document.getElementById('gen-notice');
     if (!el) return;
-    el.textContent = text || '';
+    const text = typeof notice === 'string' ? notice : notice?.text || '';
+    const action = typeof notice === 'string' ? null : notice?.action || null;
+
+    el.textContent = text;
+    if (action) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'gen-btn gen-btn-primary gen-notice-action';
+      btn.textContent = action.label;
+      btn.style.cssText = 'display:block;margin-top:8px;padding:6px 12px;font-size:13px;';
+      btn.addEventListener('click', () => action.onClick());
+      el.appendChild(btn);
+    }
     el.hidden = !text;
+  }
+
+  /** Открыть чат (например, тот, где идёт генерация); чата нет локально — подгрузить из облака */
+  private async _goToChat(chatId: UUID): Promise<void> {
+    let found = chatStore.findChatById(chatId);
+    if (!found) {
+      await chatService.openChat(chatId);
+      found = chatStore.findChatById(chatId);
+    }
+    if (!found) {
+      this._toast('⚠️ Не удалось открыть чат', 'error');
+      return;
+    }
+    this.close();
+    eventBus.emit('navigation:open_chat', { chatId, topic: found.chat.topic || found.topic });
   }
 
   // ==========================================
@@ -915,6 +952,20 @@ export class GenerationController {
     const e = err as Error & { status?: number };
 
     if (err instanceof ApiError) {
+      // Одна генерация на пользователя: показываем, где идёт текущая
+      const busyChatId = err.details?.code === 'generation_busy' ? err.details?.chat_id : null;
+      if (err.status === 409 && err.details?.code === 'generation_busy') {
+        const otherChat = typeof busyChatId === 'string' && busyChatId !== this.host.getChatId();
+        this.open(preset, {
+          text: otherChat
+            ? '⏳ Дождитесь окончания генерации в другом чате.'
+            : '⏳ Дождитесь окончания генерации.',
+          action: otherChat
+            ? { label: 'Перейти в чат', onClick: () => { void this._goToChat(busyChatId); } }
+            : undefined,
+        });
+        return;
+      }
       // 4xx: запрос не принят (занят чат, нет энергии, не прошла валидация) — вернуть форму
       this.open(preset, e.status === 409 ? `⏳ ${e.message}` : e.message);
       return;
