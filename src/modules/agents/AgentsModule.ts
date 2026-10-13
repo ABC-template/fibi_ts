@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.1.5 — тексты причины отказа переведены под новую схему доступа
+// Версия: 1.2.0 — тип IPublicAgent; наценка — agent.markup (для тарифа пользователя),
+//                  требуемые тарифы — allowed_tiers; имена/описания экранируются
+//          1.1.5 — тексты причины отказа переведены под новую схему доступа
 //                  (auth/tier/inactive вместо allowed_roles), см.
 //                  api/_lib/agent-access.ts v2.0.0
 // ============================================
@@ -10,7 +12,8 @@ import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { fetchAgentsWithAccess } from '@/services/agents';
-import type { IAiAgentWithAccess } from '@app-types/agents';
+import type { IPublicAgent } from '@app-types/agents';
+import { escapeHtml } from '@/utils/html';
 
 export class AgentsModule {
   private container: HTMLElement;
@@ -18,7 +21,7 @@ export class AgentsModule {
   private chatStore = chatStore;
   private uiRenderer = uiRenderer;
 
-  private _agents: IAiAgentWithAccess[] = [];
+  private _agents: IPublicAgent[] = [];
   private _loading = false;
   private _isShowing = false;
   private _subscriptions: Array<() => void> = [];
@@ -30,7 +33,7 @@ export class AgentsModule {
   async init(): Promise<void> {
     this._subscribe();
     await this.loadAgents();
-    console.log('✅ AgentsModule v1.1.2 инициализирован');
+    console.log('✅ AgentsModule v1.2.0 инициализирован');
   }
 
   private _subscribe(): void {
@@ -57,7 +60,7 @@ export class AgentsModule {
     }
   }
 
-  private getSortedAgents(): IAiAgentWithAccess[] {
+  private getSortedAgents(): IPublicAgent[] {
     return [...this._agents].sort((a, b) => {
       if (a.has_access && !b.has_access) return -1;
       if (!a.has_access && b.has_access) return 1;
@@ -65,7 +68,7 @@ export class AgentsModule {
     });
   }
 
-  private renderAgentCard(agent: IAiAgentWithAccess): HTMLElement {
+  private renderAgentCard(agent: IPublicAgent): HTMLElement {
     const hasAccess = agent.has_access;
     const accessReason = agent.access_reason;
 
@@ -81,7 +84,9 @@ export class AgentsModule {
       if (accessReason === 'inactive') {
         accessInfo = 'Временно недоступен';
       } else if (accessReason === 'tier') {
-        accessInfo = agent.min_pro_tier ? `Требуется тариф: ${agent.min_pro_tier}` : 'Требуется подписка';
+        accessInfo = agent.allowed_tiers?.length
+          ? `Требуется тариф: ${escapeHtml(agent.allowed_tiers.join(', '))}`
+          : 'Требуется подписка';
       } else if (accessReason === 'auth') {
         accessInfo = 'Войдите, чтобы использовать';
       } else {
@@ -108,12 +113,12 @@ export class AgentsModule {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
             <span style="font-size:20px;">${modalityEmoji[agent.modality] || '🤖'}</span>
             <div style="font-weight:700;font-size:15px;color:var(--app-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-              ${title}
+              ${escapeHtml(title)}
             </div>
             ${!hasAccess ? '<span style="font-size:14px;">🔒</span>' : ''}
           </div>
           <div style="font-size:12px;color:var(--app-text-tertiary);margin-bottom:6px;">
-            ${agent.description?.ru || agent.slug}
+            ${escapeHtml(agent.description?.ru || agent.slug)}
           </div>
           ${!hasAccess ? `
             <div style="font-size:11px;color:#d4af37;font-weight:600;">
@@ -121,7 +126,7 @@ export class AgentsModule {
             </div>
           ` : `
             <div style="font-size:11px;color:var(--app-text-tertiary);">
-              ×${agent.markup_coefficient} · min ${agent.min_charge} ⚡
+              ×${Number(agent.markup) || 1} · min ${Number(agent.min_charge) || 0} ⚡
             </div>
           `}
         </div>
@@ -185,7 +190,7 @@ export class AgentsModule {
     const reason = agent.access_reason;
 
     let title = '🔒 Доступ ограничен';
-    let description = `Для использования агента "${agent.name?.ru || agent.slug}" требуется:`;
+    let description = `Для использования агента "${escapeHtml(agent.name?.ru || agent.slug)}" требуется:`;
 
     if (isInactive) {
       title = '⏳ Агент временно недоступен';
@@ -195,7 +200,7 @@ export class AgentsModule {
       description = 'Войдите в приложение, чтобы использовать этого агента.';
     } else if (reason === 'tier') {
       const tiers = agent.allowed_tiers?.length
-        ? agent.allowed_tiers.join(', ')
+        ? escapeHtml(agent.allowed_tiers.join(', '))
         : 'подписка';
       description = `Доступно на тарифах: ${tiers}`;
     }
