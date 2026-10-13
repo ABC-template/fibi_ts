@@ -1,11 +1,44 @@
 // ============================================
 // src/store/BaseStore.ts
 // Базовый класс для всех хранилищ с изоляцией данных
-// Версия: 4.1.0 - JWT убран (авторизация только по Telegram initData)
+// Версия: 4.2.0 - при переполнении хранилища пользователь видит предупреждение
+//                  (раньше ошибка молча уходила в консоль)
+//          4.1.0 - JWT убран (авторизация только по Telegram initData)
 //          4.0.0 - FIXED
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
+
+const STORAGE_FULL_WARN_INTERVAL_MS = 60_000;
+let lastStorageFullWarn = 0;
+
+/** Ошибка «не хватает места» (localStorage или IndexedDB) */
+export function isQuotaError(e: unknown): boolean {
+  const err = e as { name?: string; code?: number } | null;
+  return !!err && (
+    err.name === 'QuotaExceededError' ||
+    err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    err.code === 22 ||
+    err.code === 1014
+  );
+}
+
+/** Предупредить пользователя, что данные не сохраняются (не чаще раза в минуту) */
+export function warnStorageFull(): void {
+  const now = Date.now();
+  if (now - lastStorageFullWarn < STORAGE_FULL_WARN_INTERVAL_MS) return;
+  lastStorageFullWarn = now;
+
+  const text = '⚠️ На устройстве не хватает места: изменения не сохраняются. ' +
+    'Очистите корзину или удалите старые чаты, а важное скачайте в архив.';
+  const ui = (window as any).uiRenderer;
+  if (ui?.showToast) {
+    ui.showToast(text, 'warning', 6000);
+  } else {
+    (window as any).Telegram?.WebApp?.showAlert?.(text);
+  }
+  eventBus.emit('storage:full', {});
+}
 
 export class BaseStore<T extends Record<string, any> = Record<string, any>> {
   protected storeName: string;
@@ -100,6 +133,7 @@ export class BaseStore<T extends Record<string, any> = Record<string, any>> {
       this._emitChange('data:saved', { store: this.storeName });
     } catch (e) {
       console.error(`❌ Ошибка сохранения ${this.storeName}:`, e);
+      if (isQuotaError(e)) warnStorageFull();
     }
   }
 
