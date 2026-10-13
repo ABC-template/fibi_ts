@@ -2,12 +2,15 @@
 // api/auth/channel.ts
 // Кнопка «Я подписался — проверить» на заглушке: проверка подписки у Telegram
 // прямо сейчас (без часового кэша). Не закрыта проверкой доступа (см. access-gate).
+// Версия: 1.1.0 — общий лимит частоты в БД (auth_channel) вместо счётчика в памяти
+//                  одного экземпляра функции
 // Версия: 1.0.0
 // ============================================
 
 import { authenticate, isAdminTelegramId } from '../_lib/auth';
 import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig } from '../_lib/supabase-client';
+import { enforceRateLimit } from '../_lib/rate-limit';
 import {
   accessDecision,
   getChannelUrl,
@@ -16,10 +19,6 @@ import {
 } from '../_lib/access-gate';
 
 export const config = { runtime: 'edge' };
-
-/** Не чаще раза в столько миллисекунд на пользователя (защита от спама в Telegram API) */
-const MIN_INTERVAL_MS = 5_000;
-const lastCheck = new Map<number, number>();
 
 export default async function handler(request: Request): Promise<Response> {
   const cors = handleCORS(request);
@@ -41,12 +40,8 @@ export default async function handler(request: Request): Promise<Response> {
       return jsonResponse({ success: true, member: true, channelRequired: false, blocked: false, channelUrl: getChannelUrl() });
     }
 
-    const prev = lastCheck.get(userId) || 0;
-    if (Date.now() - prev < MIN_INTERVAL_MS) {
-      return errorResponse('Подождите несколько секунд и попробуйте снова', 429);
-    }
-    lastCheck.set(userId, Date.now());
-    if (lastCheck.size > 5000) lastCheck.clear();
+    const limited = await enforceRateLimit('auth_channel', userId, config);
+    if (limited) return limited;
 
     const state = await loadAccessState(userId, config, false);
     let member = state.channelMember;
