@@ -4,7 +4,8 @@
 // Счётчик в БД (rate_limit_hit, окно фиксированной длины): экземпляры Edge-функций
 // не делят память, поэтому счётчик в памяти ограничивал бы только один экземпляр.
 // Если БД недоступна — запрос пропускается (лимит не должен ломать приложение).
-// Версия: 4.0.0 — настоящий лимит (раньше заглушка, всегда allowed)
+// Версия: 4.1.0 — лимиты облачного экспорта (chat_export, chat_export_part)
+//          4.0.0 — настоящий лимит (раньше заглушка, всегда allowed)
 //          3.0.0 — no-op
 // ============================================
 
@@ -32,6 +33,10 @@ export const RATE_LIMITS = {
   generation_status: { limit: 30, windowSec: 60 },
   /** /economy/game */
   economy_game: { limit: 30, windowSec: 60 },
+  /** /chats/export — начало выгрузки облачного архива (сборка всего архива и подпись ссылок) */
+  chat_export: { limit: 3, windowSec: 600 },
+  /** /chats/export — следующие части большого архива (каждая тоже собирает архив целиком) */
+  chat_export_part: { limit: 40, windowSec: 600 },
 } as const;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;
