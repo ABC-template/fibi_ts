@@ -149,6 +149,5 @@ export interface IAuthCheckResponse {
   } | null;
   subscription_tier?: string | null;
   premium_until?: ISODateString | null;
-  trial_used?: boolean;
   error?: string;
 }
