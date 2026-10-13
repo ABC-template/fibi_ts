@@ -1,7 +1,9 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (Telegram initData; без JWT)
-// Версия: 7.0.0 - JWT и его таймер обновления убраны; токен Realtime из ответа передаётся
+// Версия: 7.1.0 - в результате previousRole (роль до проверки): app.ts читал user_role уже
+//                 после перезаписи, и переходы trial ↔ PRO никогда не срабатывали
+//          7.0.0 - JWT и его таймер обновления убраны; токен Realtime из ответа передаётся
 //                 в syncService; флаг админки (adminPanel) — с сервера; офлайн-режим
 //                 берёт роль из последнего успешного входа
 //          5.3.0 - в результат входа передаются баланс, бонус дня и ежедневный вход (checkin)
@@ -17,6 +19,8 @@ import type { IAuthCheckResponse } from '@app-types';
 export interface IAuthResult {
   isMember: boolean;
   role: string;
+  /** Роль до этой проверки (из прошлого входа) — для переходов trial ↔ PRO */
+  previousRole: string | null;
   syncEnabled: boolean;
   syncToken: string | null;
   dataDeadline: string | null;
@@ -50,12 +54,14 @@ export class AuthService {
   // ==========================================
 
   async checkSubscription(): Promise<IAuthResult> {
+    // Читаем до того, как ответ сервера перезапишет user_role
+    const previousRole = localStorage.getItem('user_role');
     try {
       const data = await apiClient.get<IAuthCheckResponse>('/auth/check');
       
       if ((data as any).error) {
         console.error('Ошибка проверки подписки:', (data as any).error);
-        return this.fallbackToOffline();
+        return this.fallbackToOffline(previousRole);
       }
 
       const newSyncToken = data.syncToken;
@@ -103,6 +109,7 @@ export class AuthService {
       return {
         isMember: data.isMember !== false,
         role: data.role || 'trial',
+        previousRole,
         syncEnabled: data.syncEnabled === true,
         syncToken: newSyncToken || null,
         dataDeadline: data.dataDeadline || null,
@@ -115,7 +122,7 @@ export class AuthService {
 
     } catch (err) {
       console.error('Auth check error:', err);
-      return this.fallbackToOffline();
+      return this.fallbackToOffline(previousRole);
     }
   }
 
@@ -199,13 +206,14 @@ export class AuthService {
    * Сервер недоступен: работаем локально с ролью последнего успешного входа.
    * Синхронизация без сервера невозможна — выключена.
    */
-  private fallbackToOffline(): IAuthResult {
-    const savedRole = localStorage.getItem('user_role') || 'trial';
+  private fallbackToOffline(previousRole: string | null): IAuthResult {
+    const savedRole = previousRole || 'trial';
     const known = ['trial', 'premium', 'admin', 'creator'].includes(savedRole);
 
     return {
       isMember: known,
       role: known ? savedRole : 'guest',
+      previousRole,
       syncEnabled: false,
       syncToken: this.getSyncToken() || null,
       dataDeadline: localStorage.getItem('data_deadline') || null,
