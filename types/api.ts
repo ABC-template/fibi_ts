@@ -1,23 +1,12 @@
 // ============================================
 // types/api.ts
 // Типы для API запросов и ответов
+// Версия: 2.0.0 — удалены IExportRequest / IExportResponse (локальный экспорт без сервера)
+//                  и дубль IExportArchive (он в types/chat.ts)
 // ============================================
 
-import { IChat, IMessage, ICreateChatData, ICreateMessageData } from './chat';
+import { ICreateChatData, ICreateMessageData } from './chat';
 import { TopicId, UserLanguage, UUID, UserRole, ISODateString } from './common';
-
-export interface IExportArchive {
-  chat_id: UUID;
-  title: string;
-  topic_id: TopicId;
-  topic_name: string;
-  max_context: number;
-  user_renamed: boolean;
-  pinned: boolean;
-  created_at: string;
-  updated_at: string;
-  messages: IMessage[];
-}
 
 /** Запрос на стриминг */
 export interface IStreamRequest {
@@ -75,25 +64,6 @@ export interface IBatchRequest {
   maxContext?: number;
   userRenamed?: boolean;
   messages: ICreateMessageData[];
-}
-
-/** Экспорт */
-export interface IExportRequest {
-  chatHistories: Record<string, IChat[]>;
-  topicNames: Record<string, string>;
-  exportOptions?: {
-    part?: string;
-  };
-}
-
-/** Экспорт ответ */
-export interface IExportResponse {
-  success: boolean;
-  total_parts?: number;
-  current_part?: number;
-  total_messages?: number;
-  archive?: IChat[] | IExportArchive[];
-  error?: string;
 }
 
 /** Трекинг лимитов */
