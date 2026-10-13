@@ -1,7 +1,8 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.3.0 - очередь неотправленных сообщений: если сообщение (например, длинный
+// Версия: 4.4.0 - очередь и sync_token с привязкой к Telegram ID (user-storage)
+//          4.3.0 - очередь неотправленных сообщений: если сообщение (например, длинный
 //                 ответ ИИ) не дошло до облака из-за сети или сбоя сервера, оно
 //                 повторяется при появлении сети и раз в минуту
 //          4.2.0 - удаление сообщения: сначала сервер (409 — чат занят ответом или
@@ -12,12 +13,12 @@
 import { apiClient, ApiError } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
+import { userStorage, saveSyncToken } from '@/utils/user-storage';
 import { chatService } from './chats';
 import { uiRenderer } from '@/modules/ui/renderer';
 import type { UUID, MessageType, IMessage } from '@app-types';
 
-/** Очередь неотправленных сообщений (localStorage) */
-const OUTBOX_KEY = 'fibi_message_outbox';
+/** Очередь неотправленных сообщений (localStorage, своя у каждого аккаунта) */
 const OUTBOX_MAX = 200;
 const OUTBOX_MAX_ATTEMPTS = 30;
 const OUTBOX_RETRY_MS = 60_000;
@@ -31,10 +32,12 @@ interface IOutboxItem {
 export class MessageService {
   constructor() {
     // Остаток очереди с прошлого запуска — отправить, когда приложение загрузится
-    if (this._outboxRead().length > 0) {
+    // (читается позже: ключи прежних версий переносятся к аккаунту в initApp)
+    setTimeout(() => {
+      if (this._outboxRead().length === 0) return;
       this._bindOutbox();
-      setTimeout(() => { void this.flushOutbox(); }, 10_000);
-    }
+      void this.flushOutbox();
+    }, 10_000);
   }
 
   // ==========================================
@@ -42,10 +45,7 @@ export class MessageService {
   // ==========================================
 
   private _saveSyncToken(syncToken: string | null): void {
-    if (syncToken) {
-      localStorage.setItem('sync_token', syncToken);
-      console.log(`✅ sync_token обновлен после действия: ${syncToken.substring(0, 8)}...`);
-    }
+    saveSyncToken(syncToken);
   }
 
   // ==========================================
@@ -155,7 +155,7 @@ export class MessageService {
 
   private _outboxRead(): IOutboxItem[] {
     try {
-      const raw = localStorage.getItem(OUTBOX_KEY);
+      const raw = userStorage.get('fibi_message_outbox');
       const list = raw ? JSON.parse(raw) : [];
       return Array.isArray(list) ? list.filter((x) => x && x.chatId && x.messageId) : [];
     } catch {
@@ -165,8 +165,8 @@ export class MessageService {
 
   private _outboxWrite(list: IOutboxItem[]): void {
     try {
-      if (list.length === 0) localStorage.removeItem(OUTBOX_KEY);
-      else localStorage.setItem(OUTBOX_KEY, JSON.stringify(list.slice(-OUTBOX_MAX)));
+      if (list.length === 0) userStorage.remove('fibi_message_outbox');
+      else userStorage.set('fibi_message_outbox', JSON.stringify(list.slice(-OUTBOX_MAX)));
     } catch {
       // хранилище недоступно — повтора не будет, сообщение останется локально
     }
