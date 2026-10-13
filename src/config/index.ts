@@ -1,7 +1,8 @@
 // ============================================
 // src/config/index.ts
 // Экспорт центрального конфига и всех типов
-// Версия: 3.1.0 - без IExportRequest / IExportResponse; IExportArchiveMessage
+// Версия: 3.2.0 - без IBatchRequest
+//          3.1.0 - без IExportRequest / IExportResponse; IExportArchiveMessage
 //          3.0.1 - замена @types → @app-types
 // ============================================
 
@@ -73,7 +74,6 @@ export type {
   ICreateChatResponse,
   IChatActionRequest,
   IMessageActionRequest,
-  IBatchRequest,
   IUsageLimit,
 } from '@app-types';
 
