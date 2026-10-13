@@ -4,13 +4,15 @@
 // Тексты чатов уже лежат на устройстве, а медиа генераций — только в облаке.
 // Здесь: раз в день предлагаем сохранить все такие файлы в приложении
 // (IndexedDB, services/media-vault.ts), чтобы результаты остались доступны.
-// Версия: 1.0.0
+// Версия: 1.1.0 - срок облака и отметка о показе — с привязкой к Telegram ID (user-storage)
+//          1.0.0
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { resolveMediaUrls } from '@/services/generation-media';
 import { isSavedLocally, saveFromUrl } from '@/services/media-vault';
+import { userStorage } from '@/utils/user-storage';
 
 interface IRescueItem {
   path: string;
@@ -18,7 +20,6 @@ interface IRescueItem {
   size: number;
 }
 
-const OFFER_KEY = 'media_rescue_offered_on';
 
 /** Все медиа генераций из чатов на устройстве */
 export function collectGenerationMedia(): IRescueItem[] {
@@ -84,16 +85,16 @@ function formatSize(bytes: number): string {
 export async function offerMediaRescue(force = false): Promise<void> {
   try {
     if (userStore.role !== 'trial') return;
-    const deadlineRaw = localStorage.getItem('data_deadline');
+    const deadlineRaw = userStorage.get('data_deadline');
     const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
     if (!deadline || Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) return;
 
     const today = new Date().toISOString().slice(0, 10);
-    if (!force && localStorage.getItem(OFFER_KEY) === today) return;
+    if (!force && userStorage.get('media_rescue_offered_on') === today) return;
 
     const items = await unsavedItems();
     if (items.length === 0) return;
-    localStorage.setItem(OFFER_KEY, today);
+    userStorage.set('media_rescue_offered_on', today);
 
     const total = items.reduce((sum, i) => sum + i.size, 0);
     const modalManager = (window as any).modalManager;
