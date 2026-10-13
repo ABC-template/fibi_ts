@@ -10,9 +10,13 @@
 //        amount со знаком: >0 начислить, <0 списать (не ниже нуля); tokens — постоянная энергия
 //   POST { action: 'reset_checkin', user_id }
 //        → вход «как вчера»: при следующем запуске снова ежедневный бонус и чекин (для тестов)
+//   POST { action: 'economy_lock', user_id, locked: boolean }
+//        → заморозка монет (economy_locked); полная блокировка — /admin/economy/blocks
 //
 // Вся логика изменения — в SQL (admin_set_role, admin_adjust_*), с записью в system_logs.
-// Версия: 1.0.0
+// Версия: 1.1.0 — в списке: blocked / block_reason / block_expires_at (user_blocks),
+//                  channel_member, is_admin_id; действие economy_lock
+//          1.0.0
 // ============================================
 
 import { authenticate, isAdminTelegramId } from '../../_lib/auth';
@@ -35,6 +39,7 @@ const USER_FIELDS = [
   'streak',
   'last_checkin_date',
   'trial_used',
+  'channel_member',
   'created_at',
 ].join(',');
 
@@ -83,9 +88,34 @@ export default async function handler(request: Request): Promise<Response> {
         cfg
       );
 
+      const list: any[] = Array.isArray(users) ? users : [];
+
+      // Действующие блокировки (user_blocks) — одним запросом на страницу
+      const ids = list.map((u) => toUserId(u.telegram_id)).filter(Boolean);
+      const blockMap = new Map<number, any>();
+      if (ids.length > 0) {
+        const nowIso = encodeURIComponent(new Date().toISOString());
+        const blocks = await supabaseFetch(
+          `user_blocks?user_id=in.(${ids.join(',')})&is_active=eq.true` +
+            `&or=(expires_at.is.null,expires_at.gt.${nowIso})&select=user_id,reason,expires_at`,
+          { method: 'GET' },
+          cfg
+        );
+        for (const b of Array.isArray(blocks) ? blocks : []) blockMap.set(Number(b.user_id), b);
+      }
+
       return jsonResponse({
         success: true,
-        users: Array.isArray(users) ? users : [],
+        users: list.map((u) => {
+          const b = blockMap.get(Number(u.telegram_id));
+          return {
+            ...u,
+            blocked: !!b,
+            block_reason: b?.reason ?? null,
+            block_expires_at: b?.expires_at ?? null,
+            is_admin_id: isAdminTelegramId(Number(u.telegram_id)),
+          };
+        }),
         admin_ids: [adminId],
       });
     }
@@ -142,6 +172,14 @@ export default async function handler(request: Request): Promise<Response> {
       );
       if (!result?.success) return errorResponse(result?.error || 'Не удалось изменить баланс', 400);
       return jsonResponse({ success: true, ...result });
+    }
+
+    // ---------- Заморозка экономики (монеты) ----------
+    if (body.action === 'economy_lock') {
+      if (typeof body.locked !== 'boolean') return errorResponse('locked: true или false', 400);
+      const result = await supabaseRPC('toggle_user_lock', { p_user_id: userId, p_locked: body.locked }, cfg);
+      if (!result?.success) return errorResponse(result?.error || 'Не удалось изменить', 400);
+      return jsonResponse({ success: true, locked: result.locked });
     }
 
     // ---------- Сброс ежедневного входа (тесты) ----------
