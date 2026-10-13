@@ -1,5 +1,7 @@
 // ============================================
 // src/modules/admin/tabs/AdminSettingsTab.ts
+// Версия: 1.1.0 — галочка «Только для подписчиков канала» (channel_gate_enabled):
+//                  без подписки — заглушка «Подпишитесь», без галочки — вход как обычно
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
@@ -68,6 +70,12 @@ export class AdminSettingsTab implements IAdminTab {
             <span>Whitelist включён</span>
             <input type="checkbox" id="set-whitelist" ${s.whitelist_enabled ? 'checked' : ''} style="width:18px;height:18px">
           </label>
+          <label style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px">
+            <span>📢 Только для подписчиков канала
+              <span style="display:block;font-size:11px;color:var(--app-text-tertiary)">Без подписки — заглушка «Подпишитесь». Бот должен быть админом канала (CHANNEL_ID)</span>
+            </span>
+            <input type="checkbox" id="set-channel-gate" ${s.channel_gate_enabled ? 'checked' : ''} style="width:18px;height:18px;flex-shrink:0">
+          </label>
         </div>
 
         <div style="margin-top:20px;display:flex;gap:8px">
@@ -92,6 +100,7 @@ export class AdminSettingsTab implements IAdminTab {
         bonus_coins_per_day: parseInt((document.getElementById('set-bonus-coins') as HTMLInputElement)?.value || '0', 10),
         exchange_enabled: (document.getElementById('set-exchange-enabled') as HTMLInputElement)?.checked ?? false,
         whitelist_enabled: (document.getElementById('set-whitelist') as HTMLInputElement)?.checked ?? false,
+        channel_gate_enabled: (document.getElementById('set-channel-gate') as HTMLInputElement)?.checked ?? false,
       };
 
       const res = await apiClient.post('/admin/economy/settings', payload);
