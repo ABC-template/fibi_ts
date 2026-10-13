@@ -1,13 +1,16 @@
 // ============================================
 // api/admin/agents/index.ts
 // Описание: Список агентов (GET) и создание нового агента (POST)
-// Версия: 1.3.0 — принимаем и сохраняем context_length модели (нужен для
+// Версия: 1.4.0 — allowed_tiers через normalizeAllowedTiers (trial не сохраняется);
+//                  без устаревших allowed_roles / min_pro_tier
+//          1.3.0 — принимаем и сохраняем context_length модели (нужен для
 //                  динамической проверки размера файлов в chat/stream.ts)
 // ============================================
 
 import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { normalizeAllowedTiers } from '../../_lib/agent-access';
 import type { IAiAgentInput } from '../../../types/agents';
 
 export const config = { runtime: 'edge' };
@@ -72,11 +75,6 @@ export default async function handler(request: Request): Promise<Response> {
       if (!body.system_prompt?.trim()) {
         return errorResponse('System prompt is required', 400);
       }
-      // allowed_roles больше не используется в проверке доступа (см.
-      // api/_lib/agent-access.ts v2.0.0) — доступ теперь определяется
-      // ролью (admin/creator) и min_pro_tier. Колонка в БД осталась
-      // NOT NULL, поэтому шлём пустой массив, если фронт её не передал.
-
       // Только creator может создавать системных агентов
       const makeSystem = body.is_system === true;
       if (makeSystem && !isCreator(auth.userId)) {
@@ -93,9 +91,7 @@ export default async function handler(request: Request): Promise<Response> {
         system_prompt: body.system_prompt.trim(),
         markup_coefficient: Number(body.markup_coefficient) || 3.0,
         min_charge: Number(body.min_charge) ?? 50,
-        allowed_roles: Array.isArray(body.allowed_roles) ? body.allowed_roles : [],
-        min_pro_tier: body.min_pro_tier || null,
-        allowed_tiers: Array.isArray(body.allowed_tiers) && body.allowed_tiers.length > 0 ? body.allowed_tiers : null,
+        allowed_tiers: normalizeAllowedTiers(body.allowed_tiers) ?? null,
         markup_by_tier: body.markup_by_tier && typeof body.markup_by_tier === 'object' ? body.markup_by_tier : null,
         welcome_message: body.welcome_message && typeof body.welcome_message === 'object' ? body.welcome_message : null,
         inject_balance: body.inject_balance === true,
