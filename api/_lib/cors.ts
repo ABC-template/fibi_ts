@@ -1,8 +1,12 @@
 // ============================================
 // api/_lib/cors.ts
 // Описание: CORS-заголовки для всех Edge-функций
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.1.0 - errorResponse добавляет code для отказа в доступе (blocked /
+//                 channel_required) — по нему приложение показывает заглушку
+//          2.0.0 - TypeScript
 // ============================================
+
+import { ACCESS_ERROR_CODES } from './access-messages';
 
 export const corsHeaders = {
   'Content-Type': 'application/json',
@@ -63,5 +67,6 @@ export function errorResponse(
   status: number = 400,
   extraHeaders: Record<string, string> = {}
 ): Response {
-  return jsonResponse({ error: message }, status, extraHeaders);
+  const code = ACCESS_ERROR_CODES[message];
+  return jsonResponse(code ? { error: message, code } : { error: message }, status, extraHeaders);
 }
