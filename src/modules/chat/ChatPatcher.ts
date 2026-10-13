@@ -1,11 +1,13 @@
 // ============================================
 // src/modules/chat/ChatPatcher.ts
 // Описание: Точечные обновления DOM для чата
-// Версия: 1.2.0 - decorator для сообщений с metadata (генерации), updateMessage
+// Версия: 1.3.0 - Markdown только через utils/html (без DOMPurify — текст, не сырой HTML)
+//          1.2.0 - decorator для сообщений с metadata (генерации), updateMessage
 //          1.1.1 - замена @types → @app-types
 // ============================================
 
 import { uiRenderer } from '@/modules/ui/renderer';
+import { renderMarkdown } from '@/utils/html';
 import type { IMessage, UUID } from '@app-types';
 
 export type MessageDecorator = (message: IMessage, element: HTMLElement) => void;
@@ -145,34 +147,8 @@ export class ChatPatcher {
     // Находим контейнер с содержимым
     const content = element.querySelector('.msg-content') || element;
 
-    // Форматируем через marked
-    if (typeof (window as any).marked !== 'undefined') {
-      try {
-        let html = (window as any).marked.parse(text);
-        
-        // Санитайзинг через DOMPurify
-        if (typeof (window as any).DOMPurify !== 'undefined') {
-          html = (window as any).DOMPurify.sanitize(html, {
-            ALLOWED_TAGS: [
-              'p', 'br', 'strong', 'em', 'u', 'i', 'b',
-              'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-              'ul', 'ol', 'li', 'blockquote',
-              'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-              'span', 'div', 'img', 'hr', 'sub', 'sup'
-            ],
-            ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
-            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
-          });
-        }
-        
-        content.innerHTML = html;
-      } catch (err) {
-        console.warn('⚠️ [ChatPatcher] Ошибка форматирования через marked:', err);
-        content.textContent = text;
-      }
-    } else {
-      content.textContent = text;
-    }
+    // Markdown → очищенный HTML (без DOMPurify — просто текст)
+    content.innerHTML = renderMarkdown(text);
 
     // Обрабатываем кнопки копирования кода
     this._setupCodeCopyButtons(element);
