@@ -1,7 +1,8 @@
 // ============================================
 // src/utils/validators.ts
 // Клиентские валидации
-// Версия: 2.2.0 - sanitizeHTML через utils/html (общие правила, без style/id/img)
+// Версия: 2.2.0 - sanitizeHTML через utils/html (общие правила, без style/id/img);
+//                 длина сообщения до 100 000 (как на сервере)
 //          2.1.0 - добавлены window
 // ============================================
 
@@ -27,7 +28,7 @@ export function isValidTopic(topic: string): boolean {
 /**
  * Проверка длины сообщения
  */
-export function isValidMessageLength(text: string, maxLength: number = 10000): boolean {
+export function isValidMessageLength(text: string, maxLength: number = 100000): boolean {
     if (!text || typeof text !== 'string') return false;
     const length = text.trim().length;
     return length > 0 && length <= maxLength;
