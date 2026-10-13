@@ -5,8 +5,14 @@
 // подписки облачные файлы удаляются через 7 дней — как и облачные чаты, —
 // а сохранённые здесь продолжают открываться (как локальные чаты trial).
 // Ключ — storage_path файла; хранится Blob и его тип.
-// Версия: 1.0.0
+// Файлы разных аккаунтов на одном устройстве разделены по владельцу пути:
+// storage_path начинается с Telegram ID («<id>/…» или «in/<id>/…»), чужие
+// файлы не видны, не открываются, не считаются в объёме и не сохраняются.
+// Версия: 1.1.0 - изоляция аккаунтов по владельцу пути
+//          1.0.0
 // ============================================
+
+import { getTelegramUserId } from '@/utils/user-storage';
 
 const DB_NAME = 'fibi-media';
 const DB_VERSION = 1;
@@ -66,26 +72,38 @@ function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequ
   );
 }
 
-/** Список сохранённых путей (один раз за сессию, дальше — в памяти) */
+/** Путь принадлежит текущему аккаунту */
+function isOwnPath(path: string): boolean {
+  const id = getTelegramUserId();
+  if (!id || typeof path !== 'string') return false;
+  return path.startsWith(`${id}/`) || path.startsWith(`in/${id}/`);
+}
+
+/** Список сохранённых путей текущего аккаунта (один раз за сессию, дальше — в памяти) */
 async function loadIndex(): Promise<void> {
   if (indexLoaded) return;
   const keys = await tx<IDBValidKey[]>('readonly', (s) => s.getAllKeys());
-  for (const k of keys || []) knownPaths.add(String(k));
+  for (const k of keys || []) {
+    const path = String(k);
+    if (isOwnPath(path)) knownPaths.add(path);
+  }
   indexLoaded = true;
 }
 
 export async function isSavedLocally(path: string): Promise<boolean> {
+  if (!isOwnPath(path)) return false;
   await loadIndex();
   return knownPaths.has(path);
 }
 
 /** Синхронная проверка (после первой загрузки индекса) */
 export function isSavedLocallySync(path: string): boolean {
-  return knownPaths.has(path);
+  return isOwnPath(path) && knownPaths.has(path);
 }
 
 /** objectURL сохранённого файла или null */
 export async function getLocalUrl(path: string): Promise<string | null> {
+  if (!isOwnPath(path)) return null;
   const cached = objectUrls.get(path);
   if (cached) return cached;
   await loadIndex();
@@ -103,6 +121,7 @@ export async function getLocalUrl(path: string): Promise<string | null> {
 
 /** Сохранить файл в приложении, скачав его по (подписанной) ссылке */
 export async function saveFromUrl(path: string, url: string, mime?: string): Promise<boolean> {
+  if (!isOwnPath(path)) return false;
   try {
     const res = await fetch(url);
     if (!res.ok) return false;
@@ -115,6 +134,7 @@ export async function saveFromUrl(path: string, url: string, mime?: string): Pro
 }
 
 export async function saveBlob(path: string, blob: Blob, mime?: string): Promise<boolean> {
+  if (!isOwnPath(path)) return false;
   await requestPersistence();
   const entry: IVaultEntry = {
     path,
@@ -130,6 +150,7 @@ export async function saveBlob(path: string, blob: Blob, mime?: string): Promise
 }
 
 export async function removeLocal(path: string): Promise<void> {
+  if (!isOwnPath(path)) return;
   await tx('readwrite', (s) => s.delete(path));
   knownPaths.delete(path);
   const url = objectUrls.get(path);
@@ -139,10 +160,10 @@ export async function removeLocal(path: string): Promise<void> {
   }
 }
 
-/** Сколько занято (байт) и сколько файлов */
+/** Сколько занято файлами текущего аккаунта (байт) и сколько файлов */
 export async function vaultUsage(): Promise<{ files: number; bytes: number }> {
   const all = await tx<IVaultEntry[]>('readonly', (s) => s.getAll());
-  const list = all || [];
+  const list = (all || []).filter((e) => isOwnPath(e.path));
   return { files: list.length, bytes: list.reduce((sum, e) => sum + (e.size || 0), 0) };
 }
 
