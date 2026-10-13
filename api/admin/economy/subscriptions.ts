@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/economy/subscriptions.ts
 // Управление тарифами (подписки + лимиты токенов)
-// Версия: 2.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+// Версия: 2.2.0 — без is_trial (пробного периода больше нет; бесплатный тариф — tier_key 'trial')
+//          2.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
 //          2.0.0 — bonus_tokens_per_day + daily_spend_limit
 // ============================================
 
@@ -74,7 +75,6 @@ export default async function handler(request: Request): Promise<Response> {
             bonus_tokens_per_day: Number(body.bonus_tokens_per_day) || 0,
             daily_spend_limit: Number(body.daily_spend_limit) || 0,
             is_active: body.is_active !== undefined ? !!body.is_active : true,
-            is_trial: !!body.is_trial,
             is_one_time: !!body.is_one_time,
             description: body.description || null,
             sort_order: Number(body.sort_order) || 0,
@@ -118,7 +118,6 @@ export default async function handler(request: Request): Promise<Response> {
       if (body.bonus_tokens_per_day !== undefined) update.bonus_tokens_per_day = Number(body.bonus_tokens_per_day) || 0;
       if (body.daily_spend_limit !== undefined) update.daily_spend_limit = Number(body.daily_spend_limit) || 0;
       if (body.is_active !== undefined) update.is_active = !!body.is_active;
-      if (body.is_trial !== undefined) update.is_trial = !!body.is_trial;
       if (body.is_one_time !== undefined) update.is_one_time = !!body.is_one_time;
       if (body.description !== undefined) update.description = body.description;
       if (body.sort_order !== undefined) update.sort_order = Number(body.sort_order) || 0;
