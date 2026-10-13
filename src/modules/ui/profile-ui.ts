@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/ui/profile-ui.ts
 // Работа с модалками (Избранное, Корзина) + История чатов
-// Версия: 7.2.0 - с использованием конфига
+// Версия: 7.3.0 - текст сообщений, названия чатов и превью экранируются; кнопки
+//                 избранного и корзины — через делегирование (id больше не
+//                 вставляются в onclick)
+//          7.2.0 - с использованием конфига
 // ============================================
 
 import { chatStore } from '@/store/ChatStore';
@@ -9,6 +12,7 @@ import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
 import { navigationState } from '@/core/navigation-state';
 import { modalManager } from '@/core/modal-manager';
+import { escapeHtml } from '@/utils/html';
 import { 
   getActiveTopics, 
   getTopicLabel, 
@@ -35,7 +39,34 @@ export class ProfileUI {
 
   constructor() {
     this._subscribeToEvents();
+    this._bindModalActions();
     console.log('✅ ProfileUI v7.2.0 загружен');
+  }
+
+  /** Кнопки в модалках «Избранное» и «Корзина»: один обработчик на документ */
+  private _bindModalActions(): void {
+    document.addEventListener('click', (e) => {
+      const el = (e.target as HTMLElement | null)?.closest?.('[data-pui-action]') as HTMLElement | null;
+      if (!el) return;
+      const { puiAction, chatId, msgId, topic } = el.dataset;
+      if (!chatId) return;
+
+      switch (puiAction) {
+        case 'fav-open':
+          this._openChatFromFavorite(chatId as UUID, topic as TopicId, msgId as UUID);
+          break;
+        case 'fav-remove':
+          e.stopPropagation();
+          if (msgId) void this._unfavorite(chatId as UUID, msgId as UUID);
+          break;
+        case 'trash-restore':
+          void this._restoreFromTrash(chatId as UUID);
+          break;
+        case 'trash-delete':
+          void this._permanentDelete(chatId as UUID);
+          break;
+      }
+    });
   }
 
   private _subscribeToEvents(): void {
@@ -137,13 +168,13 @@ export class ProfileUI {
           cursor:pointer;
           transition:all 0.2s;
           gap:12px;
-        " onclick="window.profileUI._openChatFromFavorite('${msg.chat_id}', '${msg.topic}', '${msg.id}')">
+        " data-pui-action="fav-open" data-chat-id="${escapeHtml(msg.chat_id)}" data-topic="${escapeHtml(msg.topic)}" data-msg-id="${escapeHtml(msg.id)}">
           <div style="flex:1;min-width:0;">
             <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--app-text-tertiary);margin-bottom:4px;font-weight:600;">
-              <span>${getTopicEmoji(msg.topic)} ${topicLabel}</span>
-              <span>📂 ${msg.chat_title}</span>
+              <span>${escapeHtml(getTopicEmoji(msg.topic))} ${escapeHtml(topicLabel)}</span>
+              <span>📂 ${escapeHtml(msg.chat_title)}</span>
             </div>
-            <div style="color:var(--app-text-primary);line-height:1.3;font-size:13px;word-break:break-word;">${shortText}</div>
+            <div style="color:var(--app-text-primary);line-height:1.3;font-size:13px;word-break:break-word;">${escapeHtml(shortText)}</div>
           </div>
           <button class="fav-unfav-btn" style="
             background:transparent;
@@ -154,7 +185,7 @@ export class ProfileUI {
             opacity:0.5;
             transition:all 0.2s;
             flex-shrink:0;
-          " onclick="event.stopPropagation(); window.profileUI._unfavorite('${msg.chat_id}', '${msg.id}')">
+          " data-pui-action="fav-remove" data-chat-id="${escapeHtml(msg.chat_id)}" data-msg-id="${escapeHtml(msg.id)}">
             ❤️
           </button>
         </div>
@@ -279,19 +310,17 @@ export class ProfileUI {
         ">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:500;font-size:13px;color:var(--app-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-              ${chat.title || 'Без названия'}
+              ${escapeHtml(chat.title || 'Без названия')}
             </div>
             <div style="font-size:11px;color:var(--app-text-tertiary);">
-              ${topicLabel} • ${dateStr} • ${msgCount} сообщений
+              ${escapeHtml(topicLabel)} • ${escapeHtml(dateStr)} • ${msgCount} сообщений
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
-            <button class="btn" style="padding:4px 10px;font-size:11px;border-radius:6px;background:#27ae60;color:white;border:none;cursor:pointer;"
-                    onclick="window.profileUI._restoreFromTrash('${chat.id}')">
+            <button class="btn" data-pui-action="trash-restore" data-chat-id="${escapeHtml(chat.id)}" style="padding:4px 10px;font-size:11px;border-radius:6px;background:#27ae60;color:white;border:none;cursor:pointer;">
               ↩️
             </button>
-            <button class="btn" style="padding:4px 10px;font-size:11px;border-radius:6px;background:#e74c3c;color:white;border:none;cursor:pointer;"
-                    onclick="window.profileUI._permanentDelete('${chat.id}')">
+            <button class="btn" data-pui-action="trash-delete" data-chat-id="${escapeHtml(chat.id)}" style="padding:4px 10px;font-size:11px;border-radius:6px;background:#e74c3c;color:white;border:none;cursor:pointer;">
               🗑️
             </button>
           </div>
@@ -559,7 +588,7 @@ export class ProfileUI {
             overflow: hidden;
             text-overflow: ellipsis;
           ">
-            ${chat.title || 'Без названия'}
+            ${escapeHtml(chat.title || 'Без названия')}
           </div>
           <div style="
             font-size: 12px;
@@ -568,7 +597,7 @@ export class ProfileUI {
             overflow: hidden;
             text-overflow: ellipsis;
           ">
-            ${preview}
+            ${escapeHtml(preview)}
           </div>
         </div>
         <div style="
@@ -577,7 +606,7 @@ export class ProfileUI {
           flex-shrink: 0;
           margin-left: 12px;
         ">
-          ${timeStr}
+          ${escapeHtml(timeStr)}
         </div>
       `;
 
