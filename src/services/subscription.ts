@@ -1,7 +1,9 @@
 // ============================================
 // src/services/subscription.ts
 // Сервис для работы с подписками
-// Версия: 1.1.0 — после активации пробной подписки доступ перепроверяется на сервере:
+// Версия: 1.2.0 — подписка пользователя берётся из данных входа (эндпоинта
+//                  /subscription/user нет); убран cancelSubscription (эндпоинта нет)
+//          1.1.0 — после активации пробной подписки доступ перепроверяется на сервере:
 //                  синхронизация и Realtime включаются сразу, локальные чаты выгружаются
 //          1.0.0
 // ============================================
@@ -137,36 +139,22 @@ export class SubscriptionService {
   }
 
   /**
-   * Получить активную подписку пользователя
+   * Текущая подписка пользователя — из данных входа (auth/check). Раньше запрашивался
+   * несуществующий /subscription/user, и проверка разового тарифа не работала.
+   * Окончательно разовый тариф проверяет сервер при покупке.
    */
   async getUserSubscription(): Promise<IUserSubscription | null> {
-    if (!this.userId) return null;
-
-    try {
-      const response = await apiClient.get(`/subscription/user/${this.userId}`);
-      if (response.success && response.subscription) {
-        return response.subscription;
-      }
-      return null;
-    } catch (err) {
-      console.error('[SubscriptionService] Error getting user subscription:', err);
-      return null;
-    }
-  }
-
-  /**
-   * Отменить подписку (отключить автопродление)
-   */
-  async cancelSubscription(): Promise<boolean> {
-    if (!this.userId) return false;
-
-    try {
-      const response = await apiClient.post('/subscription/cancel', { user_id: this.userId });
-      return response.success === true;
-    } catch (err) {
-      console.error('[SubscriptionService] Error canceling subscription:', err);
-      return false;
-    }
+    const tierKey = userStore.subscriptionTier;
+    const until = userStore.premiumUntil;
+    if (!tierKey || tierKey === 'trial' || !until) return null;
+    return {
+      id: '',
+      user_id: userStore.userId || 0,
+      tier_key: tierKey,
+      starts_at: '',
+      expires_at: until,
+      is_active: new Date(until).getTime() > Date.now(),
+    };
   }
 }
 
