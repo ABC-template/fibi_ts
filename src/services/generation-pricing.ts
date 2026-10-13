@@ -4,17 +4,16 @@
 // Формула повторяет серверную (api/_lib/openrouter-media.ts: estimateUsd/energyForUsd):
 //   $ по прайсу агента × энергия за $ × коэффициент, не меньше min_charge.
 // Это оценка до старта; списывается фактическая стоимость после успеха.
-// Версия: 1.0.0
+// Версия: 1.1.0 — наценку выбирает сервер (agent.markup из GET /api/agents),
+//                  таблица наценок по тарифам клиенту не отдаётся
 // ============================================
 
 import type { IGenerationConfig } from '../../types/generation';
+import type { IPublicAgent } from '../../types/agents';
 
-export function markupForTier(agent: any, tier: string | null | undefined): number {
-  const key = tier || 'trial';
-  const byTier = Number(agent?.markup_by_tier?.[key]);
-  if (Number.isFinite(byTier) && byTier > 0) return byTier;
-  const fallback = Number(agent?.markup_coefficient);
-  return Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
+function agentMarkup(agent: Pick<IPublicAgent, 'markup'> | null | undefined): number {
+  const m = Number(agent?.markup);
+  return Number.isFinite(m) && m > 0 ? m : 1;
 }
 
 /** Цена секунды: учитывает звук. Если звук не задан, а у модели есть цена со звуком — берём бóльшую (оценка с запасом). */
@@ -50,12 +49,11 @@ function estimateUsd(gen: IGenerationConfig, params: Record<string, any>): numbe
 }
 
 export function estimateEnergy(
-  agent: any,
-  tier: string | null | undefined,
+  agent: Pick<IPublicAgent, 'markup' | 'min_charge' | 'generation_config'> | null | undefined,
   params: Record<string, any>
 ): number {
   const gen: IGenerationConfig = agent?.generation_config || {};
-  const markup = markupForTier(agent, tier);
+  const markup = agentMarkup(agent);
   const min = Number(agent?.min_charge) || 1;
   const floor = Math.max(Math.ceil(min * markup), min);
 
