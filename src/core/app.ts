@@ -1,7 +1,9 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.4.0 — заглушка доступа (src/ui/access-gate.ts): блокировка и подписка на
+// Версия: 13.5.0 — история чатов загружается из IndexedDB (await chatStore.init())
+//                  до сайдбара и модулей
+//          13.4.0 — заглушка доступа (src/ui/access-gate.ts): блокировка и подписка на
 //                  канал по ответу auth/check, вместо старого экрана «гостя»
 //          13.3.0 — переходы trial ↔ PRO через access-transition (раньше не срабатывали:
 //                  роль сравнивалась уже перезаписанной, а условие ждало sync_token = null)
@@ -401,6 +403,10 @@ async function initApp(): Promise<void> {
     // ✅ ШАГ 0: НАСТРОЙКА TELEGRAM
     setupTelegramWebApp();
 
+    // ✅ ИСТОРИЯ ЧАТОВ (IndexedDB) — до любой работы с чатами
+    updateSplashProgress(5, '💾 Загрузка истории...');
+    await chatStore.init();
+
     // ✅ ШАГ 1
     updateSplashProgress(10, '📦 Регистрация модулей...');
     registerModules();
@@ -440,7 +446,6 @@ async function initApp(): Promise<void> {
 
     // ✅ ШАГ 8
     updateSplashProgress(50, '💾 Загрузка данных...');
-    chatStore.load();
     userStore.load();
     organizerStore.load();
     questsStore.load();
