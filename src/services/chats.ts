@@ -1,7 +1,8 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.6.0 - «Отменить» при выгрузке больше не «откатывает»: откат удалял и чаты,
+// Версия: 3.7.0 - sync_token с привязкой к Telegram ID (user-storage); удалены флаги upload_*
+//          3.6.0 - «Отменить» при выгрузке больше не «откатывает»: откат удалял и чаты,
 //                 которые уже были в облаке, и не работал (удаление навсегда требует
 //                 корзины); загруженное остаётся в облаке, остальное — на устройстве
 //          3.5.0 - выгрузка в облако берёт только несинхронизированные (локальные) чаты
@@ -16,6 +17,7 @@
 import { apiClient, ApiError } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
+import { saveSyncToken } from '@/utils/user-storage';
 import type { IChat, IMessage, MessageType, TopicId, UUID } from '@app-types';
 
 export class ChatService {
@@ -26,10 +28,7 @@ export class ChatService {
   // ==========================================
 
   private _saveSyncToken(syncToken: string | null): void {
-    if (syncToken) {
-      localStorage.setItem('sync_token', syncToken);
-      console.log(`✅ sync_token обновлен после действия: ${syncToken.substring(0, 8)}...`);
-    }
+    saveSyncToken(syncToken);
   }
 
   // ==========================================
@@ -604,7 +603,6 @@ export class ChatService {
     let uploaded = 0;
     let currentIndex = 0;
 
-    chatStore.setUploadProgress(0, total);
 
     while (currentIndex < localChats.length) {
       const chat = localChats[currentIndex];
@@ -620,7 +618,6 @@ export class ChatService {
 
         uploaded++;
         currentIndex++;
-        chatStore.setUploadProgress(currentIndex, total);
         this.updateProgress(uploaded, total);
 
       } catch (error) {
@@ -635,13 +632,11 @@ export class ChatService {
           continue;
         } else if (action === 'Пропустить') {
           currentIndex++;
-          chatStore.setUploadProgress(currentIndex, total);
           continue;
         } else {
           // Остановка: уже загруженные чаты остаются в облаке (это те же данные, что и
           // на устройстве), остальные остаются только на этом устройстве
           this.hideProgressModal();
-          chatStore.clearUploadFlags();
           if ((window as any).uiRenderer) {
             (window as any).uiRenderer.showToast(
               `⏸️ Загрузка остановлена: в облаке ${uploaded} из ${total}. Остальные чаты — только на этом устройстве.`,
@@ -655,7 +650,6 @@ export class ChatService {
     }
 
     this.hideProgressModal();
-    chatStore.clearUploadFlags();
 
     if ((window as any).uiRenderer) {
       (window as any).uiRenderer.showToast(`✅ Все ${total} чатов успешно загружены в облако!`, 'success', 3000);
