@@ -1,7 +1,8 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 2.8.0 — очистка кэша без clearJWT (JWT больше нет); пункт «Админ-панель» — по флагу сервера
+// Версия: 2.9.0 — название и превью чата экранируются (XSS через название/текст сообщения)
+//          2.8.0 — очистка кэша без clearJWT (JWT больше нет); пункт «Админ-панель» — по флагу сервера
 //          2.7.0 — пункт «Админ-панель» показывается по Telegram ID (не по роли)
 //          2.6.1 — нельзя удалить чат, пока в нём идёт генерация
 //          2.6.0 — добавлен пункт "ИИ-агенты"
@@ -17,6 +18,7 @@ import { modalManager } from '@/core/modal-manager';
 import { navigationState } from '@/core/navigation-state';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { profileUI } from '@/modules/ui/profile-ui';
+import { escapeHtml } from '@/utils/html';
 import type { TopicId, IChat } from '@app-types';
 
 const MAX_PINNED_CHATS = 10;
@@ -232,8 +234,8 @@ function createChatItem(chat: any): HTMLElement {
     const infoDiv = document.createElement('div');
     infoDiv.className = 'chat-info';
     infoDiv.innerHTML = `
-        <div class="chat-title">${chat.title}</div>
-        <div class="chat-preview">${preview}</div>
+        <div class="chat-title">${escapeHtml(chat.title)}</div>
+        <div class="chat-preview">${escapeHtml(preview)}</div>
     `;
 
     const menuContainer = createChatMenu(chat.id, chat.title, chat.pinned);
