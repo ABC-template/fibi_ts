@@ -1,7 +1,11 @@
 // ============================================
 // src/modules/quests/QuestsModule.ts
 // All quests 
-// Версия: 3.3.0 - FIXED: все ошибки типов
+// Версия: 3.4.0 - спонсорские задания: «Перейти» открывает канал спонсора, «Проверить»
+//                 показывает честный итог (подтверждено / засчитается позже / на проверке /
+//                 не подписан); раньше кнопка ничего не открывала, а тост всегда писал
+//                 «Подписка подтверждена»; названия и описания экранируются
+//          3.3.0 - FIXED: все ошибки типов
 // ============================================
 
 import './quests.css';
@@ -11,6 +15,16 @@ import { eventBus } from '@/core/event-bus';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { userStore } from '@/store/UserStore';
 import type { IUserQuest } from '@/store/QuestsStore';
+import { escapeHtml } from '@/utils/html';
+
+/** Ссылка на канал спонсора: '@name', 't.me/name' или https-ссылка */
+function sponsorUrl(target: string | null | undefined): string | null {
+  const s = String(target || '').trim();
+  if (/^@[A-Za-z0-9_]{4,64}$/.test(s)) return `https://t.me/${s.slice(1)}`;
+  if (/^t\.me\//i.test(s)) return `https://${s}`;
+  if (/^https:\/\//i.test(s)) return s;
+  return null;
+}
 
 type QuestTab = 'daily' | 'sponsor' | 'event';
 
@@ -191,8 +205,8 @@ export class QuestsModule {
       return obj[lang] || obj['ru'] || Object.values(obj)[0] || '';
     };
 
-    const title = t(quest.title);
-    const description = quest.description ? t(quest.description) : '';
+    const title = escapeHtml(t(quest.title));
+    const description = quest.description ? escapeHtml(t(quest.description)) : '';
     const progress = Math.min(quest.progress / quest.target * 100, 100);
     const isCompleted = quest.completed && quest.claimed;
     const isUnlocked = quest.completed && !quest.claimed;
@@ -238,10 +252,14 @@ export class QuestsModule {
 
     // ✅ ЛОГИКА КНОПОК ДЛЯ СПОНСОРСКИХ КВЕСТОВ
     if (quest.type === 'sponsor') {
-      if (quest.status === 'pending') {
+      if (quest.status === 'pending' || quest.status === 'rejected') {
+        const link = sponsorUrl(quest.sponsor_target);
         actionButton = `
-          <button class="quests-action-btn primary" onclick="window.questsModule.submitProof('${quest.user_quest_id}')">
-            📢 Подписаться
+          ${link ? `<button class="quests-action-btn primary" onclick="window.questsModule.openSponsor('${quest.user_quest_id}')">
+            📢 Перейти
+          </button>` : ''}
+          <button class="quests-action-btn ${link ? '' : 'primary'}" onclick="window.questsModule.submitProof('${quest.user_quest_id}')">
+            ✅ Проверить
           </button>
         `;
       } else if (quest.status === 'submitted') {
@@ -337,21 +355,56 @@ export class QuestsModule {
     }
   }
 
+  /** Открыть канал спонсора (внутри Telegram) */
+  openSponsor(userQuestId: string): void {
+    const quest = this.questsStore.getQuestsByType('sponsor').find((q) => q.user_quest_id === userQuestId);
+    const url = sponsorUrl(quest?.sponsor_target);
+    if (!url) {
+      this.uiRenderer.showToast('⚠️ Ссылка на канал не указана', 'error', 2000);
+      return;
+    }
+    const tg = (window as any).Telegram?.WebApp;
+    try {
+      if (/^https:\/\/t\.me\//i.test(url) && tg?.openTelegramLink) tg.openTelegramLink(url);
+      else if (tg?.openLink) tg.openLink(url);
+      else window.open(url, '_blank', 'noopener');
+    } catch {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
   async submitProof(userQuestId: string): Promise<void> {
     if (!this.userId) {
       this.uiRenderer.showToast('⚠️ Ошибка авторизации', 'error', 1500);
       return;
     }
 
-    this.uiRenderer.showToast('⏳ Проверяем подписку...', 'info', 2000);
-    
-    const success = await this.questsStore.submitProof(userQuestId);
-    if (success) {
-      this.render();
-      this.uiRenderer.showToast('✅ Подписка подтверждена! Получите награду.', 'success', 2500);
+    this.uiRenderer.showToast('⏳ Проверяем...', 'info', 1500);
+
+    const res = await this.questsStore.submitProof(userQuestId);
+    this.render();
+
+    if (!res.ok) {
+      const msg = res.code === 'not_subscribed'
+        ? '❌ Подписка не найдена. Подпишитесь на канал и нажмите «Проверить» ещё раз.'
+        : `⚠️ ${res.error || 'Не удалось отправить'}`;
+      this.uiRenderer.showToast(msg, 'error', 3000);
+      return;
+    }
+
+    if (res.mode === 'approved') {
+      this.uiRenderer.showToast('✅ Подписка подтверждена! Заберите награду.', 'success', 2500);
+    } else if (res.mode === 'pseudo') {
+      const hours = res.expiresAt
+        ? Math.max(1, Math.ceil((new Date(res.expiresAt).getTime() - Date.now()) / 3_600_000))
+        : null;
+      this.uiRenderer.showToast(
+        hours ? `⏱️ Принято! Засчитаем примерно через ${hours} ч.` : '⏱️ Принято! Засчитаем позже.',
+        'info',
+        3000
+      );
     } else {
-      this.render();
-      this.uiRenderer.showToast('❌ Вы не подписаны на канал. Подпишитесь и попробуйте снова.', 'error', 3000);
+      this.uiRenderer.showToast('📤 Отправлено на проверку администратору.', 'info', 3000);
     }
   }
 
