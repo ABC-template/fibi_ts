@@ -1,7 +1,8 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 2.9.0 — название и превью чата экранируются (XSS через название/текст сообщения)
+// Версия: 2.10.0 — очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
+//          2.9.0 — название и превью чата экранируются (XSS через название/текст сообщения)
 //          2.8.0 — очистка кэша без clearJWT (JWT больше нет); пункт «Админ-панель» — по флагу сервера
 //          2.7.0 — пункт «Админ-панель» показывается по Telegram ID (не по роли)
 //          2.6.1 — нельзя удалить чат, пока в нём идёт генерация
@@ -10,6 +11,7 @@
 
 import './drawer.css';
 import { chatStore } from '@/store/ChatStore';
+import { clearLocalCache, confirmClearCache } from '@/utils/clear-cache';
 import { userStore } from '@/store/UserStore';
 import { questsStore } from '@/store/QuestsStore';
 import { eventBus } from '@/core/event-bus';
@@ -646,49 +648,10 @@ export function appendDrawerNav(container: HTMLElement): void {
             icon: '🗑️',
             label: 'Очистить кэш',
             action: () => {
-                const confirmMsg = 'Очистить локальный кэш приложения?\n\n' +
-                    '⚠️ Ваши НЕСИНХРОНИЗИРОВАННЫЕ данные (TRIAL) будут потеряны.\n' +
-                    '☁️ Синхронизированные данные (PRO) восстановятся из облака.';
-
-                const doClear = (): void => {
-                    if (window.questsStore) {
-                        window.questsStore._data = {};
-                        window.questsStore.save();
-                    }
-                    if (window.chatStore) {
-                        window.chatStore._data = {};
-                        window.chatStore.save();
-                    }
-                    if (window.userStore) {
-                        window.userStore._data = {};
-                        window.userStore.save();
-                    }
-                    if (window.organizerStore) {
-                        window.organizerStore._data = {};
-                        window.organizerStore.save();
-                    }
-
-                    localStorage.removeItem('sync_token');
-                    for (let i = localStorage.length - 1; i >= 0; i--) {
-                        const key = localStorage.key(i);
-                        if (key && key.startsWith('sync_token_') && key !== 'sync_token') {
-                            localStorage.removeItem(key);
-                        }
-                    }
-                    localStorage.removeItem('last_user_id');
-
-                    if (uiRenderer) {
-                        uiRenderer.showToast('🧹 Кэш и токен очищены', 'success', 1500);
-                    }
+                confirmClearCache(() => {
                     closeDrawer();
-                    setTimeout(() => location.reload(), 1000);
-                };
-
-                if (window.Telegram?.WebApp?.showConfirm) {
-                    window.Telegram.WebApp.showConfirm(confirmMsg, (ok: boolean) => { if (ok) doClear(); });
-                } else if (confirm(confirmMsg)) {
-                    doClear();
-                }
+                    void clearLocalCache();
+                });
             },
             show: true,
         },
@@ -866,4 +829,4 @@ export function setupDrawerEventListeners(): void {
 (window as any).renameChatFromDrawer = renameChatFromDrawer;
 (window as any).deleteChatFromDrawer = deleteChatFromDrawer;
 
-console.log('✅ drawer.ts v2.6.0 загружен (добавлены агенты)');
+console.log('✅ drawer.ts v2.10.0 загружен');
