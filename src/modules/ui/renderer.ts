@@ -1,9 +1,12 @@
 // ============================================
 // src/modules/ui/renderer.ts
 // Базовый рендеринг UI-элементов
-// Версия: 4.1.1 - замена @types → @app-types
+// Версия: 4.2.0 - Markdown только через utils/html (без DOMPurify — текст, а не сырой
+//                 HTML); приветствие агента тоже очищается
+//          4.1.1 - замена @types → @app-types
 // ============================================
 import './ui.css';
+import { renderMarkdown, sanitizeRichHtml, escapeHtml } from '@/utils/html';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
@@ -17,7 +20,7 @@ export class UIRenderer {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ UIRenderer v4.1.1 загружен (EventBus-based)');
+    console.log('✅ UIRenderer v4.2.0 загружен (EventBus-based)');
   }
 
   private _subscribeToEvents(): void {
@@ -107,35 +110,26 @@ export class UIRenderer {
     contentDiv.style.width = '100%';
 
     try {
-      if (typeof (window as any).marked !== 'undefined') {
-        let html = (window as any).marked.parse(text);
-        html = html.replace(
-          /<table[^>]*>([\s\S]*?)<\/table>/gi,
-          '<div class="table-wrapper"><table>$1</table></div>'
-        );
-        contentDiv.innerHTML = this.sanitizeHTML(html);
+      contentDiv.innerHTML = renderMarkdown(text, { wrapTables: true });
 
-        contentDiv.querySelectorAll('pre').forEach((pre) => {
-          const codeText = pre.querySelector('code')?.innerText || pre.innerText;
-          const wrapper = document.createElement('div');
-          wrapper.style.cssText = 'position:relative; width:100%;';
-          pre.parentNode?.insertBefore(wrapper, pre);
-          wrapper.appendChild(pre);
+      contentDiv.querySelectorAll('pre').forEach((pre) => {
+        const codeText = pre.querySelector('code')?.innerText || pre.innerText;
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position:relative; width:100%;';
+        pre.parentNode?.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
 
-          const copyBtn = document.createElement('button');
-          copyBtn.className = 'code-copy-btn';
-          copyBtn.innerText = '📋 Копировать';
-          copyBtn.onclick = () => {
-            navigator.clipboard.writeText(codeText).then(() => {
-              copyBtn.innerText = '✅ Готово!';
-              setTimeout(() => copyBtn.innerText = '📋 Копировать', 1500);
-            });
-          };
-          wrapper.appendChild(copyBtn);
-        });
-      } else {
-        contentDiv.textContent = text;
-      }
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'code-copy-btn';
+        copyBtn.innerText = '📋 Копировать';
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(codeText).then(() => {
+            copyBtn.innerText = '✅ Готово!';
+            setTimeout(() => copyBtn.innerText = '📋 Копировать', 1500);
+          });
+        };
+        wrapper.appendChild(copyBtn);
+      });
     } catch (e) {
       contentDiv.textContent = text;
     }
@@ -220,23 +214,10 @@ export class UIRenderer {
     return actions;
   }
 
+  /** Очистка готового HTML; без DOMPurify — HTML показывается как текст */
   sanitizeHTML(html: string): string {
-    if (typeof (window as any).DOMPurify !== 'undefined') {
-      return (window as any).DOMPurify.sanitize(html, {
-        ALLOWED_TAGS: [
-          'p', 'br', 'strong', 'em', 'u', 'i', 'b',
-          'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-          'ul', 'ol', 'li', 'blockquote',
-          'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-          'span', 'div', 'img', 'hr', 'sub', 'sup'
-        ],
-        ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'src', 'alt', 'title', 'rel'],
-        FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']
-      });
-    }
-    const temp = document.createElement('div');
-    temp.textContent = html;
-    return temp.innerHTML;
+    const clean = sanitizeRichHtml(html);
+    return clean === null ? escapeHtml(html) : clean;
   }
 
   // ==========================================
@@ -305,11 +286,7 @@ export class UIRenderer {
       margin: 0 auto;
     `;
 
-    if (typeof (window as any).marked !== 'undefined') {
-      contentContainer.innerHTML = (window as any).marked.parse(text);
-    } else {
-      contentContainer.textContent = text;
-    }
+    contentContainer.innerHTML = renderMarkdown(text);
 
     msgDiv.appendChild(contentContainer);
     container.appendChild(msgDiv);
