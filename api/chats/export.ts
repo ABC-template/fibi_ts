@@ -1,7 +1,9 @@
 // ============================================
 // api/chats/export.ts
 // Описание: Экспорт облачного архива (PRO и льготный период после окончания подписки)
-// Версия: 4.0.0 - локальный экспорт (POST) удалён: работал без авторизации и был
+// Версия: 4.1.0 - лимит частоты: 3 выгрузки за 10 минут (chat_export) и 40 следующих частей
+//                 (chat_export_part) — каждый запрос собирает архив целиком и подписывает ссылки
+//          4.0.0 - локальный экспорт (POST) удалён: работал без авторизации и был
 //                 бесплатным вычислительным эндпоинтом в обход блокировки и подписки
 //                 на канал; локальный архив собирает приложение (src/modules/export-local.ts)
 //          3.2.0 - облачный архив: агент/тип чата, запрос генерации и ссылки на медиа
@@ -18,6 +20,7 @@ import {
   supabaseFetch
 } from '../_lib/index';
 import { getOwnedFiles, signUrls } from '../_lib/media';
+import { enforceRateLimit } from '../_lib/rate-limit';
 
 export const config = { runtime: 'edge' };
 
@@ -229,6 +232,15 @@ export default async function handler(request: Request): Promise<Response> {
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
 
+    const partHeader = request.headers.get('X-Request-Part');
+    const part = partHeader === null ? 1 : Number(partHeader);
+    if (!Number.isInteger(part) || part < 1) {
+      return errorResponse('Invalid part number', 400);
+    }
+
+    const limited = await enforceRateLimit(part === 1 ? 'chat_export' : 'chat_export_part', userId, config);
+    if (limited) return limited;
+
     const result = await exportCloudArchive(userId, config);
     if (!result.success) {
       if (result.fallbackToLocal) {
@@ -247,10 +259,9 @@ export default async function handler(request: Request): Promise<Response> {
 
     if (archiveSize > MAX_EXPORT_SIZE_BYTES || totalMessages > MAX_MESSAGES_PER_CHUNK) {
       const chunks = splitIntoChunks(result.archive || []);
-      const part = parseInt(request.headers.get('X-Request-Part') || '1', 10);
       const totalParts = chunks.length;
 
-      if (!Number.isInteger(part) || part < 1 || part > totalParts) {
+      if (part > totalParts) {
         return errorResponse('Invalid part number', 400);
       }
 
