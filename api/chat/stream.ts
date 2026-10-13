@@ -1,7 +1,13 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.5.0 — история от клиента ограничена (до 100 сообщений и 400 000 символов,
+// Версия: 3.6.0 — резерв энергии (sql/energy_holds.sql): перед запросом энергия
+//                  замораживается атомарно в БД (параллельные запросы в разных чатах
+//                  больше не тратят один баланс дважды); max_tokens — по замороженному;
+//                  после ответа заморозка снимается и списывается факт; обрыв модели
+//                  посреди ответа оплачивается по отданному тексту (раньше — бесплатно)
+//                  истёкшая подписка считается trial; id/slug агента в запросе к БД экранируются
+//          3.5.0 — история от клиента ограничена (до 100 сообщений и 400 000 символов,
 //                  не больше окна контекста модели); без цены модели вход ограничен
 //                  16 000 токенов (раньше можно было отправить сколько угодно за min_charge);
 //                  роль сообщений только по типу (prompts.ts v5); проверка типов тела;
@@ -39,14 +45,13 @@ import {
 import { getModelConfig, getRotatedKeysPool } from '../chats/index';
 import { buildSystemPrompt, buildMessages } from '../chat/prompts';
 import type { IHistoryMessage } from '../chat/prompts';
-import {
-  checkTokenAvailability,
-} from '../_lib/tokens';
+import { reserveEnergy, settleEnergy, releaseEnergy } from '../_lib/energy-hold';
 import { logOpenRouterUsage, estimateTokens } from '../_lib/tokens-usage';
 import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
 import { checkAgentAccess } from '../_lib/agent-access';
 import { getMarkupForTier } from '../_lib/markup-helper';
 import {
+  CHAT_LOCK_TTL,
   acquireChatLock,
   chatBusyResponse,
   isValidChatId,
@@ -229,6 +234,14 @@ const MAX_HISTORY_MESSAGES = 100;
 const MAX_HISTORY_CHARS = 400_000;
 /** Если цену модели узнать не удалось — вход не больше стольких токенов */
 const MAX_INPUT_TOKENS_WITHOUT_PRICE = 16_000;
+/** Потолок длины ответа по тарифу (токены) */
+const HARD_CAP_BY_TIER: Record<string, number> = {
+  trial: 1500,
+  basic: 3000,
+  plus: 4000,
+  pro: 6000,
+  ultra: 8000,
+};
 
 async function getAgentById(
   agentId: string,
@@ -236,7 +249,7 @@ async function getAgentById(
 ): Promise<IAgent | null> {
   try {
     const result = await supabaseFetch(
-      `ai_agents?id=eq.${agentId}&select=*`,
+      `ai_agents?id=eq.${encodeURIComponent(agentId)}&select=*`,
       { method: 'GET' },
       config
     );
@@ -258,7 +271,7 @@ async function getAgentBySlug(
 ): Promise<IAgent | null> {
   try {
     const result = await supabaseFetch(
-      `ai_agents?slug=eq.${slug}&select=*`,
+      `ai_agents?slug=eq.${encodeURIComponent(slug)}&select=*`,
       { method: 'GET' },
       config
     );
@@ -271,80 +284,6 @@ async function getAgentBySlug(
   } catch (err) {
     console.error('Failed to get agent by slug:', err);
     return null;
-  }
-}
-
-async function spendTokens(
-  userId: number,
-  amount: number,
-  config: any,
-  description: string = 'Запрос к агенту'
-): Promise<{
-  success: boolean;
-  bonusUsed: number;
-  permanentUsed: number;
-  remainingBonus: number;
-  remainingPermanent: number;
-  spent_today?: number;
-  bypass?: boolean;
-  error?: string;
-}> {
-  try {
-    const result = await supabaseRPC(
-      'spend_abstract_tokens',
-      {
-        p_user_id: userId,
-        p_amount: amount,
-        p_source: 'chat',
-        p_description: description,
-        // Ответ уже отдан: списываем сколько есть, недоплату пишет БД
-        p_allow_partial: true,
-      },
-      config
-    );
-
-    if (!result || typeof result !== 'object') {
-      return {
-        success: false,
-        bonusUsed: 0,
-        permanentUsed: 0,
-        remainingBonus: 0,
-        remainingPermanent: 0,
-        error: 'Failed to spend tokens',
-      };
-    }
-
-    if (result.success === false) {
-      return {
-        success: false,
-        bonusUsed: 0,
-        permanentUsed: 0,
-        remainingBonus: 0,
-        remainingPermanent: 0,
-        spent_today: result.spent_today,
-        error: result.error || 'Failed to spend tokens',
-      };
-    }
-
-    return {
-      success: true,
-      bypass: result.bypass === true,
-      bonusUsed: result.used_bonus || 0,
-      permanentUsed: result.used_permanent || 0,
-      remainingBonus: result.bonus_after ?? 0,
-      remainingPermanent: result.permanent_after ?? 0,
-      spent_today: result.spent_today,
-    };
-  } catch (err) {
-    console.error('Failed to spend tokens:', err);
-    return {
-      success: false,
-      bonusUsed: 0,
-      permanentUsed: 0,
-      remainingBonus: 0,
-      remainingPermanent: 0,
-      error: (err as Error).message,
-    };
   }
 }
 
@@ -388,10 +327,13 @@ export default async function handler(request: Request): Promise<Response> {
     return errorResponse('Method Not Allowed', 405);
   }
 
-  // Замок чата. После передачи стриму его снимает сам стрим (в конце, при обрыве
-  // клиента или ошибке); во всех остальных случаях — finally ниже.
+  // Замок чата и заморозка энергии. После передачи стриму их снимает сам стрим
+  // (в конце, при обрыве клиента или ошибке); во всех остальных случаях — finally ниже.
   let chatLock: IChatLock | null = null;
   let lockOwnedByStream = false;
+  let holdId: string | null = null;
+  let holdClosed = false;
+  let dbConfig: any = null;
 
   try {
     const auth = await authenticate(request);
@@ -401,6 +343,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
+    dbConfig = config;
 
     const blocked = await supabaseRPC('is_user_blocked', { p_user_id: userId }, config).catch(() => false);
     if (blocked === true) {
@@ -452,7 +395,7 @@ export default async function handler(request: Request): Promise<Response> {
     let effectiveAgentId: string | null = null;
     let effectiveTopic: string = currentTopic || 'code';
 
-    if (agentId) {
+    if (agentId && isValidChatId(agentId)) {
       agent = await getAgentById(agentId, config);
       if (agent) {
         effectiveAgentId = agentId;
@@ -483,7 +426,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userRes = await supabaseFetch(
-      `users?telegram_id=eq.${userId}&select=role,subscription_tier`,
+      `users?telegram_id=eq.${userId}&select=role,subscription_tier,premium_until`,
       { method: 'GET' },
       config
     );
@@ -491,9 +434,10 @@ export default async function handler(request: Request): Promise<Response> {
     const userRole = (userRes && Array.isArray(userRes) && userRes.length > 0)
       ? userRes[0].role || 'trial'
       : 'trial';
-    const userProTier = (userRes && Array.isArray(userRes) && userRes.length > 0)
-      ? userRes[0].subscription_tier || null
-      : null;
+    // Истёкшая подписка — как trial (доступ к агентам, коэффициент, потолок ответа)
+    const userRow = (userRes && Array.isArray(userRes) && userRes.length > 0) ? userRes[0] : null;
+    const premiumExpired = !!userRow?.premium_until && new Date(userRow.premium_until).getTime() < Date.now();
+    const userProTier = userRow && !premiumExpired ? userRow.subscription_tier || null : null;
 
     // Генеративные агенты (фото/видео) работают через /api/generations/create
     const agentModality = String((agent as any).modality || 'text');
@@ -622,38 +566,21 @@ export default async function handler(request: Request): Promise<Response> {
     const estimatedCharge = textEnergyForUsd(estimatedUsd, safeMarkup, minCharge);
     console.log(`💰 [stream] Оценка charge: $${estimatedUsd.toFixed(6)} × ${ENERGY_PER_USD} × ${safeMarkup} (tier=${userProTier || 'trial'}) → max(..., ${minCharge}) = ${estimatedCharge}`);
 
-    const tokenCheck = await checkTokenAvailability(userId, estimatedCharge, config);
-
-    if (!tokenCheck.available) {
-      let userMessage = '';
-
-      if (tokenCheck.reason === 'daily_limit') {
-        userMessage =
-          `⏳ Дневной лимит тарифа: не хватает на этот запрос.\n` +
-          `Сегодня: ${tokenCheck.spent_today} / ${tokenCheck.daily_limit} ⚡.\n` +
-          `Нужно ~${estimatedCharge} ⚡. Завтра лимит обновится.`;
-      } else if (tokenCheck.total === 0 || tokenCheck.reason === 'no_tokens') {
-        userMessage =
-          `⚠️ Недостаточно энергии.\n` +
-          `Доступно: 0 ⚡\n` +
-          `Бонус обновится завтра или пополните баланс.`;
-      } else {
-        userMessage =
-          `⚠️ Недостаточно энергии для агента «${agent.name?.ru || agent.slug}».\n` +
-          `Требуется минимум: ${agent.min_charge} ⚡\n` +
-          `Доступно: ${tokenCheck.total} ⚡ (${tokenCheck.bonus} бонусных + ${tokenCheck.permanent} постоянных)`;
-      }
-
-      return errorResponse(userMessage, 429, {
-        'X-Token-Bonus': String(tokenCheck.bonus || 0),
-        'X-Token-Permanent': String(tokenCheck.permanent || 0),
-        'X-Token-Total': String(tokenCheck.total || 0),
-        'X-Token-Needed': String(estimatedCharge),
-        'X-Token-Reason': tokenCheck.reason || 'insufficient',
-        'X-Daily-Spent': String(tokenCheck.spent_today || 0),
-        'X-Daily-Limit': String(tokenCheck.daily_limit || 0),
-      });
+    // Потолок ответа: окно контекста модели и тариф
+    const capTokens = Math.min(
+      agent.context_length ? Math.floor(agent.context_length * 0.4) : 4096,
+      HARD_CAP_BY_TIER[userProTier || 'trial'] ?? 4096
+    );
+    // Сколько выходных токенов можно оплатить энергией energy при цене модели
+    function completionTokensFor(energy: number): number {
+      if (!modelPrices || modelPrices.completion <= 0) return 999999;
+      const usd = energy / (ENERGY_PER_USD * Math.max(safeMarkup, 0.1)) - promptUsd;
+      return Math.max(0, Math.floor(usd / modelPrices.completion));
     }
+    // Хотим заморозить стоимость самого длинного допустимого ответа; минимум — оценка
+    const maxCharge = modelPrices
+      ? Math.max(estimatedCharge, textEnergyForUsd(promptUsd + capTokens * modelPrices.completion, safeMarkup, minCharge))
+      : estimatedCharge;
 
     // Замок чата: до этой точки возвраты без замка, дальше он обязателен
     const acquired = await acquireChatLock(userId, chatId, 'text', config);
@@ -663,44 +590,92 @@ export default async function handler(request: Request): Promise<Response> {
     }
     chatLock = acquired.lock;
 
-    // Dynamic max_tokens (после успешной проверки)
-    // Сколько выходных токенов можно оплатить энергией energy при цене модели
-    function completionTokensFor(energy: number): number {
-      if (!modelPrices || modelPrices.completion <= 0) return 999999;
-      const usd = energy / (ENERGY_PER_USD * Math.max(safeMarkup, 0.1)) - promptUsd;
-      return Math.max(0, Math.floor(usd / modelPrices.completion));
-    }
-
-    function calcMaxTokens(remainingEnergy: number, dailyLeft: number, contextLength: number | null, tier: string | null): number {
-      const byEnergy = completionTokensFor(remainingEnergy * 0.7);
-      const byDaily = dailyLeft > 0 ? completionTokensFor(dailyLeft) : 999999;
-      const byContext = contextLength ? Math.floor(contextLength * 0.4) : 4096;
-      const hardCapByTier: Record<string, number> = {
-        trial: 1500,
-        basic: 3000,
-        plus: 4000,
-        pro: 6000,
-        ultra: 8000,
-      };
-      const hardCap = hardCapByTier[tier || 'trial'] ?? 4096;
-      return Math.max(256, Math.min(byEnergy, byDaily, byContext, hardCap));
-    }
-
-    const dailyLeft = (tokenCheck.daily_limit || 0) > 0
-      ? Math.max(0, (tokenCheck.daily_limit || 0) - (tokenCheck.spent_today || 0))
-      : 0;
-
-    const maxTokens = calcMaxTokens(
-      tokenCheck.total || 0,
-      dailyLeft,
-      agent.context_length,
-      userProTier
+    // Заморозка энергии: атомарно в БД, с учётом других идущих запросов пользователя
+    const reservation = await reserveEnergy(
+      userId,
+      estimatedCharge,
+      maxCharge,
+      'text',
+      chatId,
+      CHAT_LOCK_TTL.text,
+      config
     );
 
+    if (!reservation.ok) {
+      const free = Math.max(0, reservation.total - reservation.held);
+      const heldNote = reservation.held > 0
+        ? `\n${reservation.held} ⚡ заняты идущими запросами — дождитесь их окончания.`
+        : '';
+      let userMessage = '';
+
+      if (reservation.reason === 'daily_limit') {
+        userMessage =
+          `⏳ Дневной лимит тарифа: не хватает на этот запрос.\n` +
+          `Сегодня: ${reservation.spentToday} / ${reservation.dailyLimit} ⚡.\n` +
+          `Нужно ~${estimatedCharge} ⚡. Завтра лимит обновится.` + heldNote;
+      } else if (reservation.total === 0) {
+        userMessage =
+          `⚠️ Недостаточно энергии.\n` +
+          `Доступно: 0 ⚡\n` +
+          `Бонус обновится завтра или пополните баланс.`;
+      } else {
+        userMessage =
+          `⚠️ Недостаточно энергии для агента «${agent.name?.ru || agent.slug}».\n` +
+          `Нужно ~${estimatedCharge} ⚡\n` +
+          `Доступно: ${free} ⚡ (${reservation.bonus} бонусных + ${reservation.permanent} постоянных)` + heldNote;
+      }
+
+      return errorResponse(userMessage, 429, {
+        'X-Token-Bonus': String(reservation.bonus),
+        'X-Token-Permanent': String(reservation.permanent),
+        'X-Token-Total': String(free),
+        'X-Token-Needed': String(estimatedCharge),
+        'X-Token-Reason': reservation.reason || 'insufficient',
+        'X-Daily-Spent': String(reservation.spentToday),
+        'X-Daily-Limit': String(reservation.dailyLimit),
+      });
+    }
+    holdId = reservation.holdId;
+
+    // max_tokens — сколько оплачивает замороженная энергия (не больше потолка)
+    const maxTokens = Math.max(
+      256,
+      Math.min(reservation.bypass ? capTokens : completionTokensFor(reservation.amount), capTokens)
+    );
+    console.log(`🔒 [stream] Заморожено ${reservation.amount} ⚡ (нужно ≥${estimatedCharge}, хотели ${maxCharge})`);
     console.log(`📏 [stream] max_tokens = ${maxTokens}`);
+
+    /**
+     * Снять заморозку: charge > 0 — списать факт, иначе — без списания.
+     * Срабатывает один раз (флаг ставится синхронно — обрыв клиента и конец
+     * потока не спишут дважды).
+     */
+    const closeHold = async (charge: number, description: string): Promise<void> => {
+      if (holdClosed) return;
+      holdClosed = true;
+      if (Number.isFinite(charge) && charge > 0) {
+        const res = await settleEnergy(holdId, userId, charge, 'chat', description, config);
+        if (res.success) {
+          console.log(`✅ [stream] Списано ${res.charged} ⚡ (запрошено ${charge}): bonus=${res.bonusUsed}, permanent=${res.permanentUsed}`);
+        } else {
+          console.warn(`⚠️ [stream] Не удалось списать ${charge} ⚡: ${res.error}`);
+        }
+      } else {
+        await releaseEnergy(holdId, config);
+      }
+    };
 
     let finalUsage: any = null;
     let accumulatedText = '';
+
+    /** Стоимость уже отданной части ответа (обрыв клиентом или моделью); 0 — ничего не отдано */
+    const chargeForDelivered = (): number => {
+      if (accumulatedText.trim().length === 0) return 0;
+      const outTokens = estimateTokens([{ role: 'assistant', content: accumulatedText }]);
+      const usd = modelPrices ? promptUsd + outTokens * modelPrices.completion : estimatedUsd;
+      const charge = textEnergyForUsd(usd, safeMarkup, minCharge);
+      return Number.isFinite(charge) && charge > 0 ? charge : 0;
+    };
     let chunksReceived = 0;
     let clientCancelled = false;
     let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -742,6 +717,7 @@ export default async function handler(request: Request): Promise<Response> {
         const failBeforeContent = async (message: string) => {
           clearInterval(heartbeat);
           send(STREAM_ERROR_PREFIX + JSON.stringify({ error: message, code: 'upstream' }));
+          await closeHold(0, '');
           await chatLock?.release();
           try {
             controller.close();
@@ -780,6 +756,7 @@ export default async function handler(request: Request): Promise<Response> {
           }
 
           if (clientCancelled) {
+            // Ответа не было: cancel() уже сняла заморозку без списания
             clearInterval(heartbeat);
             await chatLock?.release();
             return;
@@ -850,14 +827,8 @@ export default async function handler(request: Request): Promise<Response> {
 
             if (!Number.isFinite(charge) || charge <= 0) {
               console.warn('⚠️ [stream] charge невалиден, skip spend', { charge, usd });
-            } else {
-              const spendResult = await spendTokens(userId, charge, config);
-              if (spendResult.success) {
-                console.log(`✅ [stream] Списан ${charge} токенов: bonus=${spendResult.bonusUsed}, permanent=${spendResult.permanentUsed}`);
-              } else {
-                console.warn(`⚠️ [stream] Не удалось списать токены: ${spendResult.error}`);
-              }
             }
+            await closeHold(charge, 'Запрос к агенту');
 
             if (totalTokens > 0) {
               await logOpenRouterUsage(
@@ -888,6 +859,7 @@ export default async function handler(request: Request): Promise<Response> {
             }
           } else if (streamCompleted && accumulatedText.trim().length === 0) {
             console.warn(`⚠️ [stream] Стрим завершен, но ответ пустой. Токены не списаны.`);
+            await closeHold(0, '');
           }
 
           // Замок снимаем ДО закрытия ответа: после close() Edge-функция может
@@ -900,6 +872,8 @@ export default async function handler(request: Request): Promise<Response> {
           if (!accumulatedText) {
             await failBeforeContent('Не удалось получить ответ модели. Энергия не списана — попробуйте ещё раз.');
           } else {
+            // Модель оборвалась посреди ответа: отданная часть оплачена нами в OpenRouter
+            if (!clientCancelled) await closeHold(chargeForDelivered(), 'Запрос к агенту (ответ оборвался)');
             await chatLock?.release();
             try {
               controller.close();
@@ -909,7 +883,9 @@ export default async function handler(request: Request): Promise<Response> {
           }
         } finally {
           clearInterval(heartbeat);
-          // Страховка (release идемпотентен)
+          // Страховка (обе операции идемпотентны). При обрыве клиентом заморозкой
+          // распоряжается cancel()
+          if (!clientCancelled) await closeHold(0, '');
           await chatLock?.release();
         }
       },
@@ -918,26 +894,19 @@ export default async function handler(request: Request): Promise<Response> {
         // ответа модели. Отданная часть ответа уже оплачена нами в OpenRouter,
         // поэтому списываем за неё (иначе обрыв в конце = бесплатный ответ)
         clientCancelled = true;
+        // Списание запускается ДО ожидания чего-либо: closeHold синхронно ставит флаг,
+        // и завершение потока уже не снимет заморозку бесплатно
+        const charge = chargeForDelivered();
+        const settling = closeHold(charge, 'Запрос к агенту (прерван)').catch((err) => {
+          console.error('❌ [stream] Ошибка списания при обрыве:', err);
+        });
+        if (charge > 0) console.log(`💰 [stream] Обрыв клиентом: списание по отданному тексту ${charge}`);
         try {
           await upstreamReader?.cancel();
         } catch {
           // уже закрыт
         }
-        try {
-          if (accumulatedText.trim().length > 0) {
-            const outTokens = estimateTokens([{ role: 'assistant', content: accumulatedText }]);
-            const usd = modelPrices
-              ? promptUsd + outTokens * modelPrices.completion
-              : estimatedUsd;
-            const charge = textEnergyForUsd(usd, safeMarkup, minCharge);
-            if (Number.isFinite(charge) && charge > 0) {
-              const spend = await spendTokens(userId, charge, config, 'Запрос к агенту (прерван)');
-              console.log(`💰 [stream] Обрыв клиентом: списано по отданному тексту ${charge} (${spend.success ? 'ok' : spend.error})`);
-            }
-          }
-        } catch (err) {
-          console.error('❌ [stream] Ошибка списания при обрыве:', err);
-        }
+        await settling;
         await chatLock?.release();
       }
     });
@@ -957,6 +926,9 @@ export default async function handler(request: Request): Promise<Response> {
     console.error('Stream handler error:', (err as Error).message);
     return errorResponse(`Критическое исключение сервера: ${(err as Error).message}`, 500);
   } finally {
-    if (chatLock && !lockOwnedByStream) await chatLock.release();
+    if (!lockOwnedByStream) {
+      if (holdId && !holdClosed && dbConfig) await releaseEnergy(holdId, dbConfig);
+      if (chatLock) await chatLock.release();
+    }
   }
 }
