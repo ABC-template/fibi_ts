@@ -1,7 +1,10 @@
 // ============================================
 // api/chats/actions/create.ts
 // Описание: Создание нового чата (с user_uuid, sync_token и agent_id)
-// Версия: 5.1.0 — валидация topic_id пропускается для чатов с agent_id
+// Версия: 5.2.0 — повторное создание того же чата (id уже есть у этого пользователя)
+//                  считается успехом: повтор после сбоя сети больше не падает;
+//                  первое сообщение проверяется по длине и не дублируется
+//          5.1.0 — валидация topic_id пропускается для чатов с agent_id
 //                  (тема кастомного агента — это его slug, а не встроенный
 //                  topic из фиксированного списка; принадлежность к агенту
 //                  уже определяется полем agent_id)
@@ -16,7 +19,7 @@ import {
   updateSyncToken,
   getSyncToken
 } from '../../_lib/supabase-client';
-import { isValidUUID, isValidTopic, validateTopic, validateUserId } from '../../_lib/validators';
+import { isValidUUID, isValidTopic, validateTopic, validateUserId, validateMessageLength } from '../../_lib/validators';
 
 export const config = { runtime: 'edge' };
 
@@ -47,6 +50,9 @@ async function createChat(
   config: any
 ): Promise<{ success: boolean; chatId?: string; syncToken?: string | null; error?: string }> {
   try {
+    if (chatData.id && !isValidUUID(chatData.id)) {
+      return { success: false, error: 'Invalid chat id' };
+    }
     const chatId = chatData.id || crypto.randomUUID();
     const topic = chatData.topic_id || 'fast';
     const title = chatData.title || `Чат в разделе ${topic}`;
@@ -88,6 +94,20 @@ async function createChat(
         success: false,
         error: 'Синхронизация недоступна для вашего тарифного плана'
       };
+    }
+
+    // Чат с таким id уже есть: свой — повтор после сбоя, чужой — отказ
+    const existing = await supabaseFetch(
+      `chats?id=eq.${chatId}&select=id,user_id`,
+      { method: 'GET' },
+      config
+    );
+    if (Array.isArray(existing) && existing.length > 0) {
+      if (Number(existing[0].user_id) !== Number(userId)) {
+        return { success: false, error: 'Chat id conflict' };
+      }
+      const token = await getSyncToken(userId, config);
+      return { success: true, chatId, syncToken: token, error: null };
     }
 
     const result = await supabaseFetch(
@@ -153,13 +173,19 @@ async function createChatWithMessage(
     let messageId: string | null = null;
 
     if (messageData && messageData.text) {
-      const msgId = messageData.id || crypto.randomUUID();
-      const msgType = messageData.type || 'user-msg';
+      const validation = validateMessageLength(messageData.text);
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
+      }
+      const msgId = messageData.id && isValidUUID(messageData.id) ? messageData.id : crypto.randomUUID();
+      const msgType = messageData.type === 'ai-msg' ? 'ai-msg' : 'user-msg';
 
+      // Повтор с тем же id не создаёт дубль и не перезаписывает существующее
       const result = await supabaseFetch(
-        'messages',
+        'messages?on_conflict=id',
         {
           method: 'POST',
+          headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
           body: JSON.stringify({
             id: msgId,
             chat_id: chatId,
