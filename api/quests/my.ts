@@ -1,12 +1,13 @@
 // ============================================
 // api/quests/my.ts
 // Получить мои задания с прогрессом + сброс ежедневных
-// Версия: 2.0.0 - с reset_daily_quests
+// Версия: 2.1.0 - без отдельного init_user_quests (его вызывают reset_daily_quests и
+//                 get_user_quests); auth: проверка userId; текст исключения наружу не уходит
+//          2.0.0 - с reset_daily_quests
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -26,20 +27,17 @@ export default async function handler(request: Request): Promise<Response> {
 
   try {
     const auth = await authenticate(request);
-    if (auth.error) {
-      return errorResponse(auth.error, auth.status || 401);
+    if (auth.error || !auth.userId) {
+      return errorResponse(auth.error || 'Unauthorized', auth.status || 401);
     }
 
-    const userId = auth.userId!;
+    const userId = auth.userId;
     const config = getSupabaseConfig('service');
 
-    // 1. Сбрасываем ежедневные квесты (если нужно)
+    // 1. Сброс ежедневных заданий (внутри — init_user_quests: недостающие задания)
     await supabaseRPC('reset_daily_quests', { p_user_id: userId }, config);
 
-    // 2. Инициализируем квесты для пользователя (если ещё нет)
-    await supabaseRPC('init_user_quests', { p_user_id: userId }, config);
-
-    // 3. Получаем задания
+    // 2. Задания пользователя
     const result = await supabaseRPC('get_user_quests', { p_user_id: userId }, config);
 
     return jsonResponse({
@@ -48,6 +46,6 @@ export default async function handler(request: Request): Promise<Response> {
     });
   } catch (err) {
     console.error('[quests/my] Error:', err);
-    return errorResponse((err as Error).message, 500);
+    return errorResponse('Failed to load quests', 500);
   }
 }
