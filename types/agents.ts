@@ -1,7 +1,9 @@
 // ============================================
 // types/agents.ts
 // Типы для конструктора ИИ-агентов
-// Версия: 1.4.0 — добавлен generation_config
+// Версия: 1.5.0 — IAiAgentWithAccess заменён на IPublicAgent: пользователю
+//                  уходят только поля для интерфейса (без system_prompt, model_id, наценок по тарифам)
+//          1.4.0 — добавлен generation_config
 // ============================================
 
 import { UUID, ISODateString } from './common';
@@ -70,10 +72,28 @@ export interface IAiAgent {
   updated_at: ISODateString;
 }
 
-/** Агент с информацией о доступе для текущего пользователя */
-export interface IAiAgentWithAccess extends IAiAgent {
+/**
+ * Агент для пользователя (GET /api/agents).
+ * Только то, что нужно интерфейсу: без system_prompt, model_id и таблицы наценок.
+ */
+export interface IPublicAgent {
+  id: UUID;
+  slug: string;
+  name: IAgentName;
+  description: IAgentName | null;
+  modality: AgentModality;
+  welcome_message: IAgentName | null;
+  /** Форма генерации (modes / params / prompt / negative_prompt / pricing); NULL для text */
+  generation_config: IGenerationConfig | null;
+  /** Тарифы с доступом; NULL или [] = всем авторизованным */
+  allowed_tiers: string[] | null;
+  /** Наценка для тарифа текущего пользователя (уже выбрана сервером) */
+  markup: number;
+  min_charge: number;
+  sort_order: number;
+  is_active: boolean;
   has_access: boolean;
-  access_reason?: 'auth' | 'tier' | 'inactive' | null;
+  access_reason: 'auth' | 'tier' | 'inactive' | null;
 }
 
 /** Данные для создания/обновления агента */
