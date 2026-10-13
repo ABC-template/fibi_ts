@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based) с поддержкой агентов
-// Версия: 6.0.0 — без request-quota — прикрепление текстового файла (attach-file.ts), по тому
+// Версия: 6.1.0 — сообщение нельзя удалить, пока в его чате идёт ответ или генерация
+//                  (сервер тоже отвечает 409)
+//          6.0.0 — без request-quota — прикрепление текстового файла (attach-file.ts), по тому
 //                  же образцу, что и изображение: короткая пометка в text,
 //                  содержимое уходит отдельным параметром в streamAiResponse
 // ============================================
@@ -18,6 +20,8 @@ export class ChatSend {
   private uiRenderer = uiRenderer;
   private eventBus = eventBus;
   private isSending: boolean = false;
+  /** Чат, в котором сейчас идёт ответ ИИ (null — ответа нет) */
+  private sendingChatId: UUID | null = null;
   private _subscriptions: Array<() => void> = [];
 
   constructor() {
@@ -133,6 +137,7 @@ export class ChatSend {
     }
 
     const chatId = activeChat.id;
+    this.sendingChatId = chatId;
     const chatTopic = this.chatStore.currentTopic;
     const userLang = activeChat.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
     
@@ -147,6 +152,7 @@ export class ChatSend {
 
     if (!savedMsg) {
       this.isSending = false;
+      this.sendingChatId = null;
       input.disabled = false;
       if (voiceBtn) (voiceBtn as HTMLButtonElement).disabled = false;
       return;
@@ -204,6 +210,7 @@ export class ChatSend {
         (window as any).clearFileAttachment();
       }
       this.isSending = false;
+      this.sendingChatId = null;
       input.disabled = false;
       if (voiceBtn) (voiceBtn as HTMLButtonElement).disabled = false;
     }
@@ -304,9 +311,21 @@ export class ChatSend {
       return;
     }
 
-    const activeChat = this.chatStore.getActiveChat();
-    if (!activeChat) {
-      console.warn('⚠️ Нет активного чата');
+    const activeChat = found.chat;
+    const chatId = activeChat.id;
+
+    // Пока в чате идёт ответ или генерация, удалять сообщения нельзя
+    const busy =
+      (this.isSending && this.sendingChatId === chatId) ||
+      this.chatStore.isChatHeld(chatId) ||
+      this.chatStore.isChatBusy(chatId);
+    if (busy) {
+      const notice = '⏳ Дождитесь окончания ответа или генерации, затем удаляйте сообщения.';
+      if ((window as any).tg?.showAlert) {
+        (window as any).tg.showAlert(notice);
+      } else {
+        this.uiRenderer.showToast?.(notice, 'info');
+      }
       return;
     }
 
@@ -319,7 +338,7 @@ export class ChatSend {
 
     const action = async () => {
       const { messageService } = await import('@/services/messages');
-      await messageService.deleteMessage(activeChat.id, msgId);
+      await messageService.deleteMessage(chatId, msgId);
     };
 
     if ((window as any).tg?.showConfirm) {
