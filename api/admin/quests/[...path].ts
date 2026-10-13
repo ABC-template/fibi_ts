@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/quests/[...path].ts
 // Универсальный обработчик для /api/admin/quests/*
-// Версия: 3.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+// Версия: 3.2.0 — GET /admin/quests/submissions: задания на проверке
+//          3.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
 //          3.0.0 - FIXED: все методы работают
 // ============================================
 
@@ -68,6 +69,27 @@ export default async function handler(request: Request): Promise<Response> {
       });
     } catch (err) {
       console.error('Get quests error:', (err as Error).message);
+      return errorResponse((err as Error).message, 500);
+    }
+  }
+
+  // ==========================================
+  // GET /api/admin/quests/submissions — задания на проверке (ручные и псевдо)
+  // Одобрение/отклонение — POST /api/quests/verify
+  // ==========================================
+  if (request.method === 'GET' && questId === 'submissions') {
+    try {
+      const rows = await supabaseFetch(
+        'user_quests?status=eq.submitted&completed=eq.false&claimed=eq.false' +
+          '&select=id,user_id,proof_data,updated_at,expires_at,' +
+          'quest:quests(id,external_id,title,reward_coins,verification_type,type),user:users(username)' +
+          '&order=updated_at.asc&limit=200',
+        { method: 'GET' },
+        config
+      );
+      return jsonResponse({ success: true, submissions: Array.isArray(rows) ? rows : [] });
+    } catch (err) {
+      console.error('Get submissions error:', (err as Error).message);
       return errorResponse((err as Error).message, 500);
     }
   }
