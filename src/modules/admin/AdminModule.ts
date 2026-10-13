@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.6.0 — доступ по Telegram ID (userStore.isCreator), а не по роли: роль можно
+// Версия: 7.7.0 — проверка заданий (verifySubmission); убрана пустая вкладка «Лимиты»
+//                  (лимиты — во вкладке «Тарифы»)
+//          7.6.0 — доступ по Telegram ID (userStore.isCreator), а не по роли: роль можно
 //                  переключать для тестов; вкладка «Пользователи» на /admin/users;
 //                  тест «Сбросить ежедневный вход» вместо несуществующего /quests/reset-daily
 //          7.5.0 — saveTierRow / saveAllTiers для тарифов — window.adminModule теперь проксирует к реальному
@@ -14,7 +16,6 @@ import { userStore } from '@/store/UserStore';
 import { IAdminTab } from './core/admin-tab.interface';
 
 import { AdminDashboardTab } from './tabs/AdminDashboardTab';
-import { AdminLimitsTab } from './tabs/AdminLimitsTab';
 import { AdminQuestsTab } from './tabs/AdminQuestsTab';
 import { AdminSettingsTab } from './tabs/AdminSettingsTab';
 import { AdminSubscriptionsTab } from './tabs/AdminSubscriptionsTab';
@@ -56,7 +57,6 @@ export class AdminModule {
 
     // Регистрируем все вкладки
     this.register(new AdminDashboardTab());
-    this.register(new AdminLimitsTab());
     this.register(new AdminQuestsTab());
     this.register(new AdminSettingsTab());
     this.register(new AdminSubscriptionsTab());
@@ -256,9 +256,6 @@ function getInstance(): AdminModule | null {
   show: () => getInstance()?.show(),
   hide: () => getInstance()?.hide(),
 
-  // Limits
-  saveLimits: () => getInstance()?.proxy('limits', 'save'),
-
   // Settings
   saveSettings: () => getInstance()?.proxy('settings', 'save'),
 
@@ -270,6 +267,8 @@ function getInstance(): AdminModule | null {
   toggleQuest: (id: string, state: boolean) =>
     getInstance()?.proxy('quests', 'toggleActive', id, state),
   deleteQuest: (id: string) => getInstance()?.proxy('quests', 'remove', id),
+  verifySubmission: (id: string, approved: boolean) =>
+    getInstance()?.proxy('quests', 'verify', id, approved),
 
   // Subscriptions / Тарифы
   createTier: () => getInstance()?.proxy('subscriptions', 'create'),
