@@ -1,14 +1,16 @@
 // ============================================
 // api/chats/export.ts
-// Описание: Экспорт чатов (локальный и облачный)
-// Версия: 3.2.0 - облачный архив: агент/тип чата, запрос генерации и ссылки на медиа
+// Описание: Экспорт облачного архива (PRO и льготный период после окончания подписки)
+// Версия: 4.0.0 - локальный экспорт (POST) удалён: работал без авторизации и был
+//                 бесплатным вычислительным эндпоинтом в обход блокировки и подписки
+//                 на канал; локальный архив собирает приложение (src/modules/export-local.ts)
+//          3.2.0 - облачный архив: агент/тип чата, запрос генерации и ссылки на медиа
 //                  (действуют до удаления облака или 7 дней)
 //          3.1.0 - исправлены импорты
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -22,124 +24,8 @@ export const config = { runtime: 'edge' };
 const MAX_EXPORT_SIZE_BYTES = 10000000; // 10MB
 const MAX_MESSAGES_PER_CHUNK = 1000;
 
-interface IExportRequest {
-  chatHistories?: Record<string, any[]>;
-  topicNames?: Record<string, string>;
-  exportOptions?: {
-    part?: string;
-  };
-}
-
 /**
- * Экспорт локального архива (доступен всем)
- */
-async function exportLocalArchive(body: IExportRequest): Promise<any> {
-  try {
-    const { chatHistories, topicNames, exportOptions = {} } = body;
-
-    if (!chatHistories) {
-      return { success: false, error: 'No chat histories provided' };
-    }
-
-    const archive: any[] = [];
-    let totalMessages = 0;
-
-    for (const [topicId, chats] of Object.entries(chatHistories)) {
-      for (const chat of (chats || [])) {
-        const sortedMessages = [...(chat.messages || [])].sort((a: any, b: any) => {
-          if (a.created_at && b.created_at) {
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-          }
-          return 0;
-        });
-
-        archive.push({
-          chat_id: chat.id,
-          title: chat.title,
-          topic_id: topicId,
-          topic_name: (topicNames || {})[topicId] || topicId,
-          max_context: chat.maxContext,
-          user_renamed: chat.userRenamed || false,
-          created_at: chat.created_at || new Date().toISOString(),
-          updated_at: chat.updated_at || new Date().toISOString(),
-          messages: sortedMessages
-        });
-
-        totalMessages += sortedMessages.length;
-      }
-    }
-
-    const archiveJson = JSON.stringify(archive);
-    const totalSize = new TextEncoder().encode(archiveJson).length;
-
-    // Разбивка на части если нужно
-    if (totalSize > MAX_EXPORT_SIZE_BYTES || totalMessages > MAX_MESSAGES_PER_CHUNK) {
-      return splitArchive(archive, totalMessages, exportOptions);
-    }
-
-    return {
-      success: true,
-      total_parts: 1,
-      current_part: 1,
-      total_messages: totalMessages,
-      archive: archive
-    };
-  } catch (err) {
-    console.error('Local export error:', (err as Error).message);
-    return { success: false, error: (err as Error).message };
-  }
-}
-
-/**
- * Разбить архив на части
- */
-function splitArchive(archive: any[], totalMessages: number, exportOptions: any): any {
-  const chunks: any[] = [];
-  let currentChunk: any[] = [];
-  let currentSize = 0;
-  let currentMessages = 0;
-
-  for (const chat of archive) {
-    const chatJson = JSON.stringify(chat);
-    const chatSize = new TextEncoder().encode(chatJson).length;
-    const chatMessages = chat.messages.length;
-
-    if (currentChunk.length > 0 &&
-      (currentSize + chatSize > MAX_EXPORT_SIZE_BYTES ||
-        currentMessages + chatMessages > MAX_MESSAGES_PER_CHUNK)) {
-      chunks.push(currentChunk);
-      currentChunk = [];
-      currentSize = 0;
-      currentMessages = 0;
-    }
-
-    currentChunk.push(chat);
-    currentSize += chatSize;
-    currentMessages += chatMessages;
-  }
-
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
-  }
-
-  const part = parseInt(exportOptions.part || '1', 10);
-  const totalParts = chunks.length;
-
-  if (part > totalParts) {
-    return { success: false, error: 'Invalid part number' };
-  }
-
-  return {
-    success: true,
-    total_parts: totalParts,
-    current_part: part,
-    total_messages: totalMessages,
-    archive: chunks[part - 1]
-  };
-}
-
-/**
- * Экспорт облачного архива (только PRO)
+ * Экспорт облачного архива (только PRO или льготный период)
  */
 async function exportCloudArchive(userId: number, config: any): Promise<any> {
   try {
@@ -292,35 +178,49 @@ async function exportCloudArchive(userId: number, config: any): Promise<any> {
   }
 }
 
+/**
+ * Разбить архив на части по размеру и числу сообщений
+ */
+function splitIntoChunks(archive: any[]): any[][] {
+  const chunks: any[][] = [];
+  let currentChunk: any[] = [];
+  let currentSize = 0;
+  let currentMessages = 0;
+
+  for (const chat of archive) {
+    const chatSize = new TextEncoder().encode(JSON.stringify(chat)).length;
+    const chatMessages = chat.messages.length;
+
+    if (currentChunk.length > 0 &&
+      (currentSize + chatSize > MAX_EXPORT_SIZE_BYTES ||
+        currentMessages + chatMessages > MAX_MESSAGES_PER_CHUNK)) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentSize = 0;
+      currentMessages = 0;
+    }
+
+    currentChunk.push(chat);
+    currentSize += chatSize;
+    currentMessages += chatMessages;
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
 
+  if (request.method !== 'GET') {
+    return errorResponse('Method Not Allowed', 405);
+  }
+
   try {
-    const isLocalExport = request.method === 'POST';
-
-    // Локальный экспорт (доступен всем)
-    if (isLocalExport) {
-      let body: IExportRequest;
-      try {
-        body = await request.json();
-      } catch (err) {
-        return errorResponse('Invalid JSON body', 400);
-      }
-
-      const result = await exportLocalArchive(body);
-      if (!result.success) {
-        return errorResponse(result.error, 400);
-      }
-
-      return jsonResponse(result);
-    }
-
-    // Облачный экспорт (только GET + PRO)
-    if (request.method !== 'GET') {
-      return errorResponse('Method Not Allowed', 405);
-    }
-
     const auth = await authenticate(request);
     if (auth.error) {
       return errorResponse(auth.error, auth.status || 401);
@@ -341,44 +241,16 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(result.error, 400);
     }
 
-    // Разбивка на части если нужно
-    const archiveJson = JSON.stringify(result);
-    const archiveSize = new TextEncoder().encode(archiveJson).length;
+    // Разбивка на части, если архив большой
+    const archiveSize = new TextEncoder().encode(JSON.stringify(result)).length;
     const totalMessages = result.total_messages || 0;
 
     if (archiveSize > MAX_EXPORT_SIZE_BYTES || totalMessages > MAX_MESSAGES_PER_CHUNK) {
-      const chunks: any[] = [];
-      let currentChunk: any[] = [];
-      let currentSize = 0;
-      let currentMessages = 0;
-
-      for (const chat of (result.archive || [])) {
-        const chatJson = JSON.stringify(chat);
-        const chatSize = new TextEncoder().encode(chatJson).length;
-        const chatMessages = chat.messages.length;
-
-        if (currentChunk.length > 0 &&
-          (currentSize + chatSize > MAX_EXPORT_SIZE_BYTES ||
-            currentMessages + chatMessages > MAX_MESSAGES_PER_CHUNK)) {
-          chunks.push(currentChunk);
-          currentChunk = [];
-          currentSize = 0;
-          currentMessages = 0;
-        }
-
-        currentChunk.push(chat);
-        currentSize += chatSize;
-        currentMessages += chatMessages;
-      }
-
-      if (currentChunk.length > 0) {
-        chunks.push(currentChunk);
-      }
-
+      const chunks = splitIntoChunks(result.archive || []);
       const part = parseInt(request.headers.get('X-Request-Part') || '1', 10);
       const totalParts = chunks.length;
 
-      if (part > totalParts) {
+      if (!Number.isInteger(part) || part < 1 || part > totalParts) {
         return errorResponse('Invalid part number', 400);
       }
 
