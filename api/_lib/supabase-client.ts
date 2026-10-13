@@ -1,7 +1,8 @@
 // ============================================
 // api/_lib/supabase-client.ts 
 // Описание: Работа с Supabase через fetch (Edge Runtime)
-// Версия: 15.0.0 — без Supabase Auth: getOrCreateUser вместо getOrCreateAuthUser
+// Версия: 15.1.0 — убрано поле trial_used (пробного периода больше нет)
+//          15.0.0 — без Supabase Auth: getOrCreateUser вместо getOrCreateAuthUser
 //                   (пароли и вход по паролю убраны), удалён setAppUserContext
 //                   (функция в БД удалена); убраны неиспользуемые updateStreak, claimQuest,
 //                   resetDailyQuests, initUserQuests, spendAbstractTokens
@@ -203,7 +204,7 @@ export async function canUserSync(
 
 /** Поля users, которые нужны при входе (auth/check) */
 const LOGIN_USER_FIELDS =
-  'id,telegram_id,role,premium_until,username,data_deadline,sync_token,subscription_tier,trial_used';
+  'id,telegram_id,role,premium_until,username,data_deadline,sync_token,subscription_tier';
 
 async function selectLoginUser(telegramId: number, config: ISupabaseConfig | null): Promise<any | null> {
   const rows = await supabaseFetch(
@@ -240,7 +241,6 @@ export async function getOrCreateUser(
         subscription_tier: 'trial',
         user_lang: tgUser?.language_code || 'ru',
         sync_token: crypto.randomUUID(),
-        trial_used: false,
       }),
     },
     config
