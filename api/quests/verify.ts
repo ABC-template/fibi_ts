@@ -37,7 +37,7 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(auth.error, auth.status || 401);
     }
 
-    // Только создатель
+    // Только админы
     if (!isAdminTelegramId(auth.userId)) {
       return errorResponse('Доступ запрещён', 403);
     }
