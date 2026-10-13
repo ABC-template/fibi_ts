@@ -2,6 +2,7 @@
 // api/economy/game.ts
 // Монеты за события в играх. Клиент присылает только событие,
 // сумму, одноразовость и суточный потолок определяет БД (award_game_coins).
+// Версия: 1.1.0 — лимит частоты (economy_game)
 // Версия: 1.0.0
 // ============================================
 
@@ -13,6 +14,7 @@ import {
   getSupabaseConfig,
   supabaseRPC,
 } from '../_lib/index';
+import { enforceRateLimit } from '../_lib/rate-limit';
 
 export const config = { runtime: 'edge' };
 
@@ -33,6 +35,9 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse(auth.error, auth.status || 401);
     }
     const userId = auth.userId!;
+
+    const limited = await enforceRateLimit('economy_game', userId);
+    if (limited) return limited;
 
     let body: { event?: string; metadata?: Record<string, any> };
     try {
