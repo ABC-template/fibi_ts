@@ -2,13 +2,16 @@
 // src/modules/chat/generation.ts
 // Интерфейс генеративных агентов (image / video / audio) в чате:
 //   - форма запроса (режимы, референсы, промпт, негативный промпт, параметры)
-//   - карточки запроса и результата внутри сообщений чата
+//   - карточка результата внутри сообщения чата (отдельного сообщения-запроса нет)
 //   - просмотрщик результата с кнопкой «Повторить» (форма с теми же данными)
 //   - опрос чата, пока генерация идёт (результат мог прийти с другого устройства
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.2.0 — медиа можно сохранить в приложении (IndexedDB) и открывать без облака;
+// Версия: 3.3.0 — без сообщения-запроса (всё о запросе — в карточке результата и просмотрщике);
+//                  приветствие убирается при первой генерации; заглушка «Генерируется…»
+//                  больше не остаётся после результата (флаг запроса снимается до сверки)
+//          3.2.0 — медиа можно сохранить в приложении (IndexedDB) и открывать без облака;
 //                  удалённые из облака файлы показываются плашкой «Файл удалён»;
 //                  без доступа к агенту (trial) чат только для просмотра — без «Повторить»
 //          3.1.0 — чат удерживается (holdChat), пока идёт запрос; тариф для цены — userStore.subscriptionTier
@@ -105,7 +108,7 @@ function ru(name: any, fallback = ''): string {
 
 function isGenerationMessage(msg: IMessage | null | undefined): boolean {
   const kind = (msg?.metadata as any)?.kind;
-  return kind === 'generation' || kind === 'generation_request';
+  return kind === 'generation';
 }
 
 export class GenerationController {
@@ -192,9 +195,7 @@ export class GenerationController {
     const meta = msg.metadata as any;
     if (!meta) return;
 
-    if (meta.kind === 'generation_request') {
-      this._decorateRequest(msg, block);
-    } else if (meta.kind === 'generation') {
+    if (meta.kind === 'generation') {
       this._decorateResult(msg, block);
     }
   }
@@ -888,11 +889,14 @@ export class GenerationController {
       });
       if (!res?.success) throw new Error(res?.error || 'Ошибка генерации');
 
-      this._applyServerMessages(chatId, [res.request_message, res.message]);
-      if (!res.request_message || !res.message) {
-        // Сервер не смог перечитать строки — подтягиваем чат целиком
+      this._applyServerMessages(chatId, [res.message]);
+      if (!res.message) {
+        // Сервер не смог перечитать строку — подтягиваем чат целиком
         await chatService.getChat(chatId);
       }
+      // Флаг снимается ДО сверки: иначе сверка решит, что запрос ещё идёт,
+      // и вернёт заглушку «Генерируется…» поверх готового результата
+      this._inFlight = false;
       this._removeLocalPlaceholder();
       this.reconcile();
       this._refreshEnergy();
@@ -1080,54 +1084,6 @@ export class GenerationController {
     return created;
   }
 
-  private _decorateRequest(msg: IMessage, block: HTMLElement): void {
-    const meta = msg.metadata as any;
-    const refs: IGenerationMedia[] = Array.isArray(meta.media_inputs) ? meta.media_inputs : [];
-    const negative: string = meta.negative_prompt || '';
-
-    const sig = `req|${refs.map((r) => r.storage_path).join(',')}|${negative}`;
-    if (block.dataset.genSig === sig) return;
-    block.dataset.genSig = sig;
-
-    block.querySelector('.gen-req-extra')?.remove();
-    if (refs.length === 0 && !negative) return;
-
-    const extra = document.createElement('div');
-    extra.className = 'gen-req-extra';
-
-    if (negative) {
-      const neg = document.createElement('div');
-      neg.className = 'gen-req-negative';
-      neg.textContent = `Без: ${negative}`;
-      extra.appendChild(neg);
-    }
-
-    if (refs.length > 0) {
-      const row = document.createElement('div');
-      row.className = 'gen-req-thumbs';
-      const imgs: Array<{ path: string; img: HTMLImageElement }> = [];
-      for (const ref of refs) {
-        const img = document.createElement('img');
-        img.className = 'gen-thumb';
-        img.alt = '';
-        img.loading = 'lazy';
-        row.appendChild(img);
-        imgs.push({ path: ref.storage_path, img });
-      }
-      extra.appendChild(row);
-
-      resolveMediaUrls(imgs.map((i) => i.path)).then((urls) => {
-        for (const { path, img } of imgs) {
-          if (urls[path]) img.src = urls[path];
-        }
-      });
-    }
-
-    const del = block.querySelector('.msg-delete-btn');
-    if (del) block.insertBefore(extra, del);
-    else block.appendChild(extra);
-  }
-
   private _decorateResult(msg: IMessage, block: HTMLElement): void {
     const meta = msg.metadata as any;
     const status: string = meta.status || 'pending';
@@ -1138,7 +1094,10 @@ export class GenerationController {
     if (block.dataset.genSig === sig) return;
     block.dataset.genSig = sig;
 
-    if (status === 'pending' || status === 'processing') {
+    // Карточка задания в работе сама показывает состояние; готовый результат или ошибка
+    // убирают заглушку, если запрос уже не выполняется (старые карточки во время нового
+    // запроса её не трогают)
+    if (status === 'pending' || status === 'processing' || !this._inFlight) {
       this._removeLocalPlaceholder();
     }
 
@@ -1328,6 +1287,9 @@ export class GenerationController {
     this._removeLocalPlaceholder();
     const container = document.getElementById('chat-container');
     if (!container) return;
+
+    // Первая генерация в новом чате: приветствие больше не нужно
+    document.getElementById('welcome-message')?.remove();
 
     const block = document.createElement('div');
     block.id = LOCAL_PENDING_ID;
