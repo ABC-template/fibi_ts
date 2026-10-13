@@ -1,10 +1,12 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.1.1 - замена @types → @app-types
+// Версия: 4.2.0 - удаление сообщения: сначала сервер (409 — чат занят ответом или
+//                 генерацией → локально не удаляем), потом локально
+//          4.1.1 - замена @types → @app-types
 // ============================================
 
-import { apiClient } from './api';
+import { apiClient, ApiError } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { chatService } from './chats';
@@ -162,61 +164,64 @@ export class MessageService {
   // ==========================================
 
   async deleteMessage(chatId: UUID, messageId: UUID): Promise<boolean> {
-    const deleted = chatStore.deleteMessage(chatId, messageId);
-    if (!deleted) return false;
-
-    // ✅ ПРОВЕРЯЕМ: Остались ли сообщения в чате?
     const found = chatStore.findChatById(chatId);
-    if (found) {
-      const hasMessages = chatStore.hasRealMessages(found.chat);
-      
-      // ✅ ЕСЛИ СООБЩЕНИЙ НЕТ → УДАЛЯЕМ ЧАТ
-      if (!hasMessages) {
-        console.log(`🧹 [deleteMessage] Чат ${chatId} стал пустым, удаляем...`);
-        
-        // Удаляем чат (HARD DELETE)
-        const chatDeleted = chatStore.permanentDeleteChat(chatId);
-        
-        if (chatDeleted && userStore.canSync()) {
-          try {
-            // Сначала отправляем в корзину (для соблюдения логики)
-            await chatService.deleteChat(chatId);
-            // Затем удаляем навсегда
-            await chatService.permanentDeleteChat(chatId);
-            console.log(`✅ [deleteMessage] Чат ${chatId} удалён на сервере (HARD DELETE)`);
-          } catch (err) {
-            console.error(`❌ [deleteMessage] Ошибка синхронизации удаления чата:`, err);
-          }
+    if (!found || !found.chat.messages.some((m) => m.id === messageId)) return false;
+
+    // Станет ли чат пустым после удаления
+    const willBeEmpty = !chatStore.hasRealMessages({
+      ...found.chat,
+      messages: found.chat.messages.filter((m) => m.id !== messageId),
+    });
+
+    // Сначала сервер: пока в чате идёт ответ или генерация, он отвечает 409 —
+    // тогда локально ничего не удаляем (иначе сообщение «воскреснет» при синхронизации)
+    if (userStore.canSync()) {
+      try {
+        if (willBeEmpty) {
+          // Чат станет пустым → в корзину и сразу навсегда
+          const trashed = await apiClient.post('/chats/actions/update', {
+            action: 'delete_chat',
+            chatId: chatId
+          });
+          this._saveSyncToken(trashed?.syncToken || null);
+          const removed = await apiClient.delete('/chats/trash', {
+            body: { id: chatId, type: 'chat' }
+          });
+          this._saveSyncToken(removed?.syncToken || null);
+          console.log(`✅ [deleteMessage] Чат ${chatId} удалён на сервере (HARD DELETE)`);
+        } else {
+          const result = await apiClient.post('/chats/mutations/delete-with-confirm', {
+            action: 'delete_message_with_confirm',
+            messageId: messageId
+          });
+          this._saveSyncToken(result?.syncToken || null);
+          console.log(`✅ [deleteMessage] Сообщение ${messageId} удалено на сервере (HARD DELETE)`);
         }
-        
-        // Возвращаемся в список чатов
-        if (window.moduleLoader) {
-          setTimeout(() => {
-            window.moduleLoader.load('agents');
-          }, 300);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          const notice = err.message || 'Дождитесь окончания ответа или генерации.';
+          const tg = (window as any).tg || (window as any).Telegram?.WebApp;
+          if (tg?.showAlert) tg.showAlert(`⏳ ${notice}`);
+          else uiRenderer.showToast(`⏳ ${notice}`, 'info');
+          return false;
         }
-        
-        return true;
+        // Нет на сервере (ещё не синхронизировано) или сбой связи — удаляем локально
+        console.warn(`⚠️ [deleteMessage] Сервер не подтвердил удаление:`, err);
       }
     }
 
-    // Если сообщения остались — синхронизируем удаление сообщения
-    if (userStore.canSync()) {
-      try {
-        const result = await apiClient.post('/chats/mutations/delete-with-confirm', {
-          action: 'delete_message_with_confirm',
-          messageId: messageId
-        });
+    const deleted = chatStore.deleteMessage(chatId, messageId);
+    if (!deleted) return false;
 
-        this._saveSyncToken(result.syncToken);
+    if (willBeEmpty) {
+      console.log(`🧹 [deleteMessage] Чат ${chatId} стал пустым, удаляем...`);
+      chatStore.permanentDeleteChat(chatId);
 
-        if (result.success) {
-          console.log(`✅ [deleteMessage] Сообщение ${messageId} удалено на сервере (HARD DELETE)`);
-        } else {
-          console.warn(`⚠️ [deleteMessage] Сообщение ${messageId} удалено локально, но не на сервере`);
-        }
-      } catch (err) {
-        console.error(`❌ [deleteMessage] Ошибка синхронизации:`, err);
+      // Возвращаемся в список чатов
+      if (window.moduleLoader) {
+        setTimeout(() => {
+          window.moduleLoader.load('agents');
+        }, 300);
       }
     }
 
