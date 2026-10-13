@@ -1,7 +1,9 @@
 // ============================================
 // api/_lib/validators.ts
 // Описание: Все валидации для Edge-функций
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.1.0 - длина сообщения до 100 000 символов (MAX_MESSAGE_CHARS);
+//                 normalizeOrganizerTopic ('all' или тема)
+//          2.0.0 - TypeScript
 // ============================================
 
 // ==========================================
@@ -40,6 +42,15 @@ export function validateTopic(topic: string): boolean {
     throw new Error(`Invalid topic: ${topic}. Allowed: ${ALLOWED_TOPICS.join(', ')}`);
   }
   return true;
+}
+
+/**
+ * Раздел органайзера: 'all' (общий, по умолчанию) или одна из тем.
+ * null — значение недопустимо.
+ */
+export function normalizeOrganizerTopic(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === '' || raw === 'all') return 'all';
+  return typeof raw === 'string' && isValidTopic(raw) ? raw : null;
 }
 
 // ==========================================
@@ -113,9 +124,15 @@ export interface IMessageLengthValidation {
   error?: string;
 }
 
+/**
+ * Максимальная длина сообщения. Ответы ИИ бывают длинными (код, документы):
+ * при 10 000 они не сохранялись в облако и пропадали на других устройствах.
+ */
+export const MAX_MESSAGE_CHARS = 100_000;
+
 export function validateMessageLength(
   text: string,
-  maxLength: number = 10000
+  maxLength: number = MAX_MESSAGE_CHARS
 ): IMessageLengthValidation {
   if (!text || typeof text !== 'string') {
     return { valid: false, error: 'Message text is required' };
