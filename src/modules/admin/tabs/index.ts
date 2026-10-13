@@ -1,11 +1,11 @@
 // ============================================
 // src/modules/admin/tabs/index.ts
 // Экспорт всех вкладок админ-панели
-// Версия: 2.0.0 — добавлен AdminAgentsTab
+// Версия: 2.1.0 — убрана пустая вкладка AdminLimitsTab
+//          2.0.0 — добавлен AdminAgentsTab
 // ============================================
 
 export { AdminDashboardTab } from './AdminDashboardTab';
-export { AdminLimitsTab } from './AdminLimitsTab';
 export { AdminQuestsTab } from './AdminQuestsTab';
 export { AdminSettingsTab } from './AdminSettingsTab';
 export { AdminSubscriptionsTab } from './AdminSubscriptionsTab';
