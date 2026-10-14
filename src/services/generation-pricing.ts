@@ -1,10 +1,13 @@
 // ============================================
 // src/services/generation-pricing.ts
 // Оценка стоимости генерации в энергии для кнопки «Сгенерировать ⚡ N».
-// Формула повторяет серверную (api/_lib/openrouter-media.ts: estimateUsd/energyForUsd):
-//   $ по прайсу агента × энергия за $ × коэффициент, не меньше min_charge.
+// Формула повторяет серверную (api/_lib/openrouter-media.ts: estimateUsd,
+// api/_lib/energy-pricing.ts: energyForUsd):
+//   $ по прайсу агента × курс ⚡ за $1 (из настроек) × коэффициент, не меньше min_charge.
 // Это оценка до старта; списывается фактическая стоимость после успеха.
-// Версия: 1.1.0 — наценку выбирает сервер (agent.markup из GET /api/agents),
+// Версия: 1.2.0 — курс — общий (agent.energy_per_usd из GET /api/agents, источник —
+//                  настройки экономики); мин. списание без умножения на коэффициент
+//          1.1.0 — наценку выбирает сервер (agent.markup из GET /api/agents),
 //                  таблица наценок по тарифам клиенту не отдаётся
 // ============================================
 
@@ -32,8 +35,7 @@ function perSecondUsd(p: any, params: Record<string, any>): number {
 
 function estimateUsd(gen: IGenerationConfig, params: Record<string, any>): number | null {
   const p = gen?.pricing;
-  const rate = Number(p?.energy_per_usd);
-  if (!p || !Number.isFinite(rate) || rate <= 0) return null;
+  if (!p) return null;
 
   if (p.kind === 'per_image') {
     const usd = Number(p.usd);
@@ -49,17 +51,16 @@ function estimateUsd(gen: IGenerationConfig, params: Record<string, any>): numbe
 }
 
 export function estimateEnergy(
-  agent: Pick<IPublicAgent, 'markup' | 'min_charge' | 'generation_config'> | null | undefined,
+  agent: Pick<IPublicAgent, 'markup' | 'min_charge' | 'energy_per_usd' | 'generation_config'> | null | undefined,
   params: Record<string, any>
 ): number {
   const gen: IGenerationConfig = agent?.generation_config || {};
   const markup = agentMarkup(agent);
-  const min = Number(agent?.min_charge) || 1;
-  const floor = Math.max(Math.ceil(min * markup), min);
+  const min = Math.max(1, Math.floor(Number(agent?.min_charge)) || 1);
+  const rate = Number(agent?.energy_per_usd);
 
   const usd = estimateUsd(gen, params);
-  if (usd === null) return floor;
+  if (usd === null || !Number.isFinite(rate) || rate <= 0) return min;
 
-  const raw = Math.ceil(usd * Number(gen.pricing!.energy_per_usd) * markup);
-  return Math.max(raw, floor);
+  return Math.max(Math.ceil(usd * rate * markup - 1e-9), min);
 }
