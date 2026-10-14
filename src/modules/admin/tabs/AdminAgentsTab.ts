@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.4.0 — «Доступ по тарифам»: тариф trial выбрать нельзя (ничего не выбрано —
+// Версия: 3.5.0 — мин. списание: целое ≥ 1 с проверкой (раньше 0 молча становился 50);
+//                  курс ⚡ за $1 приходит с GET /admin/agents и передаётся панели генерации
+//          3.4.0 — «Доступ по тарифам»: тариф trial выбрать нельзя (ничего не выбрано —
 //                  доступен всем, включая trial; выбраны тарифы — только им);
 //                  удалён неиспользуемый loadTiers (старый select min_pro_tier) и импорт ProTier
 //          3.3.0 — у генеративных агентов (фото/видео/аудио) галочка trial неактивна:
@@ -46,6 +48,8 @@ export class AdminAgentsTab implements IAdminTab {
   private availableModels: OpenRouterModelOption[] = [];
   private editingAgent: IAiAgent | null = null;
   private genPanel: GenerationSettingsPanel | null = null;
+  /** Общий курс ⚡ за $1 (настройки экономики) — для примера расчёта в форме */
+  private energyPerUsd = 0;
 
   async init(): Promise<void> {
     await this.loadData();
@@ -56,7 +60,10 @@ export class AdminAgentsTab implements IAdminTab {
     this.loading = true;
     try {
       const res = await apiClient.get('/admin/agents');
-      if (res.success) this.agents = res.agents || [];
+      if (res.success) {
+        this.agents = res.agents || [];
+        this.energyPerUsd = Number(res.energy_per_usd) || 0;
+      }
     } catch (e) {
       console.error('[AdminAgentsTab]', e);
     } finally {
@@ -310,8 +317,8 @@ export class AdminAgentsTab implements IAdminTab {
               style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--app-text-tertiary)">Мин. списание</label>
-            <input id="agent-min-charge" type="number" min="0" step="10" value="${agent?.min_charge ?? 50}"
+            <label style="font-size:12px;color:var(--app-text-tertiary)">Мин. списание, ⚡</label>
+            <input id="agent-min-charge" type="number" min="1" step="1" value="${agent?.min_charge ?? 1}"
               style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary)">
           </div>
         </div>
@@ -386,7 +393,7 @@ export class AdminAgentsTab implements IAdminTab {
     this.editingAgent = agent || null;
     this.genPanel?.dispose();
     const panelRoot = document.getElementById('agent-gen-panel');
-    this.genPanel = panelRoot ? new GenerationSettingsPanel(panelRoot) : null;
+    this.genPanel = panelRoot ? new GenerationSettingsPanel(panelRoot, this.energyPerUsd) : null;
 
     const modalitySelect = document.getElementById('agent-modality') as HTMLSelectElement;
     modalitySelect?.addEventListener('change', async () => {
@@ -480,6 +487,17 @@ export class AdminAgentsTab implements IAdminTab {
       return;
     }
 
+    const coefficient = Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value);
+    if (!Number.isFinite(coefficient) || coefficient < 1) {
+      alert('Коэффициент — число не меньше 1');
+      return;
+    }
+    const minCharge = Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value);
+    if (!Number.isInteger(minCharge) || minCharge < 1 || minCharge > 1_000_000) {
+      alert('Мин. списание — целое число от 1 до 1 000 000');
+      return;
+    }
+
     const selectedModel = this.availableModels.find(m => m.id === modelId);
 
     const payload: IAiAgentInput = {
@@ -496,8 +514,8 @@ export class AdminAgentsTab implements IAdminTab {
       model_id: modelId,
       context_length: selectedModel?.context_length || null,
       system_prompt: systemPrompt,
-      markup_coefficient: Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value) || 3,
-      min_charge: Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value) || 50,
+      markup_coefficient: coefficient,
+      min_charge: minCharge,
       allowed_tiers: this.collectAllowedTiers(),
       markup_by_tier: this.collectMarkupByTier(),
       welcome_message: this.collectWelcomeMessage(),
