@@ -1,7 +1,10 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video)
-// Версия: 3.4.0 — лимит частоты (generation_create)
+// Версия: 3.5.0 — энергия по общему курсу ⚡ за $1 из настроек экономики (energy_per_usd
+//                  у агента больше не используется); мин. списание без умножения на
+//                  коэффициент; расход пишется в журнал ai_usage
+//          3.4.0 — лимит частоты (generation_create)
 //          3.3.0 — референс принимается только после /media/confirm (confirmed_at)
 //          3.2.0 — резерв энергии (sql/energy_holds.sql): перед стартом стоимость
 //                  замораживается атомарно; одна генерация (фото или видео) на
@@ -22,7 +25,7 @@
 //     задания (токен замка лежит в metadata сообщения)
 //   - одно активное видео на пользователя
 //   - энергия: оценка до старта по generation_config.pricing; списание после
-//     успеха по фактической стоимости (usage.cost × energy_per_usd × коэффициент)
+//     успеха по фактической стоимости (usage.cost × курс из настроек × коэффициент)
 //   - аудио пока не поддерживается и отклоняется явно
 //   2.2.0 и ранее: замок чата, списание после успеха, референсы из приватного
 //   Storage, результаты только как storage_path, валидация по generation_config
@@ -36,6 +39,8 @@ import { reserveEnergy, releaseEnergy } from '../_lib/energy-hold';
 import { HttpError } from '../_lib/http-error';
 import { enforceRateLimit } from '../_lib/rate-limit';
 import { keepAliveJson } from '../_lib/keepalive';
+import { agentMinCharge, energyForUsd, getEnergyRates } from '../_lib/energy-pricing';
+import type { IEnergyRates } from '../_lib/energy-pricing';
 import {
   loadGenerativeAgent,
   maxInputsForMode,
@@ -68,7 +73,6 @@ export const GENERATION_BUSY_MESSAGE = 'Дождитесь окончания г
 import type { IChatLock } from '../_lib/chat-lock';
 import {
   appBaseUrl,
-  energyForUsd,
   estimateUsd,
   generateImages,
   readPricing,
@@ -192,7 +196,8 @@ export default async function handler(request: Request): Promise<Response> {
     const tier = premiumExpired ? null : user?.subscription_tier || null;
     const markup = getMarkupForTier(agent, tier);
     const pricing = readPricing(gen);
-    const estimatedCost = energyForUsd(estimateUsd(pricing, params), pricing, agent, markup);
+    const rates = await getEnergyRates(config);
+    const estimatedCost = energyForUsd(estimateUsd(pricing, params) ?? 0, rates.energyPerUsd, markup, agentMinCharge(agent));
 
     // 6. Заморозка энергии + одна генерация на пользователя (атомарно в БД)
     const reservation = await reserveEnergy(
@@ -364,6 +369,7 @@ export default async function handler(request: Request): Promise<Response> {
           chatId: body.chat_id,
           agent,
           markup,
+          rates,
           pricing,
           params,
           prompt,
@@ -428,6 +434,7 @@ async function runImageGeneration(ctx: {
   chatId: string;
   agent: any;
   markup: number;
+  rates: IEnergyRates;
   pricing: ReturnType<typeof readPricing>;
   params: Record<string, any>;
   prompt: string;
@@ -461,9 +468,29 @@ async function runImageGeneration(ctx: {
   let finalCost = 0;
   if (stored.length > 0) {
     // Списание — только после того, как результат сохранён
-    const usd = costUsd !== null && costUsd > 0 ? costUsd : estimateUsd(ctx.pricing, ctx.params);
-    const amount = energyForUsd(usd, ctx.pricing, agent, ctx.markup);
-    finalCost = await chargeForGeneration(userId, amount, 'image', chatId, config, ctx.holdId);
+    const fact = costUsd !== null && costUsd > 0;
+    const estimate = fact ? null : estimateUsd(ctx.pricing, ctx.params);
+    const usd = fact ? (costUsd as number) : estimate ?? 0;
+    const amount = energyForUsd(usd, ctx.rates.energyPerUsd, ctx.markup, agentMinCharge(agent));
+    finalCost = await chargeForGeneration(
+      userId,
+      amount,
+      {
+        kind: 'image',
+        model_id: String(agent.model_id),
+        agent_id: agent.id,
+        chat_id: chatId,
+        prompt_tokens: null,
+        completion_tokens: null,
+        cost_usd: usd,
+        cost_source: fact ? 'usage' : estimate !== null ? 'estimate' : 'none',
+        markup: ctx.markup,
+        energy_per_usd: ctx.rates.energyPerUsd,
+        outcome: 'done',
+      },
+      config,
+      ctx.holdId
+    );
 
     await patchMessage(
       messageId,
