@@ -1,7 +1,8 @@
 // ============================================
 // api/agents/index.ts
 // Описание: Список активных агентов для пользователей + флаг доступа
-// Версия: 2.0.0 — наружу уходят только поля для интерфейса (IPublicAgent):
+// Версия: 2.1.0 — energy_per_usd (общий курс ⚡ за $1 из настроек) — для оценки цены генерации
+//          2.0.0 — наружу уходят только поля для интерфейса (IPublicAgent):
 //                  без system_prompt, model_id, context_length, inject_balance,
 //                  таблицы наценок; наценка — одно число для тарифа пользователя;
 //                  из generation_config — только modes/params/prompt/negative_prompt/pricing;
@@ -15,6 +16,7 @@ import { getSupabaseConfig, supabaseFetch } from '../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { checkAgentAccess } from '../_lib/agent-access';
 import { getMarkupForTier } from '../_lib/markup-helper';
+import { getEnergyRates } from '../_lib/energy-pricing';
 import type { IAgentName, AgentModality, IPublicAgent } from '../../types/agents';
 import type { IGenerationConfig } from '../../types/generation';
 
@@ -89,6 +91,15 @@ export default async function handler(request: Request): Promise<Response> {
       config
     ) as Promise<IAgentRow[]>;
 
+    // Курс нужен только для оценки цены генерации в форме: без него список всё равно отдаём
+    // (0 — курс неизвестен, форма покажет минимальное списание)
+    const ratePromise = getEnergyRates(config)
+      .then((r) => r.energyPerUsd)
+      .catch((err) => {
+        console.error('agents: economy settings:', (err as Error).message);
+        return 0;
+      });
+
     // Роль и тариф пользователя
     let userRole = 'guest';
     let userProTier: string | null = null;
@@ -108,6 +119,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const rows = (await agentsPromise) || [];
+    const energyPerUsd = await ratePromise;
 
     const agents: IPublicAgent[] = rows.map((agent) => {
       const { hasAccess, reason } = checkAgentAccess(agent, userRole, userProTier);
@@ -121,7 +133,8 @@ export default async function handler(request: Request): Promise<Response> {
         generation_config: publicGenerationConfig(agent.generation_config),
         allowed_tiers: agent.allowed_tiers ?? null,
         markup: getMarkupForTier(agent, userProTier),
-        min_charge: Number(agent.min_charge) || 0,
+        min_charge: Number(agent.min_charge) || 1,
+        energy_per_usd: energyPerUsd,
         sort_order: Number(agent.sort_order) || 0,
         is_active: agent.is_active,
         has_access: hasAccess,
