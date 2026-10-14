@@ -1,7 +1,9 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 9.2.0 — лимит частоты (auth_check)
+// Версия: 9.3.0 — лимиты тарифа без выдуманных значений: если get_user_tier_limits не
+//                  ответил, бонус дня не начисляется (раньше подставлялись 5 ⚡)
+//          9.2.0 — лимит частоты (auth_check)
 //          9.1.0 — без trial_used (пробного периода больше нет)
 //          9.0.0 — доступ (api/_lib/access-gate.ts): подписка на канал проверяется
 //                  только если в админке включено «Только для подписчиков», и при
@@ -198,11 +200,12 @@ export default async function handler(request: Request): Promise<Response> {
     // ==========================================
     // 6. Лимиты из тарифа
     // ==========================================
+    // Нет ответа от БД — ничего не начисляем (бонус догонит при следующем входе)
     let limits: any = {
       tier_key: subscriptionTier || 'trial',
-      bonus_tokens_per_day: 5,
+      bonus_tokens_per_day: 0,
       permanent_tokens: 0,
-      daily_spend_limit: 5,
+      daily_spend_limit: 0,
       bypass: false,
     };
 
@@ -212,15 +215,17 @@ export default async function handler(request: Request): Promise<Response> {
         { p_user_id: telegramId },
         config
       );
-      if (limitsResult && limitsResult.success !== false) {
+      if (limitsResult && limitsResult.success === true) {
         limits = {
           tier_key: limitsResult.tier_key || 'trial',
           name: limitsResult.name || null,
-          bonus_tokens_per_day: limitsResult.bonus_tokens_per_day ?? 5,
-          permanent_tokens: limitsResult.permanent_tokens ?? 0,
-          daily_spend_limit: limitsResult.daily_spend_limit ?? 0,
+          bonus_tokens_per_day: Number(limitsResult.bonus_tokens_per_day) || 0,
+          permanent_tokens: Number(limitsResult.permanent_tokens) || 0,
+          daily_spend_limit: Number(limitsResult.daily_spend_limit) || 0,
           bypass: limitsResult.bypass === true,
         };
+      } else {
+        console.warn('⚠️ [auth/check] limits:', limitsResult?.error || 'no result');
       }
     } catch (err) {
       console.warn('⚠️ [auth/check] limits:', err);
