@@ -4,7 +4,10 @@
 // списание энергии, обновление сообщений и завершение видео-задания.
 // finalizeVideoJob идемпотентна: вебхук OpenRouter и опрос статуса из приложения
 // могут прийти одновременно — результат сохранится и будет оплачен ровно один раз.
-// Версия: 1.3.0 — persistBytes: путь через buildStoragePath; при сбое удаляются и записи,
+// Версия: 1.4.0 — энергия по общему курсу из настроек экономики (energy-pricing.ts),
+//                  мин. списание без умножения на коэффициент (как у текста);
+//                  каждое списание пишет строку журнала расходов ai_usage
+//          1.3.0 — persistBytes: путь через buildStoragePath; при сбое удаляются и записи,
 //                  и уже загруженные объекты (раньше объекты оставались в Storage без записи
 //                  и не попадали ни в квоту, ни в очистку)
 //          1.2.0 — резерв энергии: списание через settle_energy (снимает заморозку
@@ -29,7 +32,9 @@ import {
 } from './media';
 import { releaseChatLockByToken, VIDEO_LOCK_TTL_SEC } from './chat-lock';
 import { releaseEnergy, settleEnergy } from './energy-hold';
-import { downloadVideo, energyForUsd, estimateUsd, getVideoJob, readPricing } from './openrouter-media';
+import { downloadVideo, estimateUsd, getVideoJob, readPricing } from './openrouter-media';
+import { agentMinCharge, energyForUsd, getEnergyRates } from './energy-pricing';
+import type { IUsageRecord } from './energy-pricing';
 
 export interface IStoredMedia {
   type: 'image' | 'video' | 'audio';
@@ -218,23 +223,23 @@ export async function persistBytes(
 // ============================================
 
 /**
- * Списание энергии за успешную генерацию: снимает заморозку holdId и списывает
- * факт. Возвращает фактически списанную сумму (0 для admin/creator). Если списать
- * не удалось, результат всё равно отдаётся, а сбой пишется в system_logs.
+ * Списание энергии за успешную генерацию: снимает заморозку holdId, списывает
+ * факт и пишет расход в журнал. Возвращает фактически списанную сумму (0 для
+ * admin/creator). Если списать не удалось, результат всё равно отдаётся, а сбой
+ * пишется в system_logs.
  */
 export async function chargeForGeneration(
   userId: number,
   amount: number,
-  modality: string,
-  chatId: string,
+  usage: IUsageRecord,
   config: ISupabaseConfig,
   holdId: string | null = null
 ): Promise<number> {
   // Результат уже получен: списываем сколько есть, недоплату пишет БД
-  const res = await settleEnergy(holdId, userId, amount, 'generation', `Генерация (${modality})`, config);
+  const res = await settleEnergy(holdId, userId, amount, 'generation', `Генерация (${usage.kind})`, usage, config);
   if (res.success) return res.charged;
 
-  await logGenerationIssue(userId, 'generation_charge_failed', `Не удалось списать ${amount} за успешную генерацию: ${res.error || 'unknown'}`, { amount, chat_id: chatId }, config);
+  await logGenerationIssue(userId, 'generation_charge_failed', `Не удалось списать ${amount} за успешную генерацию: ${res.error || 'unknown'}`, { amount, chat_id: usage.chat_id }, config);
   // Заморозку всё равно снимаем, иначе энергия «висит» до истечения срока
   await releaseEnergy(holdId, config);
   return 0;
@@ -499,13 +504,31 @@ async function chargeForVideo(
   const tier = (!expired && u?.subscription_tier) || null;
   const markup = getMarkupForTier(agent, tier);
 
+  const rates = await getEnergyRates(config);
   const pricing = readPricing(agent.generation_config);
   // Фактическая стоимость у OpenRouter; для BYOK или при отсутствии — по прайсу
-  const usd =
-    job.costUsd !== null && !job.isByok && job.costUsd > 0
-      ? job.costUsd
-      : estimateUsd(pricing, meta.params || {});
+  const fact = job.costUsd !== null && !job.isByok && job.costUsd > 0;
+  const estimate = fact ? null : estimateUsd(pricing, meta.params || {});
+  const usd = fact ? (job.costUsd as number) : estimate ?? 0;
 
-  const amount = energyForUsd(usd, pricing, agent, markup);
-  return chargeForGeneration(userId, amount, 'video', row.chat_id, config, meta.hold_id || null);
+  const amount = energyForUsd(usd, rates.energyPerUsd, markup, agentMinCharge(agent));
+  return chargeForGeneration(
+    userId,
+    amount,
+    {
+      kind: 'video',
+      model_id: String(agent.model_id || meta.model_id || 'unknown'),
+      agent_id: agent.id,
+      chat_id: row.chat_id,
+      prompt_tokens: null,
+      completion_tokens: null,
+      cost_usd: usd,
+      cost_source: fact ? 'usage' : estimate !== null ? 'estimate' : 'none',
+      markup,
+      energy_per_usd: rates.energyPerUsd,
+      outcome: 'done',
+    },
+    config,
+    meta.hold_id || null
+  );
 }
