@@ -1,7 +1,9 @@
 // ============================================
 // api/admin/economy/settings.ts
 // Глобальные настройки экономики (админ)
-// Версия: 2.1.0 — сроки хранения журналов не меньше 7 дней (их чистит cron clean-all)
+// Версия: 2.2.0 — цена энергии: energy_per_usd (⚡ за $1, все агенты и голос),
+//                  voice_markup (дробный коэффициент голоса), voice_min_charge
+//          2.1.0 — сроки хранения журналов не меньше 7 дней (их чистит cron clean-all)
 //          2.0.0 — сохраняются только известные поля с проверкой диапазонов
 //                  (раньше тело запроса записывалось в economy_settings как есть);
 //                  удалены неиспользуемые поля; добавлены лимиты игр и рекламы
@@ -21,37 +23,49 @@ import {
 
 export const config = { runtime: 'edge' };
 
-/** Поля, которые можно менять из админки: [min, max] для чисел, null — флаг */
-const FIELDS: Record<string, [number, number] | null> = {
+/** Число: диапазон и можно ли дробное (до сотых) */
+interface INumberRule {
+  min: number;
+  max: number;
+  decimal?: boolean;
+}
+
+/** Поля, которые можно менять из админки: правило для чисел, null — флаг. Диапазоны — как в CHECK БД */
+const FIELDS: Record<string, INumberRule | null> = {
   exchange_enabled: null,
   whitelist_enabled: null,
   channel_gate_enabled: null,
-  exchange_rate: [0, 1_000_000],
-  min_exchange_amount: [1, 1_000_000],
-  max_exchange_percent: [1, 100],
-  game_coins_daily_cap: [0, 1_000_000],
-  ad_reward_daily_limit: [0, 1_000],
-  ad_reward_min_interval_sec: [0, 86_400],
+  exchange_rate: { min: 0, max: 1_000_000 },
+  min_exchange_amount: { min: 1, max: 1_000_000 },
+  max_exchange_percent: { min: 1, max: 100 },
+  game_coins_daily_cap: { min: 0, max: 1_000_000 },
+  ad_reward_daily_limit: { min: 0, max: 1_000 },
+  ad_reward_min_interval_sec: { min: 0, max: 86_400 },
+  // Цена энергии: ⚡ за $1 себестоимости — для всех агентов и голоса
+  energy_per_usd: { min: 100, max: 1_000_000 },
+  voice_markup: { min: 0.1, max: 100, decimal: true },
+  voice_min_charge: { min: 1, max: 100_000 },
   // Не короче недели: по журналам считаются недельная статистика и дневные лимиты
-  log_retention_days: [7, 3_650],
-  audit_log_retention_days: [7, 3_650],
+  log_retention_days: { min: 7, max: 3_650 },
+  audit_log_retention_days: { min: 7, max: 3_650 },
 };
 
 const SELECT = ['id', ...Object.keys(FIELDS), 'updated_at'].join(',');
 
-/** Проверка тела запроса: только известные поля, числа — целые в диапазоне */
+/** Проверка тела запроса: только известные поля, числа — в диапазоне (целые, если не decimal) */
 function pickUpdates(body: any): Record<string, any> | string {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Invalid body';
   const out: Record<string, any> = {};
-  for (const [key, range] of Object.entries(FIELDS)) {
+  for (const [key, rule] of Object.entries(FIELDS)) {
     if (body[key] === undefined) continue;
-    if (range === null) {
+    if (rule === null) {
       if (typeof body[key] !== 'boolean') return `${key} must be boolean`;
       out[key] = body[key];
     } else {
       const n = Number(body[key]);
-      if (!Number.isInteger(n) || n < range[0] || n > range[1]) {
-        return `${key} must be an integer ${range[0]}…${range[1]}`;
+      const okType = rule.decimal ? Number.isFinite(n) && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6 : Number.isInteger(n);
+      if (!okType || n < rule.min || n > rule.max) {
+        return `${key} must be ${rule.decimal ? 'a number (0.01 step)' : 'an integer'} ${rule.min}…${rule.max}`;
       }
       out[key] = n;
     }
@@ -71,7 +85,7 @@ export default async function handler(request: Request): Promise<Response> {
   const config = getSupabaseConfig('service');
 
   try {
-    const rows = await supabaseFetch(`economy_settings?select=${SELECT}&limit=1`, { method: 'GET' }, config);
+    const rows = await supabaseFetch(`economy_settings?select=${SELECT}&order=created_at.asc&limit=1`, { method: 'GET' }, config);
     const existing = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 
     if (request.method === 'GET') {
