@@ -99,14 +99,14 @@ export interface IGenerationPromptConfig {
  *               со звуком берётся audio_prices (если заданы)
  *  per_image  → usd за одно изображение (OpenRouter отдаёт цену за токены,
  *               поэтому оценку задаёт администратор)
- * Энергия = usd × energy_per_usd × коэффициент агента, не меньше min_charge.
+ * Энергия = usd × курс (economy_settings.energy_per_usd) × коэффициент агента,
+ * не меньше min_charge.
  */
 export interface IGenerationPricing {
   kind: 'per_second' | 'per_image';
   prices?: Record<string, number>;
   audio_prices?: Record<string, number>;
   usd?: number;
-  energy_per_usd: number;
 }
 
 /** Возможности модели OpenRouter (из /images/models и /videos/models) */
