@@ -3,8 +3,10 @@
 // Клиент отдельных медиа-API OpenRouter:
 //   видео  — POST /videos (асинхронное задание), GET /videos/{id}, скачивание;
 //   фото   — POST /images (синхронно, b64_json).
-// Плюс перевод параметров формы в поля API и расчёт цены/энергии.
-// Версия: 1.0.0
+// Плюс перевод параметров формы в поля API и оценка цены в $.
+// Версия: 1.1.0 — энергия считается в energy-pricing.ts по общему курсу из настроек
+//                  (energy_per_usd в прайсе агента больше не используется; удалён energyForUsd)
+//          1.0.0
 // ============================================
 
 import type { ISupabaseConfig } from './supabase-client';
@@ -317,14 +319,11 @@ export interface IPricing {
   /** Цена за секунду со звуком (если у модели она другая) */
   audio_prices?: Record<string, number>;
   usd?: number;
-  energy_per_usd: number;
 }
 
 export function readPricing(gen: any): IPricing | null {
   const p = gen?.pricing;
   if (!p || (p.kind !== 'per_second' && p.kind !== 'per_image')) return null;
-  const rate = Number(p.energy_per_usd);
-  if (!Number.isFinite(rate) || rate <= 0) return null;
   return p as IPricing;
 }
 
@@ -358,22 +357,4 @@ export function estimateUsd(pricing: IPricing | null, params: Record<string, any
   const perSec = perSecondUsd(pricing, params);
   if (!Number.isFinite(perSec) || perSec <= 0) return null;
   return perSec * duration;
-}
-
-/**
- * Энергия за запрос: $ × энергия за $ × коэффициент, не меньше min_charge.
- * Без цены (старые агенты) — минимальное списание с коэффициентом.
- */
-export function energyForUsd(
-  usd: number | null,
-  pricing: IPricing | null,
-  agent: any,
-  markup: number
-): number {
-  const min = Number(agent?.min_charge) || 1;
-  if (usd === null || !pricing) {
-    return Math.max(Math.ceil(min * markup), min);
-  }
-  const raw = Math.ceil(usd * pricing.energy_per_usd * markup);
-  return Math.max(raw, Math.ceil(min * markup), min);
 }
