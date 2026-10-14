@@ -6,7 +6,9 @@
 // какие значения параметров доступны пользователю, значения по умолчанию,
 // негативный промпт и цену. Результат — generation_config, по которому
 // форма генерации в чате строится сама (src/modules/chat/generation.ts).
-// Версия: 1.2.0 — цена видео с учётом звука (audio_prices), разбор text_to_video_/image_to_video_
+// Версия: 1.3.0 — курс ⚡ за $1 общий (админка → Настройки), в прайсе агента его больше нет:
+//                  поле «Энергии за $1» убрано, пример расчёта — по общему курсу
+//          1.2.0 — цена видео с учётом звука (audio_prices), разбор text_to_video_/image_to_video_
 //   1.1.0 — у видео-модели без прайса за секунду цену 1 секунды задаёт администратор
 //   1.0.0
 // ============================================
@@ -101,11 +103,15 @@ export class GenerationSettingsPanel {
   private caps: IModelCapabilities | null = null;
   private base: IGenerationConfig = {};
 
+  /** Общий курс ⚡ за $1 из настроек экономики (0 — не удалось получить) */
+  private energyPerUsd: number;
+
   private _onChange = () => this._updatePreview();
   private _coefficientInput: HTMLElement | null = null;
 
-  constructor(root: HTMLElement) {
+  constructor(root: HTMLElement, energyPerUsd: number) {
     this.root = root;
+    this.energyPerUsd = Number.isFinite(energyPerUsd) && energyPerUsd > 0 ? energyPerUsd : 0;
     // Делегирование: корневой элемент живёт всё время, содержимое перерисовывается
     this.root.addEventListener('input', this._onChange);
     this.root.addEventListener('change', this._onChange);
@@ -296,7 +302,6 @@ export class GenerationSettingsPanel {
 
     // --- Цена ---
     const pricing = this.base.pricing;
-    const energyRate = Number(pricing?.energy_per_usd) || '';
     let priceHtml: string;
     if (caps.kind === 'video') {
       const found = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
@@ -350,10 +355,7 @@ export class GenerationSettingsPanel {
       </div>
       <div style="${TITLE}">Цена</div>
       ${priceHtml}
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span style="font-size:12px">Энергии за $1</span>
-        <input type="number" id="gs-rate" min="1" step="1" value="${esc(energyRate)}" style="width:110px;${INPUT}">
-      </div>
+      <div style="${HINT}">Курс: ${this.energyPerUsd ? `${this.energyPerUsd.toLocaleString('ru-RU')} ⚡ за $1` : 'не загружен'} — общий для всех агентов, меняется в «Настройках».</div>
       <div id="gs-preview" style="${HINT};margin-top:6px"></div>
     `;
   }
@@ -383,7 +385,8 @@ export class GenerationSettingsPanel {
     try {
       const pricing = this._pricing();
       const coefficient = Number((document.getElementById('agent-coefficient') as HTMLInputElement)?.value) || 1;
-      const minCharge = Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value) || 0;
+      const minCharge = Math.max(1, Math.floor(Number((document.getElementById('agent-min-charge') as HTMLInputElement)?.value)) || 1);
+      if (!this.energyPerUsd) throw new Error('no rate');
 
       let usd = 0;
       let sample = '';
@@ -400,10 +403,12 @@ export class GenerationSettingsPanel {
         sample = '1 изображение';
       }
 
-      const energy = Math.max(Math.ceil(usd * pricing.energy_per_usd * coefficient), minCharge);
+      const energy = Math.max(Math.ceil(usd * this.energyPerUsd * coefficient - 1e-9), minCharge);
       el.textContent = `Пример (${sample}): ≈ $${usd.toFixed(3)} → ${energy} ⚡ с учётом коэффициента ${coefficient} и мин. списания`;
     } catch {
-      el.textContent = 'Укажите цену и курс, чтобы увидеть пример расчёта';
+      el.textContent = this.energyPerUsd
+        ? 'Укажите цену, чтобы увидеть пример расчёта'
+        : 'Курс ⚡ за $1 не загружен — пример расчёта недоступен';
     }
   }
 
@@ -420,8 +425,6 @@ export class GenerationSettingsPanel {
 
   private _pricing(): IGenerationPricing {
     const caps = this.caps as IModelCapabilities;
-    const rate = Number((this.root.querySelector('#gs-rate') as HTMLInputElement)?.value);
-    if (!Number.isFinite(rate) || rate <= 0) throw new Error('Укажите, сколько энергии стоит $1');
 
     if (caps.kind === 'video') {
       const found = videoPricesFromSkus(caps.pricing_skus, caps.resolutions);
@@ -430,16 +433,16 @@ export class GenerationSettingsPanel {
         if (!Number.isFinite(perSec) || perSec <= 0) {
           throw new Error('Укажите ориентировочную цену 1 секунды в $');
         }
-        return { kind: 'per_second', prices: { default: perSec }, energy_per_usd: rate };
+        return { kind: 'per_second', prices: { default: perSec } };
       }
-      const pricing: IGenerationPricing = { kind: 'per_second', prices: found.prices, energy_per_usd: rate };
+      const pricing: IGenerationPricing = { kind: 'per_second', prices: found.prices };
       if (Object.keys(found.audio_prices).length > 0) pricing.audio_prices = found.audio_prices;
       return pricing;
     }
 
     const usd = Number((this.root.querySelector('#gs-usd') as HTMLInputElement)?.value);
     if (!Number.isFinite(usd) || usd <= 0) throw new Error('Укажите ориентировочную цену 1 изображения в $');
-    return { kind: 'per_image', usd, energy_per_usd: rate };
+    return { kind: 'per_image', usd };
   }
 
   /** Собирает generation_config. Бросает Error с понятным текстом, если что-то не заполнено */
