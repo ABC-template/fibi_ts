@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.8.0 — блокировка и заморозка монет из карточки пользователя
+// Версия: 7.9.0 — период «Расходов ИИ» на дашборде (setDashboardPeriod)
+//          7.8.0 — блокировка и заморозка монет из карточки пользователя
 //                  (blockUserFromList, toggleUserEconomyLock)
 //          7.7.0 — проверка заданий (verifySubmission); убрана пустая вкладка «Лимиты»
 //                  (лимиты — во вкладке «Тарифы»)
@@ -257,6 +258,9 @@ function getInstance(): AdminModule | null {
   renderCurrentTab: () => getInstance()?.renderCurrentTab(),
   show: () => getInstance()?.show(),
   hide: () => getInstance()?.hide(),
+
+  // Dashboard
+  setDashboardPeriod: (days: number) => getInstance()?.proxy('dashboard', 'setPeriod', days),
 
   // Settings
   saveSettings: () => getInstance()?.proxy('settings', 'save'),
