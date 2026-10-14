@@ -85,6 +85,8 @@ export interface IPublicAgent {
   /** Наценка для тарифа текущего пользователя (уже выбрана сервером) */
   markup: number;
   min_charge: number;
+  /** Энергии за $1 себестоимости — общий курс из настроек экономики (0 — неизвестен) */
+  energy_per_usd: number;
   sort_order: number;
   is_active: boolean;
   has_access: boolean;
