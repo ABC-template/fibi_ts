@@ -1,6 +1,8 @@
 // ============================================
 // src/modules/admin/tabs/AdminSettingsTab.ts
-// Версия: 2.0.0 — все поля, которые принимает /admin/economy/settings: максимум обмена,
+// Версия: 2.1.0 — «⚡ Цена энергии»: курс ⚡ за $1 (все агенты и голос), коэффициент
+//                  (дробный) и мин. списание голосового ввода; срок хранения — журнал ai_usage
+//          2.0.0 — все поля, которые принимает /admin/economy/settings: максимум обмена,
 //                  лимиты игр и рекламы, сроки хранения журналов; удалено несуществующее
 //                  bonus_coins_per_day; ошибка сервера показывается как есть
 //          1.1.0 — галочка «Только для подписчиков канала» (channel_gate_enabled):
@@ -16,6 +18,8 @@ interface INumberField {
   hint?: string;
   min: number;
   max: number;
+  /** Дробное число (шаг 0.01) */
+  decimal?: boolean;
 }
 
 interface IFlagField {
@@ -26,6 +30,20 @@ interface IFlagField {
 
 /** Диапазоны — как в api/admin/economy/settings.ts */
 const NUMBER_SECTIONS: Array<{ title: string; fields: INumberField[] }> = [
+  {
+    title: '⚡ Цена энергии',
+    fields: [
+      {
+        key: 'energy_per_usd',
+        label: 'Энергии за $1 себестоимости',
+        hint: 'Общий курс: текст, фото, видео, голос. Коэффициенты агентов — сверху. Применяется в течение минуты',
+        min: 100,
+        max: 1_000_000,
+      },
+      { key: 'voice_markup', label: 'Коэффициент голосового ввода', hint: 'Например 1.5', min: 0.1, max: 100, decimal: true },
+      { key: 'voice_min_charge', label: 'Мин. списание за голос, ⚡', min: 1, max: 100_000 },
+    ],
+  },
   {
     title: '💱 Обмен монет',
     fields: [
@@ -45,7 +63,7 @@ const NUMBER_SECTIONS: Array<{ title: string; fields: INumberField[] }> = [
   {
     title: '🗄️ Хранение журналов (очистка раз в сутки)',
     fields: [
-      { key: 'log_retention_days', label: 'Расходы моделей, дней', hint: 'openrouter_usage, agent_usage_logs', min: 7, max: 3_650 },
+      { key: 'log_retention_days', label: 'Расходы ИИ, дней', hint: 'журнал ai_usage (дашборд «Расходы ИИ»)', min: 7, max: 3_650 },
       { key: 'audit_log_retention_days', label: 'Транзакции и аудит, дней', hint: 'монеты, энергия, аудит экономики, system_logs', min: 7, max: 3_650 },
     ],
   },
@@ -112,7 +130,7 @@ export class AdminSettingsTab implements IAdminTab {
       return `
         <label style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px">
           <span>${f.label}${hintHtml(f.hint)}</span>
-          <input type="number" id="set-${f.key}" value="${value}" min="${f.min}" max="${f.max}" step="1"
+          <input type="number" id="set-${f.key}" value="${value}" min="${f.min}" max="${f.max}" step="${f.decimal ? '0.01' : '1'}"
                  style="${INPUT_STYLE};flex-shrink:0">
         </label>`;
     };
@@ -158,9 +176,14 @@ export class AdminSettingsTab implements IAdminTab {
       for (const f of sec.fields) {
         const input = document.getElementById(`set-${f.key}`) as HTMLInputElement | null;
         if (!input || input.value.trim() === '') continue;
-        const n = Number(input.value);
-        if (!Number.isInteger(n) || n < f.min || n > f.max) {
-          return `«${f.label}»: целое число от ${f.min} до ${f.max}`;
+        const n = Number(input.value.replace(',', '.'));
+        const okType = f.decimal
+          ? Number.isFinite(n) && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
+          : Number.isInteger(n);
+        if (!okType || n < f.min || n > f.max) {
+          return f.decimal
+            ? `«${f.label}»: число от ${f.min} до ${f.max} (до сотых)`
+            : `«${f.label}»: целое число от ${f.min} до ${f.max}`;
         }
         payload[f.key] = n;
       }
