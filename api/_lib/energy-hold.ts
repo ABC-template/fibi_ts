@@ -5,14 +5,18 @@
 //   settleEnergy  — снять заморозку и списать фактическую стоимость;
 //   releaseEnergy — снять заморозку без списания.
 // Параллельные запросы больше не тратят один и тот же баланс дважды.
-// Версия: 1.0.0
+// Версия: 1.1.0 — резерв голосового ввода (kind 'voice'); settleEnergy пишет строку
+//                  журнала расходов ai_usage (sql/stage1_finance.sql) — в той же
+//                  транзакции, что и списание; amount = 0 — только запись расхода
+//          1.0.0
 // ============================================
 
 import { supabaseRPC } from './supabase-client';
 import type { ISupabaseConfig } from './supabase-client';
 import { UUID_RE } from './media';
+import type { IUsageRecord } from './energy-pricing';
 
-export type EnergyHoldKind = 'text' | 'generation';
+export type EnergyHoldKind = 'text' | 'generation' | 'voice';
 
 export interface IEnergyReservation {
   ok: boolean;
@@ -93,7 +97,8 @@ export async function reserveEnergy(
 }
 
 /**
- * Снять заморозку и списать amount (до нуля: работа уже сделана).
+ * Снять заморозку, списать amount (до нуля: работа уже сделана) и записать расход
+ * в журнал ai_usage. amount = 0 — без списания, только запись расхода.
  * Ошибок не бросает — результат уже у пользователя, сбой пишется в лог.
  */
 export async function settleEnergy(
@@ -102,6 +107,7 @@ export async function settleEnergy(
   amount: number,
   source: string,
   description: string,
+  usage: IUsageRecord,
   config: ISupabaseConfig
 ): Promise<IEnergySettlement> {
   try {
@@ -113,6 +119,14 @@ export async function settleEnergy(
         p_amount: Math.max(0, Math.ceil(Number(amount) || 0)),
         p_source: source,
         p_description: description,
+        p_usage: {
+          ...usage,
+          agent_id: usage.agent_id && UUID_RE.test(usage.agent_id) ? usage.agent_id : null,
+          chat_id: usage.chat_id && UUID_RE.test(usage.chat_id) ? usage.chat_id : null,
+          cost_usd: Number.isFinite(usage.cost_usd) && usage.cost_usd > 0 ? usage.cost_usd : 0,
+          prompt_tokens: Number.isFinite(usage.prompt_tokens as number) ? Math.round(usage.prompt_tokens as number) : null,
+          completion_tokens: Number.isFinite(usage.completion_tokens as number) ? Math.round(usage.completion_tokens as number) : null,
+        },
       },
       config
     );
