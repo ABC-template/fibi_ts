@@ -1,7 +1,10 @@
 // ============================================
 // api/admin/agents/index.ts
 // Описание: Список агентов (GET) и создание нового агента (POST)
-// Версия: 1.4.0 — allowed_tiers через normalizeAllowedTiers (trial не сохраняется);
+// Версия: 1.5.0 — мин. списание: целое 1…1 000 000 (раньше «Number(x) ?? 50» пропускал NaN
+//                  и дробные); коэффициент ≥ 1; GET отдаёт общий курс energy_per_usd
+//                  (для примера расчёта в форме агента)
+//          1.4.0 — allowed_tiers через normalizeAllowedTiers (trial не сохраняется);
 //                  без устаревших allowed_roles / min_pro_tier
 //          1.3.0 — принимаем и сохраняем context_length модели (нужен для
 //                  динамической проверки размера файлов в chat/stream.ts)
@@ -11,6 +14,7 @@ import { authenticate, isAdmin, isCreator } from '../../_lib/auth';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { normalizeAllowedTiers } from '../../_lib/agent-access';
+import { getEnergyRates } from '../../_lib/energy-pricing';
 import type { IAiAgentInput } from '../../../types/agents';
 
 export const config = { runtime: 'edge' };
@@ -36,15 +40,15 @@ export default async function handler(request: Request): Promise<Response> {
   // ==========================================
   if (request.method === 'GET') {
     try {
-      const agents = await supabaseFetch(
-        'ai_agents?select=*&order=sort_order.asc,created_at.desc',
-        { method: 'GET' },
-        config
-      );
+      const [agents, energyPerUsd] = await Promise.all([
+        supabaseFetch('ai_agents?select=*&order=sort_order.asc,created_at.desc', { method: 'GET' }, config),
+        getEnergyRates(config).then((r) => r.energyPerUsd).catch(() => 0),
+      ]);
 
       return jsonResponse({
         success: true,
         agents: agents || [],
+        energy_per_usd: energyPerUsd,
       });
     } catch (err) {
       console.error('admin/agents GET error:', err);
@@ -75,6 +79,14 @@ export default async function handler(request: Request): Promise<Response> {
       if (!body.system_prompt?.trim()) {
         return errorResponse('System prompt is required', 400);
       }
+      const markup = body.markup_coefficient === undefined ? 3 : Number(body.markup_coefficient);
+      if (!Number.isFinite(markup) || markup < 1) {
+        return errorResponse('markup_coefficient must be >= 1', 400);
+      }
+      const minCharge = body.min_charge === undefined ? 1 : Number(body.min_charge);
+      if (!Number.isInteger(minCharge) || minCharge < 1 || minCharge > 1_000_000) {
+        return errorResponse('min_charge: целое число от 1 до 1 000 000', 400);
+      }
       // Только creator может создавать системных агентов
       const makeSystem = body.is_system === true;
       if (makeSystem && !isCreator(auth.userId)) {
@@ -89,8 +101,8 @@ export default async function handler(request: Request): Promise<Response> {
         model_id: body.model_id.trim(),
         context_length: body.context_length || null,
         system_prompt: body.system_prompt.trim(),
-        markup_coefficient: Number(body.markup_coefficient) || 3.0,
-        min_charge: Number(body.min_charge) ?? 50,
+        markup_coefficient: markup,
+        min_charge: minCharge,
         allowed_tiers: normalizeAllowedTiers(body.allowed_tiers) ?? null,
         markup_by_tier: body.markup_by_tier && typeof body.markup_by_tier === 'object' ? body.markup_by_tier : null,
         welcome_message: body.welcome_message && typeof body.welcome_message === 'object' ? body.welcome_message : null,
