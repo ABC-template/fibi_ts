@@ -1,7 +1,8 @@
 // ============================================
 // api/admin/agents/[...path].ts
 // Описание: Получение, обновление и деактивация конкретного агента
-// Версия: 1.5.0 — allowed_tiers через normalizeAllowedTiers (trial не сохраняется);
+// Версия: 1.6.0 — мин. списание: целое 1…1 000 000 (как при создании)
+//          1.5.0 — allowed_tiers через normalizeAllowedTiers (trial не сохраняется);
 //                  без устаревших allowed_roles / min_pro_tier
 //          1.4.0 — PATCH принимает и обновляет context_length модели
 //                  (нужен для динамической проверки размера файлов)
@@ -151,8 +152,8 @@ export default async function handler(request: Request): Promise<Response> {
 
       if (body.min_charge !== undefined) {
         const minCharge = Number(body.min_charge);
-        if (isNaN(minCharge) || minCharge < 0) {
-          return errorResponse('min_charge must be >= 0', 400);
+        if (!Number.isInteger(minCharge) || minCharge < 1 || minCharge > 1_000_000) {
+          return errorResponse('min_charge: целое число от 1 до 1 000 000', 400);
         }
         updates.min_charge = minCharge;
       }
