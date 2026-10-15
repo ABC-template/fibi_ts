@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -67,42 +67,6 @@
   opacity: 0.85;
 }
 
-        /* ==========================================
-           👁️ ОПТИМИЗИРОВАННАЯ АНИМАЦИЯ МОРГАНИЯ СОВЫ
-        ========================================== -->
-        @keyframes tripleBlink {
-            /* 0% - 70%: Глаза полностью открыты */
-            0%, 70%, 100% { transform: scaleY(1); }
-            
-            /* Фаза 1: «Хлоп» (первое одиночное моргание) */
-            73% { transform: scaleY(0.05); }
-            76% { transform: scaleY(1); }
-            
-            /* Пауза между хлопками */
-            80% { transform: scaleY(1); }
-            
-            /* Фаза 2: «Хлоп» (первая половина двойного моргания) */
-            83% { transform: scaleY(0.05); }
-            86% { transform: scaleY(1); }
-            
-            /* Микро-пауза */
-            88% { transform: scaleY(1); }
-            
-            /* Фаза 3: «Хлоп» (вторая половина двойного моргания) */
-            91% { transform: scaleY(0.05); }
-            94% { transform: scaleY(1); }
-        }
-
-        /* Привязка анимации и фиксация центров трансформации отдельно для каждого глаза */
-        .owl-eye-left {
-            transform-origin: 48px 40px;
-            animation: tripleBlink 1s infinite ease-in-out;
-        }
-        .owl-eye-right {
-            transform-origin: 72px 40px;
-            animation: tripleBlink 1s infinite ease-in-out;
-        }
-
     </style>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- ==========================================
@@ -160,21 +124,14 @@
     <!-- ушки -->
     <path d="M38 28 L32 12 L48 24 Z" fill="#7A7A7A"/>
     <path d="M82 28 L88 12 L72 24 Z" fill="#7A7A7A"/>
-    
-    <!-- Левый глаз (сгруппирован для анимации вокруг центра X=48, Y=40) -->
-    <g class="owl-eye-left">
-      <circle cx="48" cy="40" r="12" fill="#4A4A4A"/>
-      <circle cx="48" cy="40" r="5" fill="#2A2A2A"/>
-      <circle cx="45" cy="37" r="2" fill="#9A9A9A"/>
-    </g>
-    
-    <!-- Правый глаз (сгруппирован для анимации вокруг центра X=72, Y=40) -->
-    <g class="owl-eye-right">
-      <circle cx="72" cy="40" r="12" fill="#4A4A4A"/>
-      <circle cx="72" cy="40" r="5" fill="#2A2A2A"/>
-      <circle cx="69" cy="37" r="2" fill="#9A9A9A"/>
-    </g>
-    
+    <!-- глаза -->
+    <circle cx="48" cy="40" r="12" fill="#4A4A4A"/>
+    <circle cx="72" cy="40" r="12" fill="#4A4A4A"/>
+    <circle cx="48" cy="40" r="5" fill="#2A2A2A"/>
+    <circle cx="72" cy="40" r="5" fill="#2A2A2A"/>
+    <!-- блики -->
+    <circle cx="45" cy="37" r="2" fill="#9A9A9A"/>
+    <circle cx="69" cy="37" r="2" fill="#9A9A9A"/>
     <!-- клюв -->
     <path d="M60 46 L54 54 L66 54 Z" fill="#5A5A5A"/>
     <!-- крылья намёк -->
