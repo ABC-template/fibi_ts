@@ -1,7 +1,10 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 2.10.0 — очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
+// Версия: 2.11.0 — разделы из сайдбара открываются через навигацию (как из нижнего меню):
+//                  работают история и кнопка «Назад»; удаление открытого чата — переход
+//                  к агентам без ручного hide() (его вызывает загрузчик модулей)
+//          2.10.0 — очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
 //          2.9.0 — название и превью чата экранируются (XSS через название/текст сообщения)
 //          2.8.0 — очистка кэша без clearJWT (JWT больше нет); пункт «Админ-панель» — по флагу сервера
 //          2.7.0 — пункт «Админ-панель» показывается по Telegram ID (не по роли)
@@ -18,6 +21,7 @@ import { eventBus } from '@/core/event-bus';
 import { CHAT_BUSY_DELETE_HINT } from '@/store/generation-live';
 import { modalManager } from '@/core/modal-manager';
 import { navigationState } from '@/core/navigation-state';
+import { navigation } from '@/core/navigation';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { profileUI } from '@/modules/ui/profile-ui';
 import { escapeHtml } from '@/utils/html';
@@ -496,20 +500,7 @@ export function deleteChatFromDrawer(chatId: string): void {
             uiRenderer.showToast('🗑️ Чат отправлен в корзину', 'info', 1500);
         }
 
-        if (wasCurrentOpen) {
-            console.log('🚪 Удалён открытый чат → переход к Агентам');
-            if (typeof chatMod.hide === 'function') {
-                try { chatMod.hide(); } catch (_) {}
-            }
-            const nav = (window as any).navigationState;
-            if (nav && typeof nav.goToAgents === 'function') {
-                nav.goToAgents();
-            } else if (nav && typeof nav.navigate === 'function') {
-                nav.navigate('agents', {}, { replace: true });
-            } else if ((window as any).moduleLoader) {
-                (window as any).moduleLoader.load('agents');
-            }
-        }
+        if (wasCurrentOpen) navigationState.goToAgents();
     };
 
     if (window.Telegram?.WebApp?.showConfirm) {
@@ -554,50 +545,35 @@ export function appendDrawerNav(container: HTMLElement): void {
             id: 'drawer-agents',
             icon: '🤖',
             label: 'ИИ-агенты',
-            action: () => {
-                closeDrawer();
-                window.moduleLoader.load('agents');
-            },
+            action: () => navigation.switchTab('agents'),
             show: true,
         },
         {
             id: 'drawer-economy',
             icon: '💰',
             label: 'Экономика',
-            action: () => {
-                closeDrawer();
-                window.moduleLoader.load('economy');
-            },
+            action: () => navigation.switchTab('economy'),
             show: true,
         },
         {
             id: 'drawer-referral',
             icon: '🤝',
             label: 'Рефералы',
-            action: () => {
-                closeDrawer();
-                window.moduleLoader.load('referral');
-            },
+            action: () => navigation.switchTab('referral'),
             show: true,
         },
         {
             id: 'drawer-sponsors',
             icon: '📋',
             label: 'Задания',
-            action: () => {
-                closeDrawer();
-                window.moduleLoader.load('quests');
-            },
+            action: () => navigation.switchTab('quests'),
             show: true,
         },
         {
             id: 'drawer-admin-item',
             icon: '👑',
             label: 'Админ-панель',
-            action: () => {
-                closeDrawer();
-                window.moduleLoader.load('admin');
-            },
+            action: () => navigation.switchTab('admin'),
             // По Telegram ID: роль владелец может переключать для тестов
             show: userStore.isCreator,
         },
