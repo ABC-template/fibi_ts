@@ -1,7 +1,9 @@
 // ============================================
 // src/economy/EconomyManager.ts
 // Упрощённый менеджер — только связь с API и обновление Store
-// Версия: 3.3.0 — удалено списание с клиента (economy:spend / handleSpend / economy:error)
+// Версия: 3.4.0 — удалён заглушечный обработчик economy:earn (событие никто не отправляет:
+//                 монеты начисляет сервер)
+//          3.3.0 — удалено списание с клиента (economy:spend / handleSpend / economy:error)
 //          3.2.0 — монеты начисляет только сервер: игры шлют economy:game,
 //                 economy:earn с клиента больше не исполняется
 //          3.1.0 — spent_today/daily_limit/bypass - исправлен total
@@ -11,7 +13,6 @@ import { eventBus } from '@/core/event-bus';
 import { economyService } from './EconomyService';
 import { economyStore } from './EconomyStore';
 import type {
-  IEconomyEarnEvent,
   IEconomyGameEvent,
   IEconomyBalanceUpdatedEvent,
 } from './event-types';
@@ -28,11 +29,9 @@ export class EconomyManager {
     if (this.initialized) return;
     this.subscribeToEvents();
     this.initialized = true;
-    console.log('✅ EconomyManager v3.3.0 инициализирован');
   }
 
   private subscribeToEvents(): void {
-    eventBus.on('economy:earn', this.handleEarn.bind(this));
     eventBus.on('economy:game', this.handleGame.bind(this));
     eventBus.on('user:changed', this.onUserChanged.bind(this));
     console.log('📡 EconomyManager подписан на экономические события');
@@ -70,14 +69,6 @@ export class EconomyManager {
     } catch (err) {
       console.error('❌ Ошибка загрузки балансов:', err);
     }
-  }
-
-  /**
-   * Клиент больше не начисляет монеты: любая сумма с клиента — это дыра.
-   * Начисления делает сервер (вход, задания, рефералы, игры через economy:game).
-   */
-  private async handleEarn(event: IEconomyEarnEvent): Promise<void> {
-    console.warn(`⚠️ [EconomyManager] Клиентское начисление отключено (${event?.source}). Монеты начисляет сервер.`);
   }
 
   private async handleGame(event: IEconomyGameEvent): Promise<void> {
