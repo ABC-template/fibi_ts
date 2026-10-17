@@ -1,7 +1,9 @@
 /* ============================================
    src/modules/chat/chat.css
    Стили чата (сообщения, капсула, кнопки)
-   Версия: 1.3.0 — время под сообщениями и разделители дней как в Telegram; запрос
+   Версия: 1.4.0 — лента начинается под «парящей» шапкой, разделители дней прилипают
+            под ней; полоска энергии над полем ввода — с иконками Lucide
+   1.3.0 — время под сообщениями и разделители дней как в Telegram; запрос
             пользователя — пузырь и строка «удалить … время» шириной с пузырь (у короткого
             пузыря минимальная ширина); у ответа кнопки слева, время справа; время
             в подписи карточки генерации
@@ -15,8 +17,7 @@
 #chat-container {
     flex: 1;
     overflow-y: auto;
-    padding: var(--app-spacing-md);
-    padding-bottom: 120px;
+    padding: calc(var(--app-header-space, 0px) + var(--app-spacing-sm)) var(--app-spacing-md) 120px;
     display: flex;
     flex-direction: column;
     gap: var(--app-spacing-sm);
@@ -107,6 +108,7 @@
 /* Разделитель дня: «Сегодня», «Вчера», «15 октября» — прилипает к верху при прокрутке */
 .chat-day-sep {
     position: sticky;
+    /* от края с отступом ленты (он уже включает высоту шапки) — прилипает под шапкой */
     top: 4px;
     z-index: 2;
     align-self: center;
@@ -296,6 +298,17 @@
 .ai-msg tr:last-child td { border-bottom: none; }
 
 /* ===== КАПСУЛА ВВОДА ===== */
+#energy-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+#energy-bar .lucide { width: 13px; height: 13px; stroke: currentColor; flex-shrink: 0; }
+#energy-bar .energy-bar-sep { margin: 0 4px; opacity: 0.6; }
+
 #input-overlay {
     position: fixed;
     top: 0;
