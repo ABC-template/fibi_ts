@@ -1,7 +1,8 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.8.0 — пока идёт ответ, замок чата и резерв энергии продлеваются раз в минуту
+// Версия: 3.8.1 - без неиспользуемых импортов и переменных
+//          3.8.0 — пока идёт ответ, замок чата и резерв энергии продлеваются раз в минуту
 //                  (длинный ответ больше не переживает их 300 с)
 //          3.7.0 — финансы: курс ⚡ за $1 из настроек экономики (был зашит 10 000);
 //                  каждый ответ пишется в журнал расходов ai_usage (модель, токены, $,
@@ -59,7 +60,7 @@ import { buildSystemPrompt, buildMessages } from '../chat/prompts';
 import type { IHistoryMessage } from '../chat/prompts';
 import { reserveEnergy, settleEnergy, releaseEnergy } from '../_lib/energy-hold';
 import { estimateTokens } from '../_lib/tokens-usage';
-import { getSupabaseConfig as getSupabase, supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
+import { supabaseFetch, supabaseRPC } from '../_lib/supabase-client';
 import { checkAgentAccess } from '../_lib/agent-access';
 import { getMarkupForTier } from '../_lib/markup-helper';
 import {
