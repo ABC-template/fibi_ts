@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.9.1 - без console.log с устаревшим номером версии
+// Версия: 7.10.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll); одна прокрутка на всю панель
+//          7.9.1 - без console.log с устаревшим номером версии
 //          7.9.0 — период «Расходов ИИ» на дашборде (setDashboardPeriod); шапку и нижнее
 //                  меню больше не трогает (рамку экрана ведёт ModuleLoader: заголовка
 //                  нет, меню видно)
@@ -120,6 +121,7 @@ export class AdminModule {
     const sortedTabs = Array.from(this.tabs.values()).sort((a, b) => a.priority - b.priority);
 
     const wrapper = document.createElement('div');
+    wrapper.className = 'app-scroll';
     wrapper.style.cssText = `
       padding: 16px;
       flex: 1;
@@ -174,7 +176,8 @@ export class AdminModule {
 
     const content = document.createElement('div');
     content.id = 'admin-tab-content';
-    content.style.cssText = 'flex:1;overflow-y:auto';
+    // Прокручивается вся панель (одна полоса), а не только содержимое вкладки
+    content.style.cssText = 'flex:none';
     content.innerHTML = this.tabs.get(this.activeTabId)?.render() || '';
     wrapper.appendChild(content);
 
