@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/export-local.ts
 // Экспорт архива
-// Версия: 4.1.0 - облачный архив: 429 (лимит частоты) — понятное сообщение; если часть
+// Версия: 4.1.1 - названия тем — из config/topics (глобальная window.topicNames удалена)
+//          4.1.0 - облачный архив: 429 (лимит частоты) — понятное сообщение; если часть
 //                 большого архива не пришла, файл не сохраняется (раньше — молча без неё)
 //          4.0.0 - локальный архив собирается целиком на устройстве (POST /api/chats/export
 //                 удалён: работал без авторизации); чаты из корзины не попадают в архив;
@@ -11,6 +12,7 @@
 
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
+import { topicNames } from '@/config/topics';
 import type { IChat, IMessage, IExportArchive, IExportArchiveMessage, TopicId } from '@app-types';
 
 function notify(message: string): void {
@@ -46,7 +48,6 @@ function toArchiveMessage(m: IMessage): IExportArchiveMessage {
 
 /** Архив из чатов на устройстве (без корзины и пустых чатов) */
 function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number } {
-  const topicNames: Record<string, string> = (window as any).topicNames || {};
   const archive: IExportArchive[] = [];
   let totalMessages = 0;
 
@@ -65,7 +66,7 @@ function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number
         chat_id: chat.id,
         title: chat.title,
         topic_id: topicId,
-        topic_name: topicNames[topicId] || topicId,
+        topic_name: (topicNames as Record<string, string>)[topicId] || topicId,
         max_context: chat.maxContext || 15,
         user_renamed: chat.userRenamed || false,
         pinned: chat.pinned || false,
@@ -206,5 +207,3 @@ function buildLocalArchive(): { archive: IExportArchive[]; totalMessages: number
     notify(`Не удалось загрузить облачный архив: ${(err as Error).message || 'проверьте подключение к интернету'}.`);
   }
 };
-
-console.log('✅ ExportLocal v4.1.0 загружен (локальный архив без сервера)');
