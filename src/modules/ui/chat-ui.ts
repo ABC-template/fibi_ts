@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/ui/chat-ui.ts
 // Управление чатами (компактная версия)
-// Версия: 4.3.0 - убрано обращение к удалённому ChatListModule
+// Версия: 4.4.0 - удаление открытого чата → к агентам через навигацию (hide() чата вызывает
+//                 загрузчик модулей)
+//          4.3.0 - убрано обращение к удалённому ChatListModule
 //          4.2.0 - нельзя удалить чат, пока в нём идёт генерация
 //          4.1.3 - замена @types → @app-types
 // ============================================
@@ -165,14 +167,7 @@ export const chatUI = new ChatUI();
         if ((window as any).updateTrashCount) setTimeout((window as any).updateTrashCount, 300);
         if ((window as any).uiRenderer) (window as any).uiRenderer.showToast('🗑️ Чат отправлен в корзину', 'info', 1500);
 
-        if (wasCurrentOpen) {
-            console.log('🚪 Удалён открытый чат → переход к Агентам');
-            try { chatMod.hide?.(); } catch (_) {}
-            const nav = (window as any).navigationState;
-            if (nav?.goToAgents) nav.goToAgents();
-            else if (nav?.navigate) nav.navigate('agents', {}, { replace: true });
-            else if ((window as any).moduleLoader) (window as any).moduleLoader.load('agents');
-        }
+        if (wasCurrentOpen) (window as any).navigationState?.goToAgents();
     };
     if ((window as any).tg?.showConfirm) {
         (window as any).tg.showConfirm(confirmMsg, (ok: boolean) => { if (ok) action(); });
