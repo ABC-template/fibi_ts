@@ -1,14 +1,14 @@
 /* ============================================
    src/modules/organizer/organizer.css
    Стили органайзера (To-Do, трекеры, напоминания)
-   Версия: 1.0.0
+   Версия: 1.1.0 — без отступа под нижнее меню (его даёт #app-screen)
+   1.0.0
    ============================================ */
 
 .organizer-container {
     padding: 16px;
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 80px;
     display: flex;
     flex-direction: column;
     height: 100%;
