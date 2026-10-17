@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/profile/ProfileModule.ts
 // Полноценная страница профиля
-// Версия: 4.6.0 - удалён блок «Ежедневный лимит» (старый лимит запросов; энергия — в «Экономике»)
+// Версия: 4.7.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll); монеты ведут в «Экономику»
+//          4.6.0 - удалён блок «Ежедневный лимит» (старый лимит запросов; энергия — в «Экономике»)
 //          4.5.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          4.4.0 - очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
 //          4.3.0 - очистка кэша без clearJWT (JWT больше нет)
@@ -34,7 +35,7 @@ export class ProfileModule {
     if (this.isInitialized) return;
 
     this.container.innerHTML = `
-      <div style="
+      <div class="app-scroll" style="
         padding: 16px;
         flex: 1;
         overflow-y: auto;
@@ -101,7 +102,7 @@ export class ProfileModule {
                 padding: 2px 12px;
                 border-radius: 12px;
               ">🔓 Бесплатный</span>
-              <span class="drawer-coins-badge" onclick="window.goToTasks()" style="
+              <span class="drawer-coins-badge" onclick="window.goToEconomy()" style="
                 display: flex;
                 align-items: center;
                 gap: 4px;
