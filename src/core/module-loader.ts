@@ -1,12 +1,20 @@
 // ============================================
 // src/core/module-loader.ts
 // Загрузчик модулей с полным управлением видимостью
-// Версия: 8.2.0 — доступ к админке по Telegram ID (userStore.isCreator), не по роли
+// Версия: 9.0.0 — общая «рамка» экрана здесь, а не в каждом модуле: перед показом модуля
+//                  шапка сбрасывается (названия модулей в шапке больше нет — заголовок
+//                  ставит только чат), нижнее меню видно везде, кроме чата и открытой игры,
+//                  подсвечивается вкладка текущего модуля; у покидаемого модуля вызывается
+//                  hide() (раньше не вызывался: например, пустой чат не удалялся при уходе);
+//                  NavigationState узнаёт о модуле, загруженном в обход navigate
+//          8.2.0 — доступ к админке по Telegram ID (userStore.isCreator), не по роли
 //          8.1.0 — добавлен AgentsModule
 // ============================================
 
 import { eventBus } from './event-bus';
 import { navigationState } from './navigation-state';
+import { headerManager } from './header-manager';
+import { navigation } from './navigation';
 
 // Импортируем все модули для регистрации
 import { DashboardModule } from '@/modules/dashboard/DashboardModule';
@@ -38,7 +46,6 @@ export class ModuleLoader {
   constructor() {
     this.container = document.getElementById('app-screen');
     this._registerAllModules();
-    console.log('✅ ModuleLoader v8.1.0 загружен');
   }
 
   /**
@@ -113,8 +120,21 @@ export class ModuleLoader {
     }
 
     this._isLoading = true;
+    const previous = this._currentModule;
 
     try {
+      // Уходим из модуля — у него свой hide() (очистка, остановка таймеров)
+      if (previous && previous !== moduleName) {
+        const prevInstance = this._getModuleInstance(previous);
+        if (prevInstance && typeof prevInstance.hide === 'function') {
+          try {
+            prevInstance.hide();
+          } catch (err) {
+            console.warn(`⚠️ hide() модуля ${previous}:`, err);
+          }
+        }
+      }
+
       this._hideAllModules();
 
       let container = document.getElementById(`module-${moduleName}`);
@@ -147,13 +167,17 @@ export class ModuleLoader {
       (container as HTMLElement).style.height = '100%';
       (container as HTMLElement).style.width = '100%';
 
+      // Шапка без заголовка и кнопок: свои ставит только чат (в show)
+      headerManager.reset();
+      this._applyChrome(moduleName);
+
       if (typeof instance.show === 'function') {
         await instance.show(params);
-        console.log(`✅ show() вызван у модуля ${moduleName}`);
       }
 
       this._currentModule = moduleName;
       this._currentParams = { ...params };
+      this.navigationState.syncModule(moduleName, params);
 
       if (!silent) {
         this.eventBus.emit('module:loaded', {
@@ -207,6 +231,9 @@ export class ModuleLoader {
     (container as HTMLElement).style.flexDirection = 'column';
     (container as HTMLElement).style.height = '100%';
     (container as HTMLElement).style.width = '100%';
+
+    headerManager.reset();
+    this._applyChrome(moduleName);
 
     const instance = this._getModuleInstance(moduleName);
     if (instance && typeof instance.show === 'function') {
@@ -269,6 +296,13 @@ export class ModuleLoader {
   // ПРИВАТНЫЕ МЕТОДЫ
   // ==========================================
 
+  /** Нижнее меню: везде, кроме чата и открытой игры; подсветка вкладки модуля */
+  private _applyChrome(moduleName: string): void {
+    const gameOpen = moduleName === 'games' && (window as any).gamesModule?.isGameOpen?.() === true;
+    navigation.setVisible(moduleName !== 'chat' && !gameOpen);
+    navigation.setActive(moduleName);
+  }
+
   private _getModuleInstance(moduleName: string): any {
     const ModuleClass = this.modules[moduleName];
     return ModuleClass ? ModuleClass._instance : null;
@@ -294,7 +328,6 @@ export class ModuleLoader {
       const loader = element.querySelector('.module-loader-overlay');
       if (loader) loader.remove();
     });
-    console.log('📦 Все модули скрыты');
   }
 
   private _showLoader(container: HTMLElement): void {
@@ -364,5 +397,3 @@ export class ModuleLoader {
 export const moduleLoader = new ModuleLoader();
 
 (window as any).moduleLoader = moduleLoader;
-
-console.log('✅ ModuleLoader v8.1.0 загружен');
