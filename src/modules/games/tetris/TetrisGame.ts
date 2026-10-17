@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/games/tetris/TetrisGame.ts
 // Описание: Классический Тетрис
-// Версия: 5.3.0 - монеты за игру считает сервер (событие economy:game), баланс — getCoinBalance
+// Версия: 5.4.0 - обработчики клавиатуры и видимости снимаются при закрытии игры (раньше
+//                 removeEventListener получал новую функцию из bind и ничего не снимал:
+//                 обработчики копились с каждой игрой)
+//          5.3.0 - монеты за игру считает сервер (событие economy:game), баланс — getCoinBalance
 //          5.2.1 - замена @types → @app-types
 // ============================================
 
@@ -31,6 +34,10 @@ interface IPiece {
 }
 
 export class TetrisGame {
+  /** Постоянные ссылки на обработчики: removeEventListener снимает только ту же функцию */
+  private readonly _onKeyDown = (e: KeyboardEvent): void => this._handleKeyDown(e);
+  private readonly _onVisibilityChange = (): void => this._handleVisibilityChange();
+
   private container: HTMLElement | null = null;
   private isRunning: boolean = false;
   private isPaused: boolean = false;
@@ -118,7 +125,6 @@ export class TetrisGame {
     this.isPaused = false;
     this._isClearingLines = false;
     
-    console.log('🧩 Тетрис v5.2.1 инициализирован');
   }
 
   private _subscribeToBalance(): void {
@@ -872,13 +878,13 @@ export class TetrisGame {
   }
 
   private _setupControls(): void {
-    document.addEventListener('keydown', this._handleKeyDown.bind(this));
-    document.addEventListener('visibilitychange', this._handleVisibilityChange.bind(this));
+    document.addEventListener('keydown', this._onKeyDown);
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
   }
 
   private _removeControls(): void {
-    document.removeEventListener('keydown', this._handleKeyDown.bind(this));
-    document.removeEventListener('visibilitychange', this._handleVisibilityChange.bind(this));
+    document.removeEventListener('keydown', this._onKeyDown);
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
   }
 
   private _handleKeyDown(e: KeyboardEvent): void {
@@ -952,4 +958,3 @@ export class TetrisGame {
 }
 
 (window as any).TetrisGame = TetrisGame;
-console.log('✅ TetrisGame v5.2.1 загружен');
