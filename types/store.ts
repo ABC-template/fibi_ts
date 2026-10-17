@@ -1,7 +1,8 @@
 // ============================================
 // types/store.ts
 // Типы для хранилищ (Store)
-// Версия: 3.2.0 - без trialUsed
+// Версия: 3.3.0 - IUserStoreData без полей устройства и имени/фото
+//          3.2.0 - без trialUsed
 //          3.1.0 - adminPanel в UserStore
 //          3.0.0 - добавлены поля UserStore
 // ============================================
@@ -28,15 +29,7 @@ export interface IUserStoreData {
   userId: number | null;
   role: UserRole;
   syncEnabled: boolean;
-  deviceFingerprint: string | null;
-  signedFingerprint: string | null;
-  deviceType: string;
-  devicePlatform: string;
-  username?: string | null;
-  firstName?: string;
-  lastName?: string;
   languageCode?: string;
-  photoUrl?: string | null;
   // ✅ НОВЫЕ ПОЛЯ
   premium_until?: string | null;
   /** Тариф с сервера (auth/check): от него зависит коэффициент цены агентов */
