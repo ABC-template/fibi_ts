@@ -6,7 +6,11 @@
 // ============================================
 // src/config/topics.ts
 // Центральный конфиг всех тем, ассистентов и их настроек
-// Версия: 1.0.1 - замена @types → @app-types
+// Версия: 1.1.0 - удалены неиспользуемые помощники (getActiveTopics, getTopicIds,
+//                 getAssistantConfig, getSystemPrompt, getTopicShortLabel, getTopicIcon,
+//                 getTopicColor, isValidTopic, getTopicModel, getTopicTemperature,
+//                 getTopicMaxTokens, getTopicFeatures), topicShortNames / welcomeTexts и CONFIG
+//          1.0.1 - замена @types → @app-types
 // ============================================
 
 import type { TopicId, AssistantTone, AssistantRole, FeatureFlags } from '@app-types';
@@ -36,14 +40,6 @@ export interface ITopicConfig {
   features: FeatureFlags;
   isActive: boolean;
   order: number;
-}
-
-export interface ITopicsConfig {
-  topics: ITopicConfig[];
-  defaultTopic: TopicId;
-  defaultModel: string;
-  defaultTemperature: number;
-  defaultMaxTokens: number;
 }
 
 // ==========================================
@@ -243,18 +239,6 @@ export const TOPICS: ITopicConfig[] = [
 ];
 
 // ==========================================
-// 5. ГЛОБАЛЬНЫЕ НАСТРОЙКИ
-// ==========================================
-
-export const CONFIG: ITopicsConfig = {
-  topics: TOPICS,
-  defaultTopic: 'code',
-  defaultModel: 'openai/gpt-4o',
-  defaultTemperature: 0.4,
-  defaultMaxTokens: 4096,
-};
-
-// ==========================================
 // 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ==========================================
 
@@ -263,38 +247,6 @@ export const CONFIG: ITopicsConfig = {
  */
 export function getTopic(id: TopicId): ITopicConfig | undefined {
   return TOPICS.find(t => t.id === id);
-}
-
-/**
- * Получить все активные темы (отсортированные по order)
- */
-export function getActiveTopics(): ITopicConfig[] {
-  return TOPICS
-    .filter(t => t.isActive)
-    .sort((a, b) => a.order - b.order);
-}
-
-/**
- * Получить список ID всех тем
- */
-export function getTopicIds(): TopicId[] {
-  return TOPICS.map(t => t.id);
-}
-
-/**
- * Получить настройки ассистента для темы
- */
-export function getAssistantConfig(topicId: TopicId): IAssistantConfig | undefined {
-  const topic = getTopic(topicId);
-  return topic?.assistant;
-}
-
-/**
- * Получить системный промпт для темы
- */
-export function getSystemPrompt(topicId: TopicId): string {
-  const topic = getTopic(topicId);
-  return topic?.assistant?.systemPrompt || CONFIG.defaultModel;
 }
 
 /**
@@ -314,22 +266,6 @@ export function getTopicLabel(topicId: TopicId): string {
 }
 
 /**
- * Получить короткое название темы
- */
-export function getTopicShortLabel(topicId: TopicId): string {
-  const topic = getTopic(topicId);
-  return topic?.shortLabel || `#${topicId}`;
-}
-
-/**
- * Получить иконку темы
- */
-export function getTopicIcon(topicId: TopicId): string {
-  const topic = getTopic(topicId);
-  return topic?.icon || '💬';
-}
-
-/**
  * Получить эмодзи темы
  */
 export function getTopicEmoji(topicId: TopicId): string {
@@ -337,75 +273,10 @@ export function getTopicEmoji(topicId: TopicId): string {
   return topic?.emoji || '💬';
 }
 
-/**
- * Получить цвет темы
- */
-export function getTopicColor(topicId: TopicId): string {
-  const topic = getTopic(topicId);
-  return topic?.color || '#D4AF37';
-}
-
-/**
- * Проверить, существует ли тема
- */
-export function isValidTopic(topicId: string): topicId is TopicId {
-  return TOPICS.some(t => t.id === topicId);
-}
-
-/**
- * Получить модель для темы
- */
-export function getTopicModel(topicId: TopicId): string {
-  const topic = getTopic(topicId);
-  return topic?.assistant?.model || CONFIG.defaultModel;
-}
-
-/**
- * Получить температуру для темы
- */
-export function getTopicTemperature(topicId: TopicId): number {
-  const topic = getTopic(topicId);
-  return topic?.assistant?.temperature || CONFIG.defaultTemperature;
-}
-
-/**
- * Получить максимальное количество токенов для темы
- */
-export function getTopicMaxTokens(topicId: TopicId): number {
-  const topic = getTopic(topicId);
-  return topic?.assistant?.maxTokens || CONFIG.defaultMaxTokens;
-}
-
-/**
- * Получить настройки фич для темы
- */
-export function getTopicFeatures(topicId: TopicId): FeatureFlags {
-  const topic = getTopic(topicId);
-  return topic?.features || {
-    imageSupport: false,
-    voiceSupport: true,
-    fileUpload: false,
-    codeHighlighting: false,
-  };
-}
-
 // ==========================================
-// 7. ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ (легаси)
+// 7. НАЗВАНИЯ ТЕМ (архив чатов, export-local)
 // ==========================================
-
-// Эти объекты оставлены для плавного перехода.
-// Постепенно убирай их использование в пользу прямого импорта из конфига.
 
 export const topicNames: Record<TopicId, string> = Object.fromEntries(
   TOPICS.map(t => [t.id, t.label])
 ) as Record<TopicId, string>;
-
-export const topicShortNames: Record<TopicId, string> = Object.fromEntries(
-  TOPICS.map(t => [t.id, t.shortLabel])
-) as Record<TopicId, string>;
-
-export const welcomeTexts: Record<TopicId, string> = Object.fromEntries(
-  TOPICS.map(t => [t.id, t.welcome])
-) as Record<TopicId, string>;
-
-console.log('✅ Topics config v1.0.1 загружен');
