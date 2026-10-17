@@ -1,7 +1,9 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.5.0 - чат стал пустым после удаления сообщения → переход к агентам через
+// Версия: 4.6.0 - удаление сообщения на сервере — /chats/actions/message (delete_message);
+//                 дублирующий /chats/mutations/delete-with-confirm удалён
+//          4.5.0 - чат стал пустым после удаления сообщения → переход к агентам через
 //                 навигацию (история и «Назад» не сбиваются)
 //          4.4.0 - очередь и sync_token с привязкой к Telegram ID (user-storage)
 //          4.3.0 - очередь неотправленных сообщений: если сообщение (например, длинный
@@ -256,8 +258,9 @@ export class MessageService {
           this._saveSyncToken(removed?.syncToken || null);
           console.log(`✅ [deleteMessage] Чат ${chatId} удалён на сервере (HARD DELETE)`);
         } else {
-          const result = await apiClient.post('/chats/mutations/delete-with-confirm', {
-            action: 'delete_message_with_confirm',
+          const result = await apiClient.post('/chats/actions/message', {
+            action: 'delete_message',
+            chatId: chatId,
             messageId: messageId
           });
           this._saveSyncToken(result?.syncToken || null);
@@ -322,4 +325,3 @@ export class MessageService {
 }
 
 export const messageService = new MessageService();
-console.log('✅ MessageService v4.3.0 загружен (очередь неотправленных сообщений)');
