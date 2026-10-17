@@ -1,15 +1,14 @@
 // ============================================
 // src/modules/organizer/OrganizerModule.ts
 // Модуль органайзера с вкладками
-// Версия: 4.2.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+// Версия: 4.2.1 - без console.log с устаревшим номером версии
+//          4.2.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          4.1.0 - текст напоминаний, значения и заметки трекеров экранируются
 //          4.0.3 - замена @types → @app-types
 // ============================================
 import './organizer.css';
 import { organizerStore } from '@/store/OrganizerStore';
 import { organizerService } from '@/services/organizer';
-import { chatStore } from '@/store/ChatStore';
-import { eventBus } from '@/core/event-bus';
 import { escapeHtml } from '@/utils/html';
 import type { TopicId } from '@app-types';
 
@@ -19,8 +18,6 @@ export class OrganizerModule {
   private _activeTab: 'todo' | 'reminders' | 'trackers' = 'todo';
   private organizerStore = organizerStore;
   private organizerService = organizerService;
-  private chatStore = chatStore;
-  private eventBus = eventBus;
   private _subscriptions: Array<() => void> = [];
 
   constructor(container: HTMLElement) {
@@ -139,7 +136,6 @@ export class OrganizerModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ OrganizerModule v4.0.3 инициализирован');
   }
 
   // ==========================================
@@ -534,4 +530,3 @@ export class OrganizerModule {
 }
 
 (window as any).OrganizerModule = OrganizerModule;
-console.log('✅ OrganizerModule v4.0.3 загружен');
