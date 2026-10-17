@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.4.1 - без console.log с устаревшим номером версии
+// Версия: 1.5.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll); заголовок с иконкой Lucide
+//          1.4.1 - без console.log с устаревшим номером версии
 //          1.4.0 — новый чат открывает общий openNewAgentChat (как кнопка «Создать» в
 //                  сайдбаре); значки типов — общие (AGENT_MODALITY_EMOJI)
 //          1.3.0 — новый чат с агентом называется по первому сообщению (не именем агента);
@@ -246,14 +247,20 @@ export class AgentsModule {
   render(): void {
     const agents = this.getSortedAgents();
 
+    // Перерисовка не сбрасывает прокрутку списка
+    const prevScroll = (this.container.querySelector('.app-scroll') as HTMLElement | null)?.scrollTop || 0;
     this.container.innerHTML = '';
 
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'padding: 16px; display:flex; flex-direction:column; gap:12px;';
+    wrapper.className = 'app-scroll';
+    wrapper.style.cssText = 'padding: 16px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px;';
 
     const header = document.createElement('div');
     header.innerHTML = `
-      <h2 style="margin:0 0 4px 0;font-size:20px;font-weight:700;color:var(--app-text-primary);">🤖 Агенты</h2>
+      <h2 style="margin:0 0 4px 0;font-size:20px;font-weight:700;color:var(--app-text-primary);display:flex;align-items:center;gap:8px;">
+        <i data-lucide="bot" style="width:24px;height:24px;"></i>
+        Агенты
+      </h2>
       <div style="font-size:13px;color:var(--app-text-tertiary);margin-bottom:8px;">
         Выберите агента для общения
       </div>
@@ -277,6 +284,13 @@ export class AgentsModule {
     }
 
     this.container.appendChild(wrapper);
+    wrapper.scrollTop = prevScroll;
+
+    setTimeout(() => {
+      if (typeof (window as any).lucide !== 'undefined') {
+        (window as any).lucide.createIcons();
+      }
+    }, 0);
   }
 
   async show(): Promise<void> {
@@ -287,7 +301,6 @@ export class AgentsModule {
     this.container.style.flexDirection = 'column';
     this.container.style.height = '100%';
     this.container.style.width = '100%';
-    this.container.style.overflowY = 'auto';
 
     await this.loadAgents();
     this.render();
