@@ -1,7 +1,9 @@
 // ============================================
 // src/store/UserStore.ts
-// Пользователь, настройки, лимиты, устройство
-// Версия: 6.3.0 — убраны trialUsed / markTrialUsed (пробного периода больше нет)
+// Пользователь: Telegram ID, роль, синхронизация, тариф
+// Версия: 6.4.0 — удалены неиспользуемые поля устройства (fingerprint, тип, платформа),
+//                  имя/фото/username и методы isAdmin, getAvatarUrl, getDisplayName
+//          6.3.0 — убраны trialUsed / markTrialUsed (пробного периода больше нет)
 //          6.2.0 — доступ к админке (isCreator) по флагу сервера adminPanel
 //                  (список ADMIN_TELEGRAM_IDS / CREATOR_ID), без ID в коде
 //          6.1.0 — хранится тариф (subscription_tier) и дата окончания с сервера
@@ -9,7 +11,7 @@
 // ============================================
 
 import { BaseStore } from './BaseStore';
-import type { IUserStoreData, UserRole, IUserDevice } from '@app-types';
+import type { IUserStoreData, UserRole } from '@app-types';
 
 export class UserStore extends BaseStore<IUserStoreData> {
   constructor() {
@@ -21,10 +23,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
         userId: null,
         role: 'trial',
         syncEnabled: false,
-        deviceFingerprint: null,
-        signedFingerprint: null,
-        deviceType: 'web',
-        devicePlatform: 'web',
         premium_until: null,
       };
       this.save();
@@ -53,11 +51,7 @@ export class UserStore extends BaseStore<IUserStoreData> {
       if (storedUserId && storedUserId !== currentUserId) {
         console.log(`🔄 Пользователь сменился: ${storedUserId} → ${currentUserId}`);
         this._data.userId = currentUserId;
-        this._data.username = user.username || null;
-        this._data.firstName = user.first_name || '';
-        this._data.lastName = user.last_name || '';
         this._data.languageCode = user.language_code || 'ru';
-        this._data.photoUrl = user.photo_url || null;
         this.save();
         this._emitChange('user:changed', { 
           userId: currentUserId, 
@@ -65,11 +59,7 @@ export class UserStore extends BaseStore<IUserStoreData> {
         });
       } else if (!storedUserId) {
         this._data.userId = currentUserId;
-        this._data.username = user.username || null;
-        this._data.firstName = user.first_name || '';
-        this._data.lastName = user.last_name || '';
         this._data.languageCode = user.language_code || 'ru';
-        this._data.photoUrl = user.photo_url || null;
         this.save();
         this._emitChange('user:created', { 
           userId: currentUserId, 
@@ -92,24 +82,8 @@ export class UserStore extends BaseStore<IUserStoreData> {
     this.save();
   }
 
-  get username(): string | null | undefined {
-    return this._data.username;
-  }
-
-  get firstName(): string {
-    return this._data.firstName || '';
-  }
-
-  get lastName(): string {
-    return this._data.lastName || '';
-  }
-
   get languageCode(): string {
     return this._data.languageCode || 'ru';
-  }
-
-  get photoUrl(): string | null | undefined {
-    return this._data.photoUrl || null;
   }
 
   get role(): UserRole {
@@ -119,22 +93,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
 
   get syncEnabled(): boolean {
     return this._data.syncEnabled || false;
-  }
-
-  get deviceFingerprint(): string | null {
-    return this._data.deviceFingerprint || null;
-  }
-
-  get signedFingerprint(): string | null {
-    return this._data.signedFingerprint || null;
-  }
-
-  get deviceType(): string {
-    return this._data.deviceType || 'web';
-  }
-
-  get devicePlatform(): string {
-    return this._data.devicePlatform || 'web';
   }
 
   /** Доступ к админ-панели — решает сервер (auth/check → adminPanel) */
@@ -184,29 +142,12 @@ export class UserStore extends BaseStore<IUserStoreData> {
 
 
 
-  setDeviceFingerprint(fingerprint: string, signed: string, deviceType: string = 'web', platform: string = 'web'): void {
-    this._data.deviceFingerprint = fingerprint;
-    this._data.signedFingerprint = signed || fingerprint;
-    this._data.deviceType = deviceType;
-    this._data.devicePlatform = platform;
-    this.save();
-    this._emitChange('user:device_registered', { deviceType, platform });
-  }
-
-  getDeviceFingerprint(): string | null {
-    return this._data.signedFingerprint || this._data.deviceFingerprint || null;
-  }
-
   // ==========================================
   // ПРОВЕРКИ
   // ==========================================
 
   isPro(): boolean {
     return ['premium', 'admin', 'creator'].includes(this.role);
-  }
-
-  isAdmin(): boolean {
-    return ['admin', 'creator'].includes(this.role);
   }
 
 
@@ -216,23 +157,6 @@ export class UserStore extends BaseStore<IUserStoreData> {
 
 
 
-  getAvatarUrl(): string {
-    return this.photoUrl || 'https://gravatar.com/avatar/00000000000000000000000000000000?d=mp';
-  }
-
-  getDisplayName(): string {
-    let name = this.firstName;
-    if (this.lastName) {
-      name += ' ' + this.lastName;
-    }
-    return name || 'Пользователь';
-  }
-
-  // ==========================================
-  // СИНХРОНИЗАЦИЯ ЛИМИТА С СЕРВЕРОМ
-  // ==========================================
-
 }
 
 export const userStore = new UserStore();
-console.log('✅ UserStore v6.2.0 загружен');
