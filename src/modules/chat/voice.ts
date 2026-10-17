@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/voice.ts
 // Голосовой ввод
-// Версия: 3.2.0 - формат записи — первый поддерживаемый браузером (webm/ogg/mp4);
+// Версия: 3.2.1 - без console.log с устаревшим номером версии
+//          3.2.0 - формат записи — первый поддерживаемый браузером (webm/ogg/mp4);
 //                 раньше на iOS Safari new MediaRecorder({ mimeType: 'audio/webm' }) падал;
 //                 тип Blob — фактический тип записи
 //          3.1.0 - в streamAiResponse уходят chatId и агент чата (был объект чата)
@@ -298,5 +299,3 @@ function pickRecorderMime(): string | null {
     }
   }
 };
-
-console.log('✅ ChatVoice v3.2.0 загружен');
