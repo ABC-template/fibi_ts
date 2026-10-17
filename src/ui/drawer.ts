@@ -1,7 +1,11 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 2.11.0 — разделы из сайдбара открываются через навигацию (как из нижнего меню):
+// Версия: 3.0.0 — фильтр чатов по агентам (список с сервера вместо зашитых тем, чаты —
+//                  по agent_id); у агента без чатов — кнопка «Создать чат»; без чатов
+//                  вообще — «Выбрать агента»; из меню убраны «ИИ-агенты» и «Задания»
+//                  (есть в нижнем меню)
+//          2.11.0 — разделы из сайдбара открываются через навигацию (как из нижнего меню):
 //                  работают история и кнопка «Назад»; удаление открытого чата — переход
 //                  к агентам без ручного hide() (его вызывает загрузчик модулей)
 //          2.10.0 — очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
@@ -25,11 +29,16 @@ import { navigation } from '@/core/navigation';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { profileUI } from '@/modules/ui/profile-ui';
 import { escapeHtml } from '@/utils/html';
+import { AGENT_MODALITY_EMOJI, getCachedAgents, loadAgentsCached, openNewAgentChat } from '@/services/agents';
+import type { IPublicAgent } from '../../types/agents';
 import type { TopicId, IChat } from '@app-types';
 
 const MAX_PINNED_CHATS = 10;
 
+/** Фильтр чатов: 'all' или id агента */
 let drawerFilter: string = 'all';
+/** Список агентов в фильтре уже отрисован по этим id (перерисовка — только при изменении) */
+let renderedAgentKey = '';
 let activeChatMenu: HTMLElement | null = null;
 
 export function openDrawer(): void {
@@ -86,21 +95,23 @@ export function renderChatsInDrawer(): void {
     const existingNav = container.querySelector('.drawer-nav-bottom');
     container.innerHTML = '';
 
-    const filtersContainer = createFilters();
-    container.appendChild(filtersContainer);
+    const agents = filterAgents();
+    renderedAgentKey = agents.map((a) => a.id).join(',');
+    refreshAgentsInBackground();
 
-    const allChats = collectChats();
-    const sortedChats = sortChats(allChats);
+    // Агента больше нет в списке — показываем все чаты
+    if (drawerFilter !== 'all' && !agents.some((a) => a.id === drawerFilter)) drawerFilter = 'all';
+
+    container.appendChild(createFilters(agents));
+
+    const sortedChats = collectChats();
 
     const listWrapper = document.createElement('div');
     listWrapper.className = 'drawer-chats-wrapper';
     listWrapper.style.cssText = 'flex: 1; overflow-y: auto; min-height: 0;';
 
     if (sortedChats.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'drawer-empty';
-        empty.textContent = drawerFilter === 'all' ? 'Нет чатов' : 'Нет чатов в этом разделе';
-        listWrapper.appendChild(empty);
+        listWrapper.appendChild(createEmptyState(agents.find((a) => a.id === drawerFilter) || null));
         container.appendChild(listWrapper);
         appendDrawerNav(container);
 
@@ -129,47 +140,101 @@ export function renderChatsInDrawer(): void {
     }, 50);
 }
 
-function createFilters(): HTMLElement {
+/**
+ * Агенты для фильтра: доступные пользователю и те, с которыми уже есть чаты
+ * (даже если доступ пропал — чтобы их чаты можно было найти)
+ */
+function filterAgents(): IPublicAgent[] {
+    const agents = getCachedAgents() || [];
+    const withChats = new Set<string>();
+    for (const chats of Object.values(chatStore.histories || {}) as IChat[][]) {
+        for (const chat of chats || []) {
+            if (chat.agent_id && !chat.deleted_at && chat.messages?.length) withChats.add(chat.agent_id);
+        }
+    }
+    return agents
+        .filter((a) => a.has_access || withChats.has(a.id))
+        .sort((a, b) => (a.sort_order || 100) - (b.sort_order || 100));
+}
+
+/** Свежий список агентов с сервера; если он изменился, а сайдбар открыт — перерисовать */
+function refreshAgentsInBackground(): void {
+    loadAgentsCached()
+        .then(() => {
+            const key = filterAgents().map((a) => a.id).join(',');
+            const drawer = document.getElementById('drawer');
+            if (key !== renderedAgentKey && drawer?.classList.contains('active')) renderChatsInDrawer();
+        })
+        .catch((err) => console.warn('⚠️ [drawer] Список агентов не загрузился:', err));
+}
+
+function createFilters(agents: IPublicAgent[]): HTMLElement {
     const container = document.createElement('div');
     container.className = 'drawer-filters';
 
-    const topics = [
+    const options = [
         { id: 'all', label: 'Все' },
-        { id: 'code', label: '#кодинг' },
-        { id: 'creative', label: '#креатив' },
-        { id: 'fast', label: '#флуд' },
-        { id: 'kitchen', label: '#кухня' },
-        { id: 'analytics', label: '#аналитика' }
+        ...agents.map((a) => ({
+            id: a.id,
+            label: `${AGENT_MODALITY_EMOJI[a.modality] || '🤖'} ${a.name?.ru || a.slug}`,
+        })),
     ];
 
     const wrapper = document.createElement('div');
     wrapper.className = 'drawer-filter-wrapper';
-    wrapper.style.cssText = `
-        display: flex;
-        gap: 6px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        padding-bottom: 4px;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
-        ms-overflow-style: none;
-    `;
 
-    for (const topic of topics) {
+    for (const option of options) {
         const chip = document.createElement('button');
-        chip.className = `drawer-filter-chip ${drawerFilter === topic.id ? 'active' : ''}`;
-        chip.textContent = topic.label;
-        chip.dataset.topic = topic.id;
+        chip.type = 'button';
+        chip.className = `drawer-filter-chip ${drawerFilter === option.id ? 'active' : ''}`;
+        chip.textContent = option.label;
         chip.onclick = (e) => {
             e.stopPropagation();
-            drawerFilter = topic.id;
+            drawerFilter = option.id;
             renderChatsInDrawer();
         };
         wrapper.appendChild(chip);
     }
 
     container.appendChild(wrapper);
+
+    // Выбранный фильтр — в зоне видимости (список прокручивается вбок)
+    requestAnimationFrame(() => {
+        wrapper.querySelector('.drawer-filter-chip.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
     return container;
+}
+
+/** Пусто: для агента — «Создать чат» (или почему нельзя), для всех — «Выбрать агента» */
+function createEmptyState(agent: IPublicAgent | null): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'drawer-empty';
+
+    const text = document.createElement('div');
+    text.className = 'drawer-empty-text';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'drawer-empty-btn';
+
+    if (!agent) {
+        text.textContent = 'Чатов пока нет';
+        button.textContent = 'Выбрать агента';
+        button.onclick = () => navigation.switchTab('agents');
+    } else if (agent.has_access) {
+        text.textContent = `С агентом «${agent.name?.ru || agent.slug}» чатов нет`;
+        button.textContent = '＋ Создать чат';
+        button.onclick = () => {
+            closeDrawer({ instant: true });
+            if (!openNewAgentChat(agent)) uiRenderer.showToast('⚠️ Не удалось создать чат', 'error', 1500);
+        };
+    } else {
+        text.textContent = `Агент «${agent.name?.ru || agent.slug}» недоступен на вашем тарифе`;
+        button.textContent = 'Подробнее';
+        button.onclick = () => navigation.switchTab('agents');
+    }
+
+    box.append(text, button);
+    return box;
 }
 
 function collectChats(): any[] {
@@ -185,7 +250,7 @@ function collectChats(): any[] {
         for (const chat of chats) {
             if (chat.deleted_at) continue;
             if (!chat.messages || chat.messages.length === 0) continue;
-            if (drawerFilter !== 'all' && chat.topic !== drawerFilter) continue;
+            if (drawerFilter !== 'all' && chat.agent_id !== drawerFilter) continue;
 
             const chatData = {
                 id: chat.id,
@@ -212,10 +277,6 @@ function collectChats(): any[] {
     });
 
     return [...sortedPinned, ...sortedUnpinned];
-}
-
-function sortChats(chats: any[]): any[] {
-    return chats;
 }
 
 function createChatItem(chat: any): HTMLElement {
@@ -542,13 +603,6 @@ export function appendDrawerNav(container: HTMLElement): void {
             show: true,
         },
         {
-            id: 'drawer-agents',
-            icon: '🤖',
-            label: 'ИИ-агенты',
-            action: () => navigation.switchTab('agents'),
-            show: true,
-        },
-        {
             id: 'drawer-economy',
             icon: '💰',
             label: 'Экономика',
@@ -560,13 +614,6 @@ export function appendDrawerNav(container: HTMLElement): void {
             icon: '🤝',
             label: 'Рефералы',
             action: () => navigation.switchTab('referral'),
-            show: true,
-        },
-        {
-            id: 'drawer-sponsors',
-            icon: '📋',
-            label: 'Задания',
-            action: () => navigation.switchTab('quests'),
             show: true,
         },
         {
