@@ -1,34 +1,59 @@
 /* ============================================
    src/ui/header.css
    Стили хедера
-   Версия: 1.0.0
+   Версия: 2.0.0 — шапка «парит»: закреплена поверх экрана, фон прозрачный, контент
+            прокручивается под ней; видны только стеклянные «пилюли» (аватар с балансами,
+            название чата, кнопки справа), пустое место шапки не перехватывает касания;
+            балансы — две строки (монеты и энергия, иконки Lucide), нажатие — в Экономику
+   1.0.0
    ============================================ */
 
 #header {
-    padding: calc(var(--tg-content-safe-area-top, 0px) + 10px) var(--app-spacing-lg) var(--app-spacing-md) var(--app-spacing-lg);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: calc(var(--tg-content-safe-area-top, 0px) + 10px) var(--app-spacing-lg) var(--app-spacing-sm) var(--app-spacing-lg);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    flex-shrink: 0;
+    gap: 10px;
     width: 100%;
     min-height: 56px;
-    position: relative;
     z-index: var(--app-z-header);
-    background-color: transparent !important;
+    background: transparent !important;
+    pointer-events: none;
 }
 
-.header-glass {
+/* Касания — только по «пилюлям», сквозь пустую часть шапки прокручивается контент */
+#header > * { pointer-events: auto; }
+#header > .header-center { pointer-events: none; }
+#header > .header-center > * { pointer-events: auto; }
+
+/* Общее стекло «пилюль» */
+.header-glass,
+.header-title-pill,
+.header-right:not(:empty) {
     background: rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(212, 175, 55, 0.12);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
+
+body[data-theme="light"] .header-glass,
+body[data-theme="light"] .header-title-pill,
+body[data-theme="light"] .header-right:not(:empty) {
+    background: rgba(255, 252, 245, 0.6);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.header-glass {
     border-radius: 30px;
-    padding: 4px 16px 4px 4px;
+    padding: 4px 14px 4px 4px;
     display: flex;
     align-items: center;
     gap: 10px;
-    border: 1px solid rgba(212, 175, 55, 0.12);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
     flex-shrink: 0;
     transition: all 0.3s ease;
     cursor: default;
@@ -48,56 +73,72 @@
 
 .header-avatar:active { transform: scale(0.92); }
 
-.coins-badge {
+/* Балансы: монеты и энергия двумя строками */
+.balance-badge {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--app-text-primary);
-    font-size: 14px;
-    font-weight: 600;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
     cursor: pointer;
-    padding: 4px 8px 4px 4px;
-    border-radius: 20px;
-    transition: all 0.3s ease;
+    padding: 2px 4px;
+    border-radius: 14px;
+    transition: transform 0.15s ease, background 0.15s ease;
     user-select: none;
+    min-width: 52px;
 }
 
-.coins-badge .coin-icon { font-size: 18px; line-height: 1; }
-.coins-badge .coin-amount {
-    font-size: 14px;
+.balance-badge:active { transform: scale(0.94); background: rgba(212, 175, 55, 0.1); }
+
+.balance-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    line-height: 1.15;
     font-weight: 700;
-    color: var(--app-accent-primary);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
-.coins-badge:active { transform: scale(0.92); background: rgba(212, 175, 55, 0.1); }
+
+.balance-row .lucide { width: 13px; height: 13px; flex-shrink: 0; stroke: currentColor; }
+.balance-row.coins { color: var(--app-accent-primary); }
+.balance-row.energy { color: var(--app-text-secondary); }
+.balance-row.energy .lucide { color: var(--app-accent-warning); }
 
 .header-center {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     overflow: hidden;
-    padding: 0 4px;
+    padding: 0;
 }
 
-#header-title-text {
+/* Название чата — в своей стеклянной «пилюле» */
+.header-title-pill {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+    padding: 8px 14px;
+    border-radius: 20px;
     font-weight: 600;
-    font-size: 16px;
+    font-size: 15px;
     color: var(--app-text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: block;
-    max-width: 100%;
 }
 
 .header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-shrink: 0;
+    border-radius: 22px;
 }
+
+.header-right:not(:empty) { padding: 4px; }
 
 .header-action-btn {
     background: transparent;
@@ -105,14 +146,14 @@
     color: var(--app-text-secondary);
     cursor: pointer;
     padding: 4px;
-    border-radius: 8px;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
 }
 
-.header-action-btn .lucide { width: 22px; height: 22px; stroke: currentColor; }
+.header-action-btn .lucide { width: 20px; height: 20px; stroke: currentColor; }
 .header-action-btn:active { transform: scale(0.90); background: rgba(212, 175, 55, 0.1); }
