@@ -1,7 +1,8 @@
 // ============================================
 // api/chats/trash.ts
 // Описание: Работа с корзиной (GET, POST, DELETE) с sync_token
-// Версия: 4.3.0 - восстановление из корзины в облаке — только с синхронизацией (can_sync);
+// Версия: 4.3.1 - без неиспользуемых импортов и переменных
+//          4.3.0 - восстановление из корзины в облаке — только с синхронизацией (can_sync);
 //                 смотреть корзину и удалять своё навсегда можно всегда
 //          4.2.1 - intParam — общий из _lib/validators
 //          4.2.0 - limit/offset: нечисловые и отрицательные значения больше не ломают запрос (500)
@@ -12,7 +13,7 @@
 import { authenticate } from '../_lib/auth';
 import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken, canUserSync } from '../_lib/supabase-client';
-import { intParam, isValidUUID, validateUUID } from '../_lib/validators';
+import { intParam, validateUUID } from '../_lib/validators';
 import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../_lib/chat-lock';
 import { HttpError } from '../_lib/http-error';
 
