@@ -1,7 +1,15 @@
 // ============================================
 // src/core/navigation-state.ts
 // Единое состояние навигации
-// Версия: 7.3.1 - FIXED: проверка темы чата
+// Версия: 8.0.0 — слои поверх экрана (модалки, просмотрщик медиа, форма генерации) в одном
+//                  стеке: «Назад» закрывает верхний слой (событие modal:state_changed с его
+//                  modalId), закрытие слоя убирает из стека именно его, а не последний;
+//                  кнопка «Назад» видна, пока открыт хоть один слой;
+//                  switchRoot — переход на вкладку нижнего меню со сбросом истории;
+//                  syncModule — ModuleLoader сообщает модуль, загруженный в обход navigate;
+//                  исправлено: «Назад» по истории снимал из неё два шага вместо одного;
+//                  «Назад» из чата — на предыдущий раздел (не чат), без него — к агентам
+//          7.3.1 — проверка темы чата
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -21,14 +29,16 @@ export interface INavigationState {
 }
 
 export interface INavigationOptions {
+  /** Не добавлять текущий экран в историю (замена текущего) */
   replace?: boolean;
   silent?: boolean;
   addToHistory?: boolean;
 }
 
+const MAX_HISTORY = 20;
+
 export class NavigationState {
   private eventBus = eventBus;
-  private _moduleLoader: any = null;
   private _state: INavigationState = {
     module: 'dashboard',
     params: {},
@@ -41,150 +51,81 @@ export class NavigationState {
 
   constructor() {
     this._subscribe();
-    console.log('✅ NavigationState v8.0.0 инициализирован');
   }
 
   private get moduleLoader(): any {
-    if (!this._moduleLoader) {
-      this._moduleLoader = (window as any).moduleLoader || null;
-    }
-    return this._moduleLoader;
+    return (window as any).moduleLoader || null;
   }
 
   // ==========================================
-  // НУЖНО ЛИ ПОКАЗЫВАТЬ КНОПКУ НАЗАД?
+  // КНОПКА «НАЗАД»
   // ==========================================
 
   shouldShowBackButton(): boolean {
+    if (this._state.modalStack.length > 0) return true;
+
     const drawer = document.getElementById('drawer');
-    const isDrawerPhysicallyOpen = drawer?.classList.contains('active') || false;
+    if (drawer?.classList.contains('active') || this._state.isDrawerOpen) return true;
 
-    if (isDrawerPhysicallyOpen || this._state.isDrawerOpen) {
-      return true;
-    }
+    if (inputManager.isExpanded()) return true;
 
-    if (this._state.module === 'chat') {
-      return true;
-    }
+    if (this._state.module === 'chat') return true;
 
-    if (this._state.module === 'profile') {
-      return true;
-    }
-
-    return false;
+    // Модули без вкладки в меню (профиль, экономика, админка…) — есть куда вернуться
+    return this._state.history.length > 0;
   }
 
-  // ==========================================
-  // ОБРАБОТКА НАЖАТИЯ КНОПКИ НАЗАД
-  // ==========================================
-
   back(): void {
-    console.log('🔙 NavigationState.back()');
-    console.log('📊 Текущее состояние:', {
-      modalStack: this._state.modalStack,
-      isDrawerOpen: this._state.isDrawerOpen,
-      module: this._state.module
-    });
-
-    // ==========================================
-    // 1. ПРОВЕРЯЕМ КАПСУЛУ
-    // ==========================================
+    // 1. Капсула ввода
     if (inputManager.isExpanded()) {
-      console.log('📱 Капсула открыта → закрываем и остаемся в чате');
       inputManager.collapseInputArea();
       return;
     }
 
-    // ==========================================
-    // 2. ПРОВЕРЯЕМ МОДАЛКИ
-    // ==========================================
+    // 2. Верхний слой (модалка, просмотрщик, форма): закрывает его владелец по modalId
     if (this._state.modalStack.length > 0) {
-      const lastModal = this._state.modalStack.pop();
-      console.log(`📱 Закрываем модалку: ${lastModal}`);
-
+      const top = this._state.modalStack.pop() as string;
+      this._state.isModalOpen = this._state.modalStack.length > 0;
       this.eventBus.emit('modal:state_changed', {
-        isOpen: this._state.modalStack.length > 0,
-        modalId: lastModal,
+        isOpen: this._state.isModalOpen,
+        modalId: top,
         action: 'back'
       });
-
-      if (this._state.modalStack.length === 0) {
-        this._state.isModalOpen = false;
-        this._updateBackButton();
-      }
+      this._updateBackButton();
       return;
     }
 
-    // ==========================================
-    // 3. ПРОВЕРЯЕМ САЙДБАР
-    // ==========================================
+    // 3. Сайдбар
     const drawer = document.getElementById('drawer');
-    const overlay = document.getElementById('drawer-overlay');
-    const isDrawerPhysicallyOpen = drawer?.classList.contains('active') || false;
-
-    if (isDrawerPhysicallyOpen || this._state.isDrawerOpen) {
-      console.log('📂 Закрываем сайдбар');
-
+    if (drawer?.classList.contains('active') || this._state.isDrawerOpen) {
       if ((window as any).closeDrawer) {
         (window as any).closeDrawer();
       } else {
-        if (drawer) {
-          drawer.classList.remove('active');
-          drawer.classList.remove('drawer-anim-in');
-          drawer.classList.add('drawer-anim-out');
-        }
-        if (overlay) {
-          overlay.classList.remove('active');
-        }
+        drawer?.classList.remove('active');
+        document.getElementById('drawer-overlay')?.classList.remove('active');
         document.body.style.overflow = '';
-        setTimeout(() => {
-          if (drawer) {
-            drawer.classList.remove('drawer-anim-out');
-          }
-        }, 300);
+        this._state.isDrawerOpen = false;
+        this._updateBackButton();
+        this.eventBus.emit('drawer:state_changed', { isOpen: false });
       }
-
-      this._state.isDrawerOpen = false;
-      this._updateBackButton();
-      this.eventBus.emit('drawer:state_changed', { isOpen: false });
       return;
     }
 
-    // ==========================================
-    // 4. ПРОВЕРЯЕМ МОДУЛИ
-    // ==========================================
+    // 4. Чат: на предыдущий раздел (не чат), без него — к агентам
     if (this._state.module === 'chat') {
-      this.goToChatList();
-      return;
-    }
-
-    if (this._state.module === 'profile') {
-      if (this._state.history.length > 0) {
-        const prev = this._state.history.pop();
-        if (prev) {
-          this.navigate(prev.module, prev.params, { replace: true });
-        } else {
-          this.navigate('agents', {}, { replace: true });
-        }
-      } else {
-        this.navigate('agents', {}, { replace: true });
-      }
-      return;
-    }
-
-    // ==========================================
-    // 5. ИСТОРИЯ ИЛИ ГЛАВНАЯ
-    // ==========================================
-    if (this._state.history.length > 0) {
-      const prev = this._state.history.pop();
+      let prev = this._state.history.pop();
+      while (prev && prev.module === 'chat') prev = this._state.history.pop();
       if (prev) {
-        this.navigate(prev.module, prev.params, { replace: true });
+        void this.navigate(prev.module, prev.params, { replace: true });
       } else {
-        this.navigate('dashboard', {}, { replace: true });
+        this.goToAgents();
       }
-    } else {
-      this.navigate('dashboard', {}, { replace: true });
+      return;
     }
+
+    // 5. История или главная
+    const prev = this._state.history.pop();
+    void this.navigate(prev ? prev.module : 'dashboard', prev ? prev.params : {}, { replace: true });
   }
 
   // ==========================================
@@ -194,70 +135,38 @@ export class NavigationState {
   async navigate(module: string, params: Record<string, any> = {}, options: INavigationOptions = {}): Promise<void> {
     const { replace = false, silent = false, addToHistory = true } = options;
 
-    if (this._isLoading) {
-      console.log(`⏳ Уже выполняется навигация, пропускаем`);
-      return;
-    }
-
+    if (this._isLoading) return;
     this._isLoading = true;
 
+    const oldModule = this._state.module;
+    const oldParams = { ...this._state.params };
+    const oldHistoryLength = this._state.history.length;
+
     try {
-      if (addToHistory && !replace && !silent) {
-        this._state.history.push({
-          module: this._state.module,
-          params: { ...this._state.params }
-        });
-
-        if (this._state.history.length > 20) {
-          this._state.history.shift();
-        }
+      // Повторный вход в тот же модуль (чат → другой чат) историю не наращивает
+      if (addToHistory && !replace && !silent && oldModule !== module) {
+        this._state.history.push({ module: oldModule, params: oldParams });
+        if (this._state.history.length > MAX_HISTORY) this._state.history.shift();
       }
-
-      const oldModule = this._state.module;
-      const oldParams = { ...this._state.params };
 
       this._state.module = module;
       this._state.params = { ...params };
 
-      if (replace && this._state.history.length > 0) {
-        this._state.history.pop();
-      }
-
       const loader = this.moduleLoader;
-      if (loader) {
-        console.log(`📦 Загружаем модуль: ${module}`, params);
+      const instance = loader ? await loader.load(module, params, { silent }) : null;
 
-        const instance = await loader.load(module, params, {
-          silent: silent,
-          replace: replace
-        });
-
-        if (!instance) {
-          console.error(`❌ Не удалось загрузить модуль ${module}`);
-          this._state.module = oldModule;
-          this._state.params = oldParams;
-          this._isLoading = false;
-          return;
-        }
-
-        // show() уже вызван внутри moduleLoader.load — не дублируем
-        console.log(`✅ Модуль ${module} загружен и показан`);
-      } else {
-        console.error(`❌ ModuleLoader не доступен!`);
+      if (!instance) {
+        console.error(`❌ Не удалось загрузить модуль ${module}`);
         this._state.module = oldModule;
         this._state.params = oldParams;
-        this._isLoading = false;
+        this._state.history.length = Math.min(this._state.history.length, oldHistoryLength);
         return;
       }
 
       if (!silent) {
         this.eventBus.emit('navigation:state_changed', { ...this._state });
       }
-
       this._updateBackButton();
-
-      console.log(`🧭 Навигация завершена: ${module}`, params);
-
     } catch (err) {
       console.error(`❌ Ошибка навигации в ${module}:`, err);
     } finally {
@@ -265,93 +174,66 @@ export class NavigationState {
     }
   }
 
-  // ==========================================
-  // ✅ ИСПРАВЛЕНО: ОТКРЫТИЕ ЧАТА (проверка темы)
-  // ==========================================
+  /** Вкладка нижнего меню: корневой раздел, история сбрасывается */
+  async switchRoot(module: string): Promise<void> {
+    if (inputManager.isExpanded()) inputManager.collapseInputArea();
+    this._state.history = [];
+    await this.navigate(module, {}, { addToHistory: false });
+  }
+
+  /** ModuleLoader загрузил модуль в обход navigate (прямой вызов load) */
+  syncModule(module: string, params: Record<string, any>): void {
+    if (this._state.module === module) return;
+    this._state.module = module;
+    this._state.params = { ...params };
+    this._updateBackButton();
+  }
 
   openChat(chatId: string, topic: string, messageId?: string | null): void {
-    console.log(`📂 NavigationState.openChat: ${chatId}, ${topic}`);
-
-    // ✅ ПРОВЕРЯЕМ, ЧТО ЧАТ ПРИНАДЛЕЖИТ УКАЗАННОЙ ТЕМЕ
+    // Тема — из самого чата, если он найден
     const found = chatStore.findChatById(chatId);
     if (found && found.chat.topic && found.chat.topic !== topic) {
-      console.warn(`⚠️ Чат ${chatId} принадлежит теме "${found.chat.topic}", а не "${topic}"`);
-      // Используем реальную тему из чата
       topic = found.chat.topic;
     }
 
-    // Закрываем капсулу если открыта
-    if (inputManager.isExpanded()) {
-      console.log('📱 Закрываем капсулу перед открытием чата');
-      inputManager.collapseInputArea();
-    }
+    if (inputManager.isExpanded()) inputManager.collapseInputArea();
+    this._closeDrawerIfOpen();
 
-    const drawer = document.getElementById('drawer');
-    if (drawer?.classList.contains('active')) {
-      console.log('📂 Сайдбар открыт, закрываем');
-      if ((window as any).closeDrawer) {
-        (window as any).closeDrawer();
-      } else {
-        drawer.classList.remove('active');
-        document.getElementById('drawer-overlay')?.classList.remove('active');
-        document.body.style.overflow = '';
-      }
-      this._state.isDrawerOpen = false;
-      this._updateBackButton();
-      this.eventBus.emit('drawer:state_changed', { isOpen: false });
-    }
-
-    this.navigate('chat', { chatId, topic, messageId: messageId || undefined });
+    void this.navigate('chat', { chatId, topic, messageId: messageId || undefined });
   }
-
-  // ==========================================
-  // ПЕРЕХОД В СПИСОК ЧАТОВ
-  // ==========================================
 
   goToChatList(): void {
     this.goToAgents();
   }
 
   goToAgents(): void {
-    if (inputManager.isExpanded()) {
-      inputManager.collapseInputArea();
-    }
-    this.navigate('agents', {}, { replace: true });
+    if (inputManager.isExpanded()) inputManager.collapseInputArea();
+    void this.switchRoot('agents');
   }
-
-  // ==========================================
-  // ОТКРЫТИЕ ПРОФИЛЯ
-  // ==========================================
 
   openProfile(): void {
-    console.log('👤 NavigationState.openProfile');
+    if (inputManager.isExpanded()) inputManager.collapseInputArea();
+    this._closeDrawerIfOpen();
+    void this.navigate('profile', {}, { addToHistory: true });
+  }
 
-    // Закрываем капсулу если открыта
-    if (inputManager.isExpanded()) {
-      console.log('📱 Закрываем капсулу перед открытием профиля');
-      inputManager.collapseInputArea();
-    }
-
+  private _closeDrawerIfOpen(): void {
     const drawer = document.getElementById('drawer');
-    if (drawer?.classList.contains('active')) {
-      console.log('📂 Сайдбар открыт, закрываем');
-      if ((window as any).closeDrawer) {
-        (window as any).closeDrawer();
-      } else {
-        drawer.classList.remove('active');
-        document.getElementById('drawer-overlay')?.classList.remove('active');
-        document.body.style.overflow = '';
-      }
-      this._state.isDrawerOpen = false;
-      this._updateBackButton();
-      this.eventBus.emit('drawer:state_changed', { isOpen: false });
+    if (!drawer?.classList.contains('active')) return;
+    if ((window as any).closeDrawer) {
+      (window as any).closeDrawer({ instant: true });
+      return;
     }
-
-    this.navigate('profile', {}, { addToHistory: true });
+    drawer.classList.remove('active');
+    document.getElementById('drawer-overlay')?.classList.remove('active');
+    document.body.style.overflow = '';
+    this._state.isDrawerOpen = false;
+    this._updateBackButton();
+    this.eventBus.emit('drawer:state_changed', { isOpen: false });
   }
 
   // ==========================================
-  // УПРАВЛЕНИЕ САЙДБАРОМ
+  // САЙДБАР
   // ==========================================
 
   toggleDrawer(open?: boolean): void {
@@ -359,70 +241,54 @@ export class NavigationState {
     this._state.isDrawerOpen = isOpen;
     this._updateBackButton();
     this.eventBus.emit('drawer:state_changed', { isOpen });
-    console.log(`📂 Состояние сайдбара обновлено: ${isOpen ? 'открыт' : 'закрыт'}`);
   }
 
   // ==========================================
-  // УПРАВЛЕНИЕ МОДАЛКАМИ
+  // СЛОИ ПОВЕРХ ЭКРАНА (модалки, просмотрщик, форма генерации)
   // ==========================================
 
+  /**
+   * open = true — слой открыт (кладётся наверх стека, без повторов);
+   * open = false — слой закрыт владельцем: убирается из стека именно он.
+   */
   toggleModal(open: boolean, modalId: string = 'default'): void {
-    if (open === false) {
-      if (this._state.modalStack.length > 0) {
-        const lastModal = this._state.modalStack.pop();
-        console.log(`📱 Закрыта модалка: ${lastModal}`);
-      }
-
-      const isOpen = this._state.modalStack.length > 0;
-      this._state.isModalOpen = isOpen;
-
-      this.eventBus.emit('modal:state_changed', {
-        isOpen,
-        modalId: modalId || 'default',
-        action: 'close'
-      });
-
-      this._updateBackButton();
-
+    const stack = this._state.modalStack;
+    if (open) {
+      const at = stack.indexOf(modalId);
+      if (at !== -1) stack.splice(at, 1);
+      stack.push(modalId);
     } else {
-      if (!this._state.modalStack.includes(modalId)) {
-        this._state.modalStack.push(modalId);
-      }
-      this._state.isModalOpen = true;
-
-      this.eventBus.emit('modal:state_changed', {
-        isOpen: true,
-        modalId,
-        action: 'open'
-      });
-
-      this._updateBackButton();
+      const at = stack.lastIndexOf(modalId);
+      if (at === -1) return;
+      stack.splice(at, 1);
     }
+
+    this._state.isModalOpen = stack.length > 0;
+    this.eventBus.emit('modal:state_changed', {
+      isOpen: this._state.isModalOpen,
+      modalId,
+      action: open ? 'open' : 'close'
+    });
+    this._updateBackButton();
+  }
+
+  isModalOpen(modalId: string): boolean {
+    return this._state.modalStack.includes(modalId);
   }
 
   // ==========================================
-  // ОБНОВЛЕНИЕ КНОПКИ НАЗАД
+  // КНОПКА «НАЗАД» TELEGRAM
   // ==========================================
 
   refreshBackButton(): void {
     this._updateBackButton();
-    console.log('🔄 BackButton обновлен принудительно');
   }
 
-  // ==========================================
-  // ОБНОВЛЕНИЕ КНОПКИ НАЗАД (ПРИВАТНЫЙ)
-  // ==========================================
-
   private _updateBackButton(): void {
-    const shouldShow = this.shouldShowBackButton();
-
-    if ((window as any).backButtonManager) {
-      if (shouldShow) {
-        (window as any).backButtonManager.show();
-      } else {
-        (window as any).backButtonManager.hide();
-      }
-    }
+    const manager = (window as any).backButtonManager;
+    if (!manager) return;
+    if (this.shouldShowBackButton()) manager.show();
+    else manager.hide();
   }
 
   // ==========================================
@@ -441,7 +307,7 @@ export class NavigationState {
   }
 
   get canGoBack(): boolean {
-    return this.shouldShowBackButton() || this._state.modalStack.length > 0;
+    return this.shouldShowBackButton();
   }
 
   get currentModule(): string {
@@ -453,36 +319,20 @@ export class NavigationState {
   }
 
   // ==========================================
-  // ПОДПИСКА НА СОБЫТИЯ
+  // ПОДПИСКИ
   // ==========================================
 
   private _subscribe(): void {
     this.eventBus.on('navigation:open_chat', (data) => {
-      console.log('📡 Событие navigation:open_chat', data);
       this.openChat(data.chatId, data.topic, data.messageId);
     });
 
     this.eventBus.on('navigation:go_back', () => {
-      console.log('📡 Событие navigation:go_back');
       this.back();
     });
 
     this.eventBus.on('drawer:toggle', (data) => {
       this.toggleDrawer(data.open);
-    });
-
-    this.eventBus.on('modal:open', (data) => {
-      this.toggleModal(true, data.modalId || 'default');
-    });
-
-    this.eventBus.on('modal:close', (data) => {
-      this.toggleModal(false, data.modalId || 'default');
-    });
-
-    this.eventBus.on('modal:back', () => {
-      if (this._state.modalStack.length > 0) {
-        this.back();
-      }
     });
 
     this.eventBus.on('navigation:open_profile', () => {
@@ -494,14 +344,10 @@ export class NavigationState {
       this._updateBackButton();
     });
 
-    this.eventBus.on('input:state_changed', (data) => {
-      console.log('📡 Состояние капсулы изменилось:', data);
+    this.eventBus.on('input:state_changed', () => {
       this._updateBackButton();
     });
-
-    console.log('📡 NavigationState подписан на события');
   }
 }
 
 export const navigationState = new NavigationState();
-console.log('✅ NavigationState v8.0.0 загружен (FIXED: проверка темы чата)');
