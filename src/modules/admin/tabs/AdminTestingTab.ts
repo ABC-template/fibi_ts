@@ -1,10 +1,10 @@
 // ============================================
 // src/modules/admin/tabs/AdminTestingTab.ts
+// Вкладка «Тестирование» (кнопки вызывают window.adminModule)
+// Версия: 1.0.1 - без неиспользуемых импортов apiClient и userStore
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
-import { apiClient } from '@/services/api';
-import { userStore } from '@/store/UserStore';
 
 export class AdminTestingTab implements IAdminTab {
   id = 'testing';
