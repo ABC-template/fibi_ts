@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/quests/QuestsModule.ts
 // All quests 
-// Версия: 3.5.0 - отказ «retry_later» показывает, когда можно отправить снова
+// Версия: 3.6.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+//          3.5.0 - отказ «retry_later» показывает, когда можно отправить снова
 //          3.4.0 - спонсорские задания: «Перейти» открывает канал спонсора, «Проверить»
 //                 показывает честный итог (подтверждено / засчитается позже / на проверке /
 //                 не подписан); раньше кнопка ничего не открывала, а тост всегда писал
@@ -10,7 +11,6 @@
 // ============================================
 
 import './quests.css';
-import { headerManager } from '@/core/header-manager';
 import { questsStore } from '@/store/QuestsStore';
 import { eventBus } from '@/core/event-bus';
 import { uiRenderer } from '@/modules/ui/renderer';
@@ -36,7 +36,6 @@ export class QuestsModule {
   private _isVisible: boolean = false;
   private _activeTab: QuestTab = 'daily';
 
-  private headerManager = headerManager;
   private questsStore = questsStore;
   private eventBus = eventBus;
   private uiRenderer = uiRenderer;
@@ -436,9 +435,6 @@ export class QuestsModule {
     this.container.style.width = '100%';
 
     this._isVisible = true;
-
-    this.headerManager.setTitle(null);
-    this.headerManager.setActions([]);
 
     this.render();
 
