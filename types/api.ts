@@ -1,7 +1,8 @@
 // ============================================
 // types/api.ts
 // Типы для API запросов и ответов
-// Версия: 2.1.0 — удалён IBatchRequest (маршрут batch удалён)
+// Версия: 2.2.0 — удалён старый лимит запросов (IUsageLimit, dailyLimit/usedToday в /auth/check)
+//          2.1.0 — удалён IBatchRequest (маршрут batch удалён)
 //          2.0.0 — удалены IExportRequest / IExportResponse (локальный экспорт без сервера)
 //                  и дубль IExportArchive (он в types/chat.ts)
 // ============================================
@@ -56,14 +57,6 @@ export interface IMessageActionRequest {
   messageId?: UUID;
 }
 
-/** Трекинг лимитов */
-export interface IUsageLimit {
-  allowed: boolean;
-  used: number;
-  limit: number;
-  error: string | null;
-}
-
 /** Токен Supabase Realtime (подписан сервером, sub = users.id) */
 export interface IRealtimeToken {
   token: string;
@@ -75,8 +68,6 @@ export interface IRealtimeToken {
 export interface IAuthCheckResponse {
   isMember: boolean;
   role: UserRole;
-  dailyLimit: number;
-  usedToday: number;
   syncEnabled: boolean;
   syncToken: string | null;
   /** Есть только при syncEnabled */
