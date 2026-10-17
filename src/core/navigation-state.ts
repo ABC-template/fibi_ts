@@ -1,7 +1,9 @@
 // ============================================
 // src/core/navigation-state.ts
 // Единое состояние навигации
-// Версия: 8.0.0 — слои поверх экрана (модалки, просмотрщик медиа, форма генерации) в одном
+// Версия: 8.1.0 — leaveChat: выход из чата на предыдущий раздел (общий для «Назад» и
+//                  удаления открытого чата)
+//          8.0.0 — слои поверх экрана (модалки, просмотрщик медиа, форма генерации) в одном
 //                  стеке: «Назад» закрывает верхний слой (событие modal:state_changed с его
 //                  modalId), закрытие слоя убирает из стека именно его, а не последний;
 //                  кнопка «Назад» видна, пока открыт хоть один слой;
@@ -113,13 +115,7 @@ export class NavigationState {
 
     // 4. Чат: на предыдущий раздел (не чат), без него — к агентам
     if (this._state.module === 'chat') {
-      let prev = this._state.history.pop();
-      while (prev && prev.module === 'chat') prev = this._state.history.pop();
-      if (prev) {
-        void this.navigate(prev.module, prev.params, { replace: true });
-      } else {
-        this.goToAgents();
-      }
+      this.leaveChat();
       return;
     }
 
@@ -200,6 +196,19 @@ export class NavigationState {
     this._closeDrawerIfOpen();
 
     void this.navigate('chat', { chatId, topic, messageId: messageId || undefined });
+  }
+
+  /** Уйти из чата на предыдущий раздел (не чат), без него — к агентам */
+  leaveChat(): void {
+    if (inputManager.isExpanded()) inputManager.collapseInputArea();
+    if (this._state.module !== 'chat') return;
+    let prev = this._state.history.pop();
+    while (prev && prev.module === 'chat') prev = this._state.history.pop();
+    if (prev) {
+      void this.navigate(prev.module, prev.params, { replace: true });
+    } else {
+      this.goToAgents();
+    }
   }
 
   goToChatList(): void {
