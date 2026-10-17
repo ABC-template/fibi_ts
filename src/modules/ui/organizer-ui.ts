@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/ui/organizer-ui.ts
 // Интерфейс органайзера
-// Версия: 3.3.0 - текст напоминаний и значения трекеров экранируются
+// Версия: 3.3.1 - без console.log с устаревшим номером версии
+//          3.3.0 - текст напоминаний и значения трекеров экранируются
 //          3.2.0 - анализ трекера: отдельный новый чат в «Быстрых», сообщение сохраняется,
 //                 в streamAiResponse уходит chatId (раньше — объект чата, ответ терялся)
 //          3.1.0 - с использованием конфига
@@ -12,18 +13,11 @@ import { organizerService } from '@/services/organizer';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
 import { escapeHtml } from '@/utils/html';
-import { 
-  getActiveTopics, 
-  getTopicLabel, 
-  getTopicShortLabel, 
-  getTopicIcon,
-  getTopicEmoji,
-  isValidTopic,
+import {
   type ITodoItem, 
   type IReminder, 
   type ITracker, 
   type ITrackerLog, 
-  type TopicId, 
   type UUID 
 } from '@/config';
 
@@ -36,7 +30,6 @@ export class OrganizerUI {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ OrganizerUI v3.1.0 загружен');
   }
 
   private _subscribeToEvents(): void {
@@ -152,7 +145,6 @@ export class OrganizerUI {
     if (!counter) return;
 
     const currentTopic = this.chatStore.currentTopic;
-    const items = this.organizerStore.getTodoByTopic(currentTopic);
     const stats = this.organizerStore.getTodoStats(currentTopic);
     counter.textContent = `${stats.completed}/${stats.total}`;
   }
@@ -729,4 +721,3 @@ export class OrganizerUI {
 
 // Создаем экземпляр
 export const organizerUI = new OrganizerUI();
-console.log('✅ OrganizerUI v3.1.0 загружен');
