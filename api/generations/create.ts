@@ -1,7 +1,11 @@
 // ============================================
 // api/generations/create.ts
-// Создание генерации (image / video)
-// Версия: 3.6.0 — пока идёт генерация фото, замок чата и резерв энергии продлеваются
+// Создание генерации (image / video / audio)
+// Версия: 3.7.0 — аудио: озвучка текста (/audio/speech) и музыка / аудио-ответы
+//                  (/chat/completions, modalities audio) — как фото: поток с пульсом,
+//                  результат в Storage, списание по факту (иначе по оценке: за символ
+//                  или за запрос); способ задаёт generation_config.audio.api
+//          3.6.0 — пока идёт генерация фото, замок чата и резерв энергии продлеваются
 //                  раз в минуту
 //          3.5.0 — энергия по общему курсу ⚡ за $1 из настроек экономики (energy_per_usd
 //                  у агента больше не используется); мин. списание без умножения на
@@ -28,7 +32,6 @@
 //   - одно активное видео на пользователя
 //   - энергия: оценка до старта по generation_config.pricing; списание после
 //     успеха по фактической стоимости (usage.cost × курс из настроек × коэффициент)
-//   - аудио пока не поддерживается и отклоняется явно
 //   2.2.0 и ранее: замок чата, списание после успеха, референсы из приватного
 //   Storage, результаты только как storage_path, валидация по generation_config
 // ============================================
@@ -78,7 +81,9 @@ import type { IChatLock } from '../_lib/chat-lock';
 import {
   appBaseUrl,
   estimateUsd,
+  generateChatAudio,
   generateImages,
+  generateSpeech,
   readPricing,
   signReferenceUrls,
   submitVideoJob,
@@ -92,6 +97,7 @@ import {
   updateGenerationStatus,
 } from '../_lib/generation-store';
 import type { IStoredMedia } from '../_lib/generation-store';
+import type { IAudioOutput } from '../_lib/openrouter-media';
 
 export const config = { runtime: 'edge' };
 
@@ -146,10 +152,11 @@ export default async function handler(request: Request): Promise<Response> {
     // 1. Агент + доступ
     const { agent, user } = await loadGenerativeAgent(body.agent_id, userId, config);
     const gen = agent.generation_config || {};
-    const modality: 'image' | 'video' = agent.modality;
+    const modality: 'image' | 'video' | 'audio' = agent.modality;
 
-    if (modality !== 'image' && modality !== 'video') {
-      return errorResponse('Генерация этого типа пока не поддерживается', 400);
+    const audioApi = gen.audio?.api;
+    if (modality === 'audio' && audioApi !== 'speech' && audioApi !== 'chat') {
+      return errorResponse('Аудио-агент не настроен: откройте его в админке и сохраните настройки генерации', 400);
     }
 
     // 2. Чат принадлежит пользователю и этому агенту
@@ -201,7 +208,7 @@ export default async function handler(request: Request): Promise<Response> {
     const markup = getMarkupForTier(agent, tier);
     const pricing = readPricing(gen);
     const rates = await getEnergyRates(config);
-    const estimatedCost = energyForUsd(estimateUsd(pricing, params) ?? 0, rates.energyPerUsd, markup, agentMinCharge(agent));
+    const estimatedCost = energyForUsd(estimateUsd(pricing, params, prompt) ?? 0, rates.energyPerUsd, markup, agentMinCharge(agent));
 
     // 6. Заморозка энергии + одна генерация на пользователя (атомарно в БД)
     const reservation = await reserveEnergy(
@@ -358,7 +365,18 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
-    // ---------- Фото: поток с пульсом, пока модель работает ----------
+    // ---------- Фото и аудио: поток с пульсом, пока модель работает ----------
+    const produce = modality === 'audio'
+      ? audioProducer(agent, gen, prompt, params)
+      : () =>
+          generateImages({
+            model: agent.model_id,
+            prompt,
+            negative,
+            params,
+            referenceUrls,
+          }).then((r) => ({ items: r.items, costUsd: r.costUsd }));
+
     const imageLock = lock;
     const imageHoldId = holdId;
     lock = null;
@@ -376,17 +394,17 @@ export default async function handler(request: Request): Promise<Response> {
         config,
       });
       try {
-        return await runImageGeneration({
+        return await runSyncGeneration({
           userId,
           chatId: body.chat_id,
           agent,
+          kind: modality === 'audio' ? 'audio' : 'image',
+          produce,
           markup,
           rates,
           pricing,
           params,
           prompt,
-          negative,
-          referenceUrls,
           messageId,
           holdId: imageHoldId,
           config,
@@ -442,17 +460,45 @@ async function buildResult(
   };
 }
 
-async function runImageGeneration(ctx: {
+type ProduceResult = { items: Array<{ bytes: Uint8Array; mime: string }>; costUsd: number | null };
+
+/** Генерация аудио по настройке агента: озвучка (/audio/speech) или чат с modalities audio */
+function audioProducer(agent: any, gen: any, prompt: string, params: Record<string, any>): () => Promise<ProduceResult> {
+  const audio = gen.audio || {};
+  if (audio.api === 'speech') {
+    return () =>
+      generateSpeech({ model: agent.model_id, text: prompt, params }).then((r) => ({
+        items: [r.item],
+        costUsd: r.costUsd,
+      }));
+  }
+  const output: IAudioOutput = {
+    format: typeof audio.format === 'string' ? audio.format : 'mp3',
+    sampleRate: Number(audio.sample_rate) > 0 ? Number(audio.sample_rate) : 24000,
+    channels: Number(audio.channels) === 2 ? 2 : 1,
+  };
+  const systemPrompt = typeof agent.system_prompt === 'string' && agent.system_prompt.trim()
+    ? agent.system_prompt.trim()
+    : null;
+  return () =>
+    generateChatAudio({ model: agent.model_id, prompt, systemPrompt, params, output }).then((r) => ({
+      items: [r.item],
+      costUsd: r.costUsd,
+    }));
+}
+
+/** Синхронная генерация (фото, аудио): результат в Storage, списание по факту или оценке */
+async function runSyncGeneration(ctx: {
   userId: number;
   chatId: string;
   agent: any;
+  kind: 'image' | 'audio';
+  produce: () => Promise<ProduceResult>;
   markup: number;
   rates: IEnergyRates;
   pricing: ReturnType<typeof readPricing>;
   params: Record<string, any>;
   prompt: string;
-  negative: string | null;
-  referenceUrls: string[];
   messageId: string;
   holdId: string | null;
   config: any;
@@ -464,13 +510,7 @@ async function runImageGeneration(ctx: {
   let errorText: string | null = null;
 
   try {
-    const result = await generateImages({
-      model: agent.model_id,
-      prompt: ctx.prompt,
-      negative: ctx.negative,
-      params: ctx.params,
-      referenceUrls: ctx.referenceUrls,
-    });
+    const result = await ctx.produce();
     costUsd = result.costUsd;
     stored = await persistBytes(userId, chatId, result.items, config);
   } catch (e) {
@@ -482,14 +522,14 @@ async function runImageGeneration(ctx: {
   if (stored.length > 0) {
     // Списание — только после того, как результат сохранён
     const fact = costUsd !== null && costUsd > 0;
-    const estimate = fact ? null : estimateUsd(ctx.pricing, ctx.params);
+    const estimate = fact ? null : estimateUsd(ctx.pricing, ctx.params, ctx.prompt);
     const usd = fact ? (costUsd as number) : estimate ?? 0;
     const amount = energyForUsd(usd, ctx.rates.energyPerUsd, ctx.markup, agentMinCharge(agent));
     finalCost = await chargeForGeneration(
       userId,
       amount,
       {
-        kind: 'image',
+        kind: ctx.kind,
         model_id: String(agent.model_id),
         agent_id: agent.id,
         chat_id: chatId,
