@@ -1,7 +1,9 @@
 // ============================================
 // src/core/input-manager.ts
 // Управление капсулой ввода
-// Версия: 2.5.0 - FIXED: автофокус и клавиатура на мобильных
+// Версия: 2.6.0 - нижнее меню не трогает (в чате оно скрыто — решает ModuleLoader;
+//                 раньше закрытие капсулы ставило меню display:flex)
+//          2.5.0 - FIXED: автофокус и клавиатура на мобильных
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -159,11 +161,6 @@ private _resizeTextArea(userInput: HTMLTextAreaElement, clearBtn: HTMLElement | 
 
     this._resizeTextArea(userInput, clearBtn);
 
-    const nav = document.getElementById('bottom-nav');
-    if (nav) {
-      nav.style.display = 'none';
-    }
-
     if (this._focusTimeout) {
       clearTimeout(this._focusTimeout);
       this._focusTimeout = null;
@@ -257,11 +254,6 @@ private _resizeTextArea(userInput: HTMLTextAreaElement, clearBtn: HTMLElement | 
     if (fabBtn) {
       fabBtn.style.opacity = '1';
       fabBtn.style.pointerEvents = 'auto';
-    }
-
-    const nav = document.getElementById('bottom-nav');
-    if (nav) {
-      nav.style.display = 'flex';
     }
 
     this._isExpanded = false;
