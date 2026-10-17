@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.4.1 - без console.log с устаревшим номером версии
+// Версия: 9.5.0 — чат удалён (последнее сообщение, корзина, другое устройство) — выход на
+//                  предыдущий раздел; открытый чат публикуется в open-chat (отправка идёт
+//                  только в него); сообщения рисует только ChatPatcher (разделители дней)
+//          9.4.1 - без console.log с устаревшим номером версии
 //          9.4.0 — в шапке только название чата (без 🤖); нижнее меню не трогает (его прячет
 //                  ModuleLoader на время чата); удалён неиспользуемый _redirectIfEmpty
 //                  (слал событие, которого никто не слушал: пустой чат удаляется при уходе)
@@ -32,6 +35,7 @@ import { uiRenderer } from '@/modules/ui/renderer';
 import { escapeHtml } from '@/utils/html';
 import { ChatPatcher } from './ChatPatcher';
 import { GenerationController } from './generation';
+import { setOpenChatId } from './open-chat';
 import { economyStore } from '@/economy/EconomyStore';
 import { userStore } from '@/store/UserStore';
 import { 
@@ -291,6 +295,15 @@ export class ChatModule {
     }, this);
     this._subscriptions.push(unsubUpdate);
 
+    // Открытый чат удалён (последнее сообщение, корзина, синхронизация) — уходим из него:
+    // иначе поле ввода осталось бы, а запрос ушёл бы в другой чат
+    const onChatGone = (data: any) => {
+      if (!data?.chatId || data.chatId !== this._chatId || !this._isShowing) return;
+      this._leaveDeletedChat(data.chatId);
+    };
+    this._subscriptions.push(this.eventBus.on('chat:permanent_deleted', onChatGone, this));
+    this._subscriptions.push(this.eventBus.on('chat:deleted', onChatGone, this));
+
     const unsubRename = this.eventBus.on('chat:renamed', (data) => {
       if (data.chatId === this._chatId) {
         this._updateHeader();
@@ -317,6 +330,16 @@ export class ChatModule {
     this._subscriptions.push(unsubAgent);
 
     console.log('📡 ChatModule подписан на события (с проверкой агента)');
+  }
+
+  /** Чат исчез, пока открыт: отправка в него закрыта сразу, выход — после анимации удаления */
+  private _leaveDeletedChat(chatId: UUID): void {
+    setOpenChatId(null);
+    const input = this.container.querySelector('#user-input') as HTMLTextAreaElement | null;
+    if (input) input.disabled = true;
+    setTimeout(() => {
+      if (this._isShowing && this._chatId === chatId) this.navigationState.leaveChat();
+    }, 300);
   }
 
   private async _checkAgentAccess(): Promise<void> {
@@ -583,6 +606,7 @@ export class ChatModule {
     this.container.style.width = '100%';
 
     this._isShowing = true;
+    setOpenChatId(this._chatId);
     this.chatStore.setActiveChat(actualTopic, this._chatId);
 
     // Уже этот чат — без полной перерисовки сообщений
@@ -935,43 +959,11 @@ export class ChatModule {
     const messages = found.chat.messages || [];
     console.log(`📋 Загружено ${messages.length} сообщений для чата ${this._chatId}`);
 
-    if (this._patcher) {
-      this._patcher.renderAll(messages);
-      if (messages.length === 0) {
-        const created = new Date(found.chat.created_at || 0).getTime();
-        if (Date.now() - created < 8000) {
-          await this._showWelcomeMessage(container);
-        }
-      } else {
-        // Remove welcome if messages exist
-        document.getElementById('welcome-message')?.remove();
-      }
-    } else {
-      container.innerHTML = '';
-      if (messages.length === 0) {
-        await this._showWelcomeMessage(container);
-        return;
-      }
-
-      document.getElementById('welcome-message')?.remove();
-
-      const sortedMessages = [...messages]
-        .filter(m => !m.deleted_at)
-        .sort((a, b) => 
-          new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-        );
-
-      for (const msg of sortedMessages) {
-        const msgDiv = this.uiRenderer.renderMessage(
-          msg.text,
-          msg.type,
-          msg.id,
-          msg.isFavorite || false
-        );
-        if (msgDiv) {
-          container.appendChild(msgDiv);
-          this._generation.decorate(msg, msgDiv);
-        }
+    this._patcher?.renderAll(messages);
+    if (messages.length === 0) {
+      const created = new Date(found.chat.created_at || 0).getTime();
+      if (Date.now() - created < 8000) {
+        await this._showWelcomeMessage();
       }
     }
 
@@ -998,7 +990,8 @@ export class ChatModule {
     }, 50);
   }
 
-  private async _showWelcomeMessage(container: HTMLElement): Promise<void> {
+  private async _showWelcomeMessage(): Promise<void> {
+    const chatId = this._chatId;
     let text: string | null = null;
     const lang = this.userStore.languageCode || 'ru';
 
@@ -1032,7 +1025,10 @@ export class ChatModule {
       text = getWelcomeText(topic) || null;
     }
 
-    if (text) {
+    // Пока грузилось приветствие, в чате могло появиться первое сообщение
+    // (или пользователь уже ушёл в другой чат)
+    const chat = chatId && this._chatId === chatId ? this.chatStore.findChatById(chatId)?.chat : null;
+    if (text && chat && !this.chatStore.hasRealMessages(chat)) {
       this.uiRenderer.renderWelcome(text);
     }
   }
@@ -1077,6 +1073,10 @@ export class ChatModule {
   hide(): void {
     console.log('📱 ChatModule.hide()');
 
+    // До удаления пустого чата: его событие удаления не должно уводить из чата повторно
+    this._isShowing = false;
+    setOpenChatId(null);
+
     if (this._chatId) {
       const found = this.chatStore.findChatById(this._chatId);
       if (found) {
@@ -1094,7 +1094,6 @@ export class ChatModule {
     }
 
     this._generation.stop();
-    this._isShowing = false;
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
   }
@@ -1163,6 +1162,7 @@ export class ChatModule {
     }
 
     this._generation.dispose();
+    setOpenChatId(null);
     (window as any).chatModule = null;
 
     for (const unsub of this._subscriptions) {
