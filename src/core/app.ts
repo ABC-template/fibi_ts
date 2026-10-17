@@ -1,7 +1,9 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.8.0 — синхронизация включается по флагу сервера syncEnabled (без роли «pro»)
+// Версия: 13.9.0 — энергию в шапке обновляет header.ts; вызов верхней полосы энергии чата
+//                  (_updateTokenIndicator) удалён вместе с полосой
+//          13.8.0 — синхронизация включается по флагу сервера syncEnabled (без роли «pro»)
 //          13.7.0 — приложение открывается на «Главной» (было — «Агенты»); удалена повторная
 //                  регистрация модулей (их регистрирует ModuleLoader — здесь были одни
 //                  предупреждения «уже зарегистрирован»)
@@ -674,13 +676,6 @@ function setupEventSubscriptions(): void {
     eventBus.on('economy:balance:loaded', (data) => {
         console.log(`📡 [EventBus] Баланс загружен: ${data.balance}`);
         updateAllBalanceDisplays();
-    });
-
-    eventBus.on('economy:tokens:updated', (data) => {
-        console.log(`📡 [EventBus] Токены обновлены: ${data.bonus} бонусных, ${data.permanent} постоянных`);
-        if (window.chatModule) {
-            window.chatModule._updateTokenIndicator?.();
-        }
     });
 
     // Прогресс заданий считает сервер (клиентские вызовы /quests/progress убраны)
