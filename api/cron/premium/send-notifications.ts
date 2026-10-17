@@ -1,10 +1,14 @@
 // ============================================
 // api/cron/premium/send-notifications.ts
 // Описание: Отправка уведомлений об истечении подписки
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.1.0 - истёкшая подписка закрывается через expire_subscription_if_needed (роль → trial),
+//                 а срок хранения облака ставит триггер users_role_data_deadline — одно место
+//                 вместо двух (раньше cron писал data_deadline сам, в обход смены роли);
+//                 тексты без устаревшего «PRO»
+//          2.0.0 - TypeScript
 // ============================================
 
-import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
+import { getSupabaseConfig, supabaseFetch, supabaseRPC } from '../../_lib/supabase-client';
 
 export const config = { runtime: 'edge' };
 
@@ -32,12 +36,11 @@ export default async function handler(request: Request): Promise<Response> {
   try {
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    const fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const toDate = new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Находим пользователей с истекающей подпиской
+    // Подписка истекает в ближайшие дни или уже истекла (истёкшие закрываются ниже)
     const users = await supabaseFetch(
-      `users?role=eq.premium&premium_until=gte.${fromDate}&premium_until=lte.${toDate}&select=telegram_id,premium_until,role`,
+      `users?role=eq.premium&premium_until=lte.${toDate}&select=telegram_id,premium_until,role`,
       { method: 'GET' },
       supabaseConfig
     );
@@ -47,6 +50,15 @@ export default async function handler(request: Request): Promise<Response> {
     for (const user of (users || [])) {
       const expiry = new Date(user.premium_until);
       const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Подписка истекла: роль → trial; срок хранения облака (7 дней) ставит триггер
+      if (expiry.getTime() <= now.getTime()) {
+        try {
+          await supabaseRPC('expire_subscription_if_needed', { p_user_id: user.telegram_id }, supabaseConfig);
+        } catch (err) {
+          console.error(`❌ Не удалось закрыть подписку ${user.telegram_id}:`, (err as Error).message);
+        }
+      }
 
       if (daysLeft < 0 || daysLeft > 5) continue;
 
@@ -65,22 +77,11 @@ export default async function handler(request: Request): Promise<Response> {
       if (daysLeft > 0) {
         const dayWord = (daysLeft % 10 === 1 && daysLeft % 100 !== 11) ? 'день' :
           ((daysLeft % 10 >= 2 && daysLeft % 10 <= 4 && (daysLeft % 100 < 10 || daysLeft % 100 >= 20)) ? 'дня' : 'дней');
-        message = `⚠️ Ваша PRO-подписка истекает через ${daysLeft} ${dayWord}. Продлите, чтобы не потерять синхронизацию чатов и расширенные лимиты.`;
+        message = `⚠️ Ваша подписка истекает через ${daysLeft} ${dayWord}. Продлите, чтобы не потерять синхронизацию чатов и расширенные лимиты.`;
         notificationType = 'expiry_warning';
       } else {
-        message = `⏰ Ваша PRO-подписка истекла сегодня. Ваши чаты будут храниться в облаке ещё 7 дней. Скачайте архив в приложении или продлите PRO, иначе облачные данные будут безвозвратно удалены.`;
+        message = `⏰ Ваша подписка истекла сегодня. Чаты будут храниться в облаке ещё 7 дней. Скачайте архив в приложении или продлите подписку, иначе облачные данные будут безвозвратно удалены.`;
         notificationType = 'final_notice';
-
-        // Устанавливаем дедлайн на 7 дней
-        const deadline = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        await supabaseFetch(
-          `users?telegram_id=eq.${user.telegram_id}`,
-          {
-            method: 'PATCH',
-            body: JSON.stringify({ data_deadline: deadline })
-          },
-          supabaseConfig
-        );
       }
 
       // Отправляем уведомление
