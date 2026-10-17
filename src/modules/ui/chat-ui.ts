@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/ui/chat-ui.ts
 // Управление чатами (компактная версия)
-// Версия: 4.4.0 - удаление открытого чата → к агентам через навигацию (hide() чата вызывает
+// Версия: 4.4.1 - без console.log с устаревшим номером версии
+//          4.4.0 - удаление открытого чата → к агентам через навигацию (hide() чата вызывает
 //                 загрузчик модулей)
 //          4.3.0 - убрано обращение к удалённому ChatListModule
 //          4.2.0 - нельзя удалить чат, пока в нём идёт генерация
@@ -12,17 +13,15 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
 import { CHAT_BUSY_DELETE_HINT } from '@/store/generation-live';
-import type { IChat, TopicId, UUID } from '@app-types';
+import type { IChat, UUID } from '@app-types';
 
 export class ChatUI {
     private chatStore = chatStore;
     private eventBus = eventBus;
-    private currentTopic: TopicId = 'code';
     private _subscriptions: Array<() => void> = [];
 
     constructor() {
         this._subscribeToEvents();
-        console.log('✅ ChatUI v4.2.0 загружен');
     }
 
     private _subscribeToEvents(): void {
@@ -69,7 +68,6 @@ export class ChatUI {
     private _deleteEmptyCurrentChat(): boolean {
         const active = this.chatStore.getActiveChat();
         if (!active || this.chatStore.hasRealMessages(active)) return false;
-        const topic = (active as any).topic || this.currentTopic;
         this.chatStore.deleteChat(active.id);
         this.chatStore.save();
         return true;
@@ -179,5 +177,3 @@ export const chatUI = new ChatUI();
 (window as any).getCurrentActiveChat = function(): IChat | null {
     return chatStore.getActiveChat();
 };
-
-console.log('✅ ChatUI v4.2.0 загружен (удалена cleanupAllEmptyChats)');
