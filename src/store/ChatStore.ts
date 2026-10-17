@@ -1,7 +1,12 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 7.1.0 — удалены флаги выгрузки upload_* (записывались, но нигде не читались)
+// Версия: 7.2.0 — новый чат называется «Новый чат»; название берётся из первого сообщения
+//                  пользователя (или первого запроса генерации — autoTitle), без
+//                  служебной пометки о прикреплённом файле; пользовательским
+//                  переименованием это больше не считается; смена названия сообщается
+//                  событием chat:renamed (шапка и сайдбар обновляются сразу)
+//          7.1.0 — удалены флаги выгрузки upload_* (записывались, но нигде не читались)
 //          7.0.0 — история чатов хранится в IndexedDB (база fibi-chats) вместо localStorage
 //                  (~5 МБ на всё приложение): init() читает базу и один раз переносит
 //                  старые данные из localStorage; запись отложенная и последовательная,
@@ -33,6 +38,23 @@ import type {
 } from '@app-types';
 
 const DEFAULT_TOPICS: TopicId[] = ['code', 'creative', 'fast', 'kitchen', 'analytics'];
+/** Название нового чата — до первого сообщения */
+export const NEW_CHAT_TITLE = 'Новый чат';
+const AUTO_TITLE_MAX = 40;
+/** Пометка о прикреплённом файле в начале сообщения (src/modules/chat/send.ts) */
+const ATTACHED_FILE_RE = /^📎 \[Прикреплён файл: ([^\]\n]*)\]\n?/;
+
+/** Название чата из текста: первая строка без пометки о файле, по границе слова */
+function titleFromText(text: string): string {
+  const raw = String(text || '');
+  const file = ATTACHED_FILE_RE.exec(raw);
+  const body = raw.replace(ATTACHED_FILE_RE, '').replace(/\s+/g, ' ').trim();
+  const source = body || (file ? `📎 ${file[1].trim()}` : '');
+  if (source.length <= AUTO_TITLE_MAX) return source;
+  const cut = source.slice(0, AUTO_TITLE_MAX);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > AUTO_TITLE_MAX / 2 ? cut.slice(0, space) : cut).trim()}…`;
+}
 const MAX_PINNED_CHATS = 10;
 
 const DB_NAME = 'fibi-chats';
@@ -418,8 +440,7 @@ export class ChatStore extends BaseStore<IChatStoreData> {
   createChat(topicId: TopicId, title?: string, options: Partial<IChat> & { id?: UUID } = {}): IChat {
     if (!topicId) topicId = this._data.currentTopic;
 
-    const sectionName = (window as any).topicNames?.[topicId] || topicId;
-    const chatTitle = title || `Новый чат в ${sectionName}`;
+    const chatTitle = title || NEW_CHAT_TITLE;
 
     const newChat: IChat = {
       id: options.id || this.generateUUID(),
@@ -568,6 +589,27 @@ export class ChatStore extends BaseStore<IChatStoreData> {
       newTitle: chat.title,
       topic 
     });
+    return true;
+  }
+
+  /**
+   * Название из первого запроса, если у чата ещё название по умолчанию
+   * (чаты генерации: сообщения создаёт сервер). true — название изменилось.
+   */
+  autoTitle(chatId: UUID, text: string): boolean {
+    const found = this.findChatById(chatId);
+    if (!found || !this._applyAutoTitle(found.chat, text)) return false;
+    this.save();
+    this._emitChange('chat:renamed', { chatId, newTitle: found.chat.title, topic: found.chat.topic });
+    return true;
+  }
+
+  /** Название по умолчанию («Новый чат…», в т.ч. старое «Новый чат в …») меняется на текст */
+  private _applyAutoTitle(chat: IChat, text: string): boolean {
+    if (chat.userRenamed || !String(chat.title || '').startsWith(NEW_CHAT_TITLE)) return false;
+    const title = titleFromText(text);
+    if (!title) return false;
+    chat.title = title;
     return true;
   }
 
@@ -795,17 +837,12 @@ export class ChatStore extends BaseStore<IChatStoreData> {
     chat.messages.push(newMsg);
     chat.updated_at = new Date().toISOString();
 
-    if (type === 'user-msg' && !chat.userRenamed) {
-      const sectionName = (window as any).topicNames?.[chat.topic] || chat.topic;
-      const startTitle = `Новый чат в ${sectionName}`;
-      if (chat.title === startTitle || chat.title.includes('Новый чат')) {
-        const newTitle = text.substring(0, 30) + (text.length > 30 ? '...' : '');
-        chat.title = newTitle;
-        chat.userRenamed = true;
-      }
-    }
+    const renamed = type === 'user-msg' && this._applyAutoTitle(chat, text);
 
     this.save();
+    if (renamed) {
+      this._emitChange('chat:renamed', { chatId, newTitle: chat.title, topic: chat.topic });
+    }
     this._emitChange('chat:message_added', { 
       chatId, 
       message: newMsg,
