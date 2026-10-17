@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.8.0 — блок ответа строится как в renderer: текст в .msg-content, кнопки
+// Версия: 4.9.0 — ответ и сообщения об ошибках показываются только в своём чате (ушли в
+//                  другой — ответ сохранится и появится при возврате); под ответом время
+//                  (справа от кнопок действий); блок хранит дату для разделителей дней
+//          4.8.0 — блок ответа строится как в renderer: текст в .msg-content, кнопки
 //                  действий рядом (общий createMessageActions вместо двух копий кода);
 //                  эхо Realtime обновляет только текст и больше не стирает кнопки
 //          4.7.0 — 403 «нет доступа к приложению» (блок / канал) открывает заглушку
@@ -22,6 +25,7 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { eventBus } from '@/core/event-bus';
+import { isChatOpen } from './open-chat';
 import type { UUID, TopicId } from '@app-types';
 
 let streamCallCounter = 0;
@@ -56,11 +60,16 @@ const STREAM_ERROR_MARK = '\u0001';
 
   let msgDiv: HTMLElement | null = null;
   let accumulatedText = '';
-  let isFirstChunk = true;
   let chunksReceived = 0;
   let finalizeCalled = false;
   let generatedAiMsgId: UUID | null = null;
 
+
+  /** Сообщение об ошибке — только если на экране этот чат */
+  const notice = (text: string): void => {
+    uiRendererInstance.hideSkeleton();
+    if (isChatOpen(chatId)) uiRendererInstance.renderMessage(text, 'ai-msg');
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
@@ -114,7 +123,7 @@ const STREAM_ERROR_MARK = '\u0001';
         try { body = JSON.parse(text); } catch {}
         if (body?.code === 'blocked' || body?.code === 'channel_required') {
           window.dispatchEvent(new CustomEvent('fibi:access-denied', { detail: body }));
-          uiRendererInstance.renderMessage(String(body.error || 'Нет доступа'), 'ai-msg');
+          notice(String(body.error || 'Нет доступа'));
           return false;
         }
         const accessReason = response.headers.get('X-Access-Reason') || 'unknown';
@@ -127,12 +136,12 @@ const STREAM_ERROR_MARK = '\u0001';
         } else if (accessReason === 'auth') {
           errorMessage += ' Войдите в приложение.';
         }
-        uiRendererInstance.renderMessage(errorMessage, 'ai-msg');
+        notice(errorMessage);
         return false;
       }
 
       if (response.status === 413) {
-        uiRendererInstance.renderMessage(`⚠️ ${text}`, 'ai-msg');
+        notice(`⚠️ ${text}`);
         return false;
       }
 
@@ -146,8 +155,7 @@ const STREAM_ERROR_MARK = '\u0001';
         } catch {
           // не JSON — оставляем текст по умолчанию
         }
-        uiRendererInstance.hideSkeleton();
-        uiRendererInstance.renderMessage(`⏳ ${busyText}`, 'ai-msg');
+        notice(`⏳ ${busyText}`);
         return false;
       }
 
@@ -178,6 +186,7 @@ const STREAM_ERROR_MARK = '\u0001';
     msgDiv.className = 'msg ai-msg msg-animated';
     msgDiv.id = `msg-block-${Date.now()}-${callId}`;
     msgDiv.setAttribute('data-sanitized', 'true');
+    uiRendererInstance.stampBlock(msgDiv, new Date().toISOString());
     // Текст ответа — отдельный блок: кнопки действий добавляются рядом при финализации
     const contentDiv = uiRendererInstance.createAIContent();
     msgDiv.appendChild(contentDiv);
@@ -223,29 +232,25 @@ const STREAM_ERROR_MARK = '\u0001';
       if (!chunk) continue;
       accumulatedText += chunk;
 
-      if (isFirstChunk && accumulatedText.trim().length > 0) {
-        console.log(`🎨 [СТРИМ #${callId}] Первый текст, создаем DOM`);
+      if (accumulatedText.trim().length === 0) continue;
+
+      // Блок в ленте — только пока открыт этот чат (вернулись в чат — блок встаёт снова)
+      if (!msgDiv.isConnected && isChatOpen(chatId)) {
         uiRendererInstance.hideSkeleton();
         container.appendChild(msgDiv);
-        isFirstChunk = false;
       }
-
-      if (!isFirstChunk) {
-        uiRendererInstance.fillAIContent(contentDiv, accumulatedText);
-        smartScroll();
-      }
+      uiRendererInstance.fillAIContent(contentDiv, accumulatedText);
+      if (msgDiv.isConnected) smartScroll();
     }
 
     console.log(`📊 [СТРИМ #${callId}] Итог: ${chunksReceived} чанков, ${accumulatedText.length} символов`);
 
     if (serverError && accumulatedText.trim().length === 0) {
-      uiRendererInstance.hideSkeleton();
-      uiRendererInstance.renderMessage(`⚠️ ${serverError}`, 'ai-msg');
+      notice(`⚠️ ${serverError}`);
       return false;
     }
     if (controlBuf && !serverError && accumulatedText.trim().length === 0) {
-      uiRendererInstance.hideSkeleton();
-      uiRendererInstance.renderMessage('⚠️ Не удалось получить ответ модели. Энергия не списана — попробуйте ещё раз.', 'ai-msg');
+      notice('⚠️ Не удалось получить ответ модели. Энергия не списана — попробуйте ещё раз.');
       return false;
     }
 
@@ -264,8 +269,10 @@ const STREAM_ERROR_MARK = '\u0001';
       msgDiv!.id = `msg-block-${generatedAiMsgId}`;
 
       const safeFinalText = typeof accumulatedText === 'string' ? accumulatedText : String(accumulatedText);
+      const createdAt = new Date().toISOString();
 
-      msgDiv!.appendChild(uiRendererInstance.createMessageActions(generatedAiMsgId, false));
+      uiRendererInstance.stampBlock(msgDiv!, createdAt);
+      msgDiv!.appendChild(uiRendererInstance.createMessageActions(generatedAiMsgId, false, createdAt));
 
       console.log(`💾 [СТРИМ #${callId}] СОХРАНЕНИЕ В ЧАТ ${chatId}`);
 
@@ -274,7 +281,7 @@ const STREAM_ERROR_MARK = '\u0001';
         text: safeFinalText,
         type: 'ai-msg' as const,
         isFavorite: false,
-        created_at: new Date().toISOString()
+        created_at: createdAt
       };
 
       targetChat.messages.push(aiMessage);
@@ -314,8 +321,7 @@ const STREAM_ERROR_MARK = '\u0001';
       }
     } else {
       console.warn(`⚠️ [СТРИМ #${callId}] Пустой ответ`);
-      uiRendererInstance.hideSkeleton();
-      uiRendererInstance.renderMessage('⚠️ Сервер вернул пустой ответ.', 'ai-msg');
+      notice('⚠️ Сервер вернул пустой ответ.');
     }
 
     console.log(`🔴 [СТРИМ #${callId}] ===== КОНЕЦ =====`);
@@ -338,8 +344,10 @@ const STREAM_ERROR_MARK = '\u0001';
       uiRendererInstance.fillAIContent(brokenContent, disconnectNotice);
 
       const safeFinalText = typeof disconnectNotice === 'string' ? disconnectNotice : String(disconnectNotice);
+      const createdAt = new Date().toISOString();
 
-      msgDiv.appendChild(uiRendererInstance.createMessageActions(generatedAiMsgId, false));
+      uiRendererInstance.stampBlock(msgDiv, createdAt);
+      msgDiv.appendChild(uiRendererInstance.createMessageActions(generatedAiMsgId, false, createdAt));
 
       const found = chatStoreInstance.findChatById(chatId);
       if (found) {
@@ -349,7 +357,7 @@ const STREAM_ERROR_MARK = '\u0001';
           text: safeFinalText,
           type: 'ai-msg' as const,
           isFavorite: false,
-          created_at: new Date().toISOString()
+          created_at: createdAt
         };
         targetChat.messages.push(aiMessage);
         chatStoreInstance.save();
@@ -364,11 +372,10 @@ const STREAM_ERROR_MARK = '\u0001';
       }
     } else if (!finalizeCalled) {
       const isAbort = (err as Error)?.name === 'AbortError' || (err as Error)?.name === 'TimeoutError';
-      uiRendererInstance.renderMessage(
+      notice(
         isAbort
           ? '⚠️ Сервер не ответил вовремя. Энергия не списана — попробуйте ещё раз.'
-          : `⚠️ Ошибка: ${(err as Error).message || 'Неизвестная ошибка'}`,
-        'ai-msg'
+          : `⚠️ Ошибка: ${(err as Error).message || 'Неизвестная ошибка'}`
       );
     }
     return false;
