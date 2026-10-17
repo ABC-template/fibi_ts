@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/ui/renderer.ts
 // Базовый рендеринг UI-элементов
-// Версия: 4.2.0 - Markdown только через utils/html (без DOMPurify — текст, а не сырой
+// Версия: 4.3.0 - текст сообщения лежит в .msg-content, кнопки действий — рядом, отдельно:
+//                 обновление текста (стрим, Realtime) их больше не стирает;
+//                 fillAIContent / createMessageActions — общие для чата, стрима и патчера
+//          4.2.0 - Markdown только через utils/html (без DOMPurify — текст, а не сырой
 //                 HTML); приветствие агента тоже очищается
 //          4.1.1 - замена @types → @app-types
 // ============================================
@@ -106,39 +109,49 @@ export class UIRenderer {
   // ==========================================
 
   renderAIMessage(container: HTMLElement, text: string, msgId: UUID, isFavorite: boolean): void {
-    const contentDiv = document.createElement('div');
-    contentDiv.style.width = '100%';
-
-    try {
-      contentDiv.innerHTML = renderMarkdown(text, { wrapTables: true });
-
-      contentDiv.querySelectorAll('pre').forEach((pre) => {
-        const codeText = pre.querySelector('code')?.innerText || pre.innerText;
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'position:relative; width:100%;';
-        pre.parentNode?.insertBefore(wrapper, pre);
-        wrapper.appendChild(pre);
-
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'code-copy-btn';
-        copyBtn.innerText = '📋 Копировать';
-        copyBtn.onclick = () => {
-          navigator.clipboard.writeText(codeText).then(() => {
-            copyBtn.innerText = '✅ Готово!';
-            setTimeout(() => copyBtn.innerText = '📋 Копировать', 1500);
-          });
-        };
-        wrapper.appendChild(copyBtn);
-      });
-    } catch (e) {
-      contentDiv.textContent = text;
-    }
-
+    const contentDiv = this.createAIContent();
+    this.fillAIContent(contentDiv, text);
     container.appendChild(contentDiv);
 
     // Кнопки действий для всех AI-сообщений
-    const actions = this._createMessageActions(msgId, isFavorite);
-    container.appendChild(actions);
+    container.appendChild(this.createMessageActions(msgId, isFavorite));
+  }
+
+  /** Блок текста ответа ИИ (.msg-content) — его обновляют стрим и патчер */
+  createAIContent(): HTMLElement {
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'msg-content';
+    contentDiv.style.width = '100%';
+    return contentDiv;
+  }
+
+  /** Markdown ответа ИИ в блок .msg-content + кнопки копирования кода */
+  fillAIContent(contentDiv: HTMLElement, text: string): void {
+    try {
+      contentDiv.innerHTML = renderMarkdown(text, { wrapTables: true });
+    } catch (e) {
+      contentDiv.textContent = text;
+      return;
+    }
+
+    contentDiv.querySelectorAll('pre').forEach((pre) => {
+      const codeText = pre.querySelector('code')?.innerText || pre.innerText;
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:relative; width:100%;';
+      pre.parentNode?.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code-copy-btn';
+      copyBtn.innerText = '📋 Копировать';
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(codeText).then(() => {
+          copyBtn.innerText = '✅ Готово!';
+          setTimeout(() => copyBtn.innerText = '📋 Копировать', 1500);
+        });
+      };
+      wrapper.appendChild(copyBtn);
+    });
   }
 
   // ==========================================
@@ -147,6 +160,7 @@ export class UIRenderer {
 
   renderUserMessage(container: HTMLElement, text: string, msgId: UUID): void {
     const textSpan = document.createElement('span');
+    textSpan.className = 'msg-content';
     textSpan.textContent = text;
     container.appendChild(textSpan);
 
@@ -169,7 +183,7 @@ export class UIRenderer {
   // КНОПКИ ДЕЙСТВИЙ
   // ==========================================
 
-  private _createMessageActions(msgId: UUID, isFavorite: boolean): HTMLElement {
+  createMessageActions(msgId: UUID, isFavorite: boolean): HTMLElement {
     const actions = document.createElement('div');
     actions.className = 'msg-actions';
     
