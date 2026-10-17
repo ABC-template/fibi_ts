@@ -1,7 +1,8 @@
 // ============================================
 // src/core/event-bus.ts
 // Центральная шина событий для реактивности
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.0.1 - без console.log с устаревшим номером версии
+//          2.0.0 - TypeScript
 // ============================================
 
 type EventCallback<T = any> = (data: T, sender?: any, event?: string) => void;
@@ -218,5 +219,3 @@ export class EventBus {
 export const eventBus = new EventBus(
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 );
-
-console.log('✅ EventBus v2.0.0 загружен');
