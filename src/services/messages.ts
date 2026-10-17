@@ -1,7 +1,9 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.4.0 - очередь и sync_token с привязкой к Telegram ID (user-storage)
+// Версия: 4.5.0 - чат стал пустым после удаления сообщения → переход к агентам через
+//                 навигацию (история и «Назад» не сбиваются)
+//          4.4.0 - очередь и sync_token с привязкой к Telegram ID (user-storage)
 //          4.3.0 - очередь неотправленных сообщений: если сообщение (например, длинный
 //                 ответ ИИ) не дошло до облака из-за сети или сбоя сервера, оно
 //                 повторяется при появлении сети и раз в минуту
@@ -16,6 +18,7 @@ import { userStore } from '@/store/UserStore';
 import { userStorage, saveSyncToken } from '@/utils/user-storage';
 import { chatService } from './chats';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { navigationState } from '@/core/navigation-state';
 import type { UUID, MessageType, IMessage } from '@app-types';
 
 /** Очередь неотправленных сообщений (localStorage, своя у каждого аккаунта) */
@@ -280,12 +283,8 @@ export class MessageService {
       console.log(`🧹 [deleteMessage] Чат ${chatId} стал пустым, удаляем...`);
       chatStore.permanentDeleteChat(chatId);
 
-      // Возвращаемся в список чатов
-      if (window.moduleLoader) {
-        setTimeout(() => {
-          window.moduleLoader.load('agents');
-        }, 300);
-      }
+      // Чат исчез — к списку агентов (после анимации удаления сообщения)
+      setTimeout(() => navigationState.goToAgents(), 300);
     }
 
     return true;
