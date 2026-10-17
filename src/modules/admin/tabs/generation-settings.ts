@@ -1,12 +1,16 @@
 // ============================================
 // src/modules/admin/tabs/generation-settings.ts
-// Панель настроек генерации в форме агента (image / video).
+// Панель настроек генерации в форме агента (image / video / audio).
 // Строится по возможностям выбранной модели OpenRouter (приходят из
 // /admin/agents/models → capabilities): администратор выбирает режимы,
 // какие значения параметров доступны пользователю, значения по умолчанию,
 // негативный промпт и цену. Результат — generation_config, по которому
 // форма генерации в чате строится сама (src/modules/chat/generation.ts).
-// Версия: 1.3.0 — курс ⚡ за $1 общий (админка → Настройки), в прайсе агента его больше нет:
+// Версия: 1.4.0 — аудио: озвучка (модели speech) и музыка / аудио-ответы (модели audio):
+//                  голоса (из supported_voices или списком вручную), скорость и подача для
+//                  озвучки, формат ответа для чата, цена за символ или за запрос
+//                  (подсказка — цены модели из OpenRouter), подсказка в поле запроса
+//          1.3.0 — курс ⚡ за $1 общий (админка → Настройки), в прайсе агента его больше нет:
 //                  поле «Энергии за $1» убрано, пример расчёта — по общему курсу
 //          1.2.0 — цена видео с учётом звука (audio_prices), разбор text_to_video_/image_to_video_
 //   1.1.0 — у видео-модели без прайса за секунду цену 1 секунды задаёт администратор
@@ -15,6 +19,7 @@
 
 import type {
   GenerationModeInput,
+  IGenerationAudioConfig,
   IGenerationConfig,
   IGenerationMode,
   IGenerationParam,
@@ -41,7 +46,22 @@ const PARAM_LABELS: Record<string, string> = {
   duration: 'Длительность, сек',
   n: 'Количество',
   generate_audio: 'Звук',
+  voice: 'Голос',
+  speed: 'Скорость',
+  instructions: 'Подача (тон, темп)',
 };
+
+const AUDIO_FORMATS: Array<IGenerationAudioConfig['format']> = ['mp3', 'wav', 'flac', 'opus', 'pcm16'];
+
+/** Подсказка в поле запроса по умолчанию */
+const AUDIO_PLACEHOLDER: Record<'speech' | 'audio', string> = {
+  speech: 'Текст, который нужно озвучить',
+  audio: 'Опишите музыку или звук: жанр, настроение, инструменты, слова песни',
+};
+
+function isAudioKind(kind: IModelCapabilities['kind']): kind is 'speech' | 'audio' {
+  return kind === 'speech' || kind === 'audio';
+}
 
 const DEFAULT_PREFERENCES: Record<string, string[]> = {
   resolution: ['720p', '1K', '1080p'],
@@ -153,6 +173,10 @@ export class GenerationSettingsPanel {
   // ==========================================
 
   private _modeDefs(caps: IModelCapabilities): IModeDef[] {
+    if (isAudioKind(caps.kind)) {
+      const label = caps.kind === 'speech' ? 'Текст → Речь' : 'Текст → Аудио';
+      return [{ key: 'text', label, input: 'none', requiresMedia: false, limit: 0 }];
+    }
     if (caps.kind === 'image') {
       const defs: IModeDef[] = [
         { key: 'text', label: 'Текст → Изображение', input: 'none', requiresMedia: false, limit: 0 },
@@ -295,6 +319,8 @@ export class GenerationSettingsPanel {
       </div>`);
     }
 
+    if (isAudioKind(caps.kind)) rows.push(...this._audioRows(caps, hasSaved, enumRow));
+
     // --- Промпты ---
     const promptMax = Number(this.base.prompt?.max_length) || 4000;
     const negEnabled = !!this.base.negative_prompt?.enabled;
@@ -326,6 +352,8 @@ export class GenerationSettingsPanel {
         <div style="${HINT};margin-bottom:6px">Провайдер не указал цену за секунду, поэтому оценку задаёте вы.
           Фактическое списание считается по реальной стоимости из ответа OpenRouter.</div>`;
       }
+    } else if (isAudioKind(caps.kind)) {
+      priceHtml = this._audioPriceHtml(caps);
     } else {
       priceHtml = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
         <span style="font-size:12px">Ориентировочная цена 1 изображения, $</span>
@@ -345,6 +373,7 @@ export class GenerationSettingsPanel {
         <span style="font-size:12px">Максимальная длина</span>
         <input type="number" id="gs-prompt-max" min="1" max="20000" value="${promptMax}" style="width:90px;${INPUT}">
       </div>
+      ${isAudioKind(caps.kind) ? this._audioPromptHtml(caps) : `
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px">
         <input type="checkbox" id="gs-neg" ${negEnabled ? 'checked' : ''}> Негативный промпт
       </label>
@@ -352,7 +381,7 @@ export class GenerationSettingsPanel {
       <div id="gs-neg-max-row" style="display:${negEnabled ? 'flex' : 'none'};align-items:center;gap:6px;margin-bottom:6px">
         <span style="font-size:12px">Максимальная длина</span>
         <input type="number" id="gs-neg-max" min="1" max="10000" value="${negMax}" style="width:90px;${INPUT}">
-      </div>
+      </div>`}
       <div style="${TITLE}">Цена</div>
       ${priceHtml}
       <div style="${HINT}">Курс: ${this.energyPerUsd ? `${this.energyPerUsd.toLocaleString('ru-RU')} ⚡ за $1` : 'не загружен'} — общий для всех агентов, меняется в «Настройках».</div>
@@ -361,10 +390,133 @@ export class GenerationSettingsPanel {
   }
 
   // ==========================================
+  // АУДИО
+  // ==========================================
+
+  /** Строки параметров аудио: голос, скорость и подача (озвучка), формат ответа (чат) */
+  private _audioRows(
+    caps: IModelCapabilities,
+    hasSaved: boolean,
+    enumRow: (key: string, values: string[]) => void
+  ): string[] {
+    const rows: string[] = [];
+
+    // Голос: список модели или свой (через запятую)
+    if (caps.voices.length > 0) {
+      enumRow('voice', caps.voices);
+    } else {
+      const saved = this._savedParam('voice');
+      const list = (saved?.options || []).map((o: any) => String(typeof o === 'string' ? o : o.value));
+      const shown = hasSaved ? !!saved : caps.kind === 'speech';
+      rows.push(`<div style="${CARD}" data-gs-param="voice" data-gs-kind="voice-list">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+          <input type="checkbox" data-gs-show ${shown ? 'checked' : ''}> ${PARAM_LABELS.voice}
+        </label>
+        <div style="${HINT};margin:4px 0">OpenRouter не прислал список голосов этой модели — впишите их через запятую
+          (названия — на странице модели в OpenRouter).${caps.kind === 'speech' ? ' Большинству моделей озвучки голос обязателен.' : ''}</div>
+        <input type="text" data-gs-voices value="${esc(list.join(', '))}" placeholder="alloy, nova, shimmer" style="width:100%;${INPUT}">
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+          <span style="${HINT}">По умолчанию</span>
+          <input type="text" data-gs-default value="${esc(saved?.default ?? list[0] ?? '')}" style="width:160px;${INPUT}">
+        </div>
+      </div>`);
+    }
+
+    if (caps.kind === 'speech') {
+      const speed = this._savedParam('speed');
+      rows.push(`<div style="${CARD}" data-gs-param="speed" data-gs-kind="slider">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+          <input type="checkbox" data-gs-show ${speed ? 'checked' : ''}> ${PARAM_LABELS.speed}
+        </label>
+        <div style="${HINT};margin-top:4px">0,5–2. Поддерживают не все модели: некоторые отвечают ошибкой на значение, отличное от 1.</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+          <span style="${HINT}">По умолчанию</span>
+          <input type="number" data-gs-default min="0.5" max="2" step="0.1" value="${esc(speed?.default ?? 1)}" style="width:72px;${INPUT}">
+        </div>
+      </div>`);
+
+      const instructions = this._savedParam('instructions');
+      rows.push(`<div style="${CARD}" data-gs-param="instructions" data-gs-kind="text">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+          <input type="checkbox" data-gs-show ${instructions ? 'checked' : ''}> ${PARAM_LABELS.instructions}
+        </label>
+        <div style="${HINT};margin-top:4px">Поле «как произнести» (например, «спокойно, медленно»). Понимают gpt-4o-mini-tts,
+          Gemini TTS, Fish Audio; остальные модели его игнорируют.</div>
+      </div>`);
+    }
+
+    if (caps.kind === 'audio') {
+      const audio = this.base.audio;
+      const format = audio?.format || 'mp3';
+      const options = AUDIO_FORMATS.map((f) => `<option value="${f}" ${f === format ? 'selected' : ''}>${f}</option>`).join('');
+      rows.push(`<div style="${CARD}">
+        <div style="font-size:13px;font-weight:600">Формат ответа модели</div>
+        <div style="${HINT};margin:4px 0">Звук приходит потоком. Модели OpenAI (GPT Audio) в потоке отдают только pcm16 —
+          его сервер упакует в WAV. Если модель вернёт ошибку формата, выберите другой.</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <select id="gs-audio-format" style="${INPUT}">${options}</select>
+          <span id="gs-pcm-row" style="display:${format === 'pcm16' ? 'inline-flex' : 'none'};align-items:center;gap:6px">
+            <span style="${HINT}">Гц</span>
+            <input type="number" id="gs-audio-rate" min="8000" max="96000" step="1000" value="${esc(audio?.sample_rate ?? 24000)}" style="width:90px;${INPUT}">
+            <span style="${HINT}">каналов</span>
+            <select id="gs-audio-channels" style="${INPUT}">
+              <option value="1" ${audio?.channels !== 2 ? 'selected' : ''}>1</option>
+              <option value="2" ${audio?.channels === 2 ? 'selected' : ''}>2</option>
+            </select>
+          </span>
+        </div>
+      </div>`);
+    }
+
+    return rows;
+  }
+
+  private _audioPromptHtml(caps: IModelCapabilities): string {
+    const kind = caps.kind as 'speech' | 'audio';
+    const placeholder = this.base.prompt?.placeholder?.ru || AUDIO_PLACEHOLDER[kind];
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-size:12px">Подсказка в поле</span>
+        <input type="text" id="gs-prompt-placeholder" value="${esc(placeholder)}" style="flex:1;min-width:180px;${INPUT}">
+      </div>
+      ${kind === 'speech' ? `<div style="${HINT};margin-bottom:6px">Запрос — это текст для озвучки. У некоторых моделей есть свой предел (например, Seed Audio — 3000 символов).</div>` : ''}`;
+  }
+
+  /** Цена аудио: за символ (озвучка) или за запрос (музыка); подсказка — цены модели в OpenRouter */
+  private _audioPriceHtml(caps: IModelCapabilities): string {
+    const saved = this.base.pricing;
+    const kind = saved?.kind === 'per_char' || saved?.kind === 'per_request'
+      ? saved.kind
+      : caps.kind === 'speech' ? 'per_char' : 'per_request';
+    const suggested = kind === 'per_char' ? caps.pricing_usd.prompt : caps.pricing_usd.request;
+    const usd = saved?.kind === kind && saved.usd ? saved.usd : suggested ?? '';
+    const known = Object.entries(caps.pricing_usd)
+      .map(([k, v]) => `${esc(k)}: $${v}`)
+      .join(' · ');
+
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <select id="gs-audio-price-kind" style="${INPUT}">
+          <option value="per_char" ${kind === 'per_char' ? 'selected' : ''}>за символ запроса</option>
+          <option value="per_request" ${kind === 'per_request' ? 'selected' : ''}>за запрос</option>
+        </select>
+        <span style="font-size:12px">$</span>
+        <input type="number" id="gs-usd" min="0" step="0.000001" value="${esc(usd)}" style="width:120px;${INPUT}">
+      </div>
+      <div style="${HINT};margin-bottom:6px">${known ? `Цены модели в OpenRouter: ${known}.` : 'OpenRouter не прислал цены этой модели.'}
+        Озвучка обычно оплачивается за символ, музыка — за песню или клип (например, Lyria 3 Pro — $0.08 за песню).
+        Это оценка до запуска; списывается фактическая стоимость из ответа OpenRouter, если она есть.</div>`;
+  }
+
+  // ==========================================
   // СОБЫТИЯ
   // ==========================================
 
   private _bind(): void {
+    const format = this.root.querySelector('#gs-audio-format') as HTMLSelectElement | null;
+    format?.addEventListener('change', () => {
+      const row = this.root.querySelector('#gs-pcm-row') as HTMLElement | null;
+      if (row) row.style.display = format.value === 'pcm16' ? 'inline-flex' : 'none';
+    });
+
     const neg = this.root.querySelector('#gs-neg') as HTMLInputElement | null;
     neg?.addEventListener('change', () => {
       const row = this.root.querySelector('#gs-neg-max-row') as HTMLElement | null;
@@ -398,6 +550,12 @@ export class GenerationSettingsPanel {
         const perSecond = table[res] ?? table.default ?? pricing.prices?.[res] ?? pricing.prices?.default ?? Math.min(...Object.values(table));
         usd = perSecond * duration;
         sample = `${duration} сек${res ? ' · ' + res : ''}${sound ? ' · со звуком' : ''}`;
+      } else if (pricing.kind === 'per_char') {
+        usd = (pricing.usd || 0) * 500;
+        sample = '500 символов';
+      } else if (pricing.kind === 'per_request') {
+        usd = pricing.usd || 0;
+        sample = '1 запрос';
       } else {
         usd = pricing.usd || 0;
         sample = '1 изображение';
@@ -441,6 +599,15 @@ export class GenerationSettingsPanel {
     }
 
     const usd = Number((this.root.querySelector('#gs-usd') as HTMLInputElement)?.value);
+    if (isAudioKind(caps.kind)) {
+      const kind = (this.root.querySelector('#gs-audio-price-kind') as HTMLSelectElement)?.value === 'per_char'
+        ? 'per_char'
+        : 'per_request';
+      if (!Number.isFinite(usd) || usd <= 0) {
+        throw new Error(kind === 'per_char' ? 'Укажите цену 1 символа в $' : 'Укажите цену 1 запроса в $');
+      }
+      return { kind, usd };
+    }
     if (!Number.isFinite(usd) || usd <= 0) throw new Error('Укажите ориентировочную цену 1 изображения в $');
     return { kind: 'per_image', usd };
   }
@@ -498,10 +665,52 @@ export class GenerationSettingsPanel {
           label,
           default: (row.querySelector('[data-gs-default]') as HTMLInputElement).checked,
         });
+      } else if (kind === 'voice-list') {
+        const list = Array.from(new Set(
+          (row.querySelector('[data-gs-voices]') as HTMLInputElement).value
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean)
+        ));
+        if (list.length === 0) throw new Error('«Голос»: впишите хотя бы один голос или снимите галочку');
+        const def = (row.querySelector('[data-gs-default]') as HTMLInputElement).value.trim() || list[0];
+        if (!list.includes(def)) throw new Error('«Голос»: голос по умолчанию должен быть в списке');
+        params.push({ key, type: 'select', label, options: list, default: def });
+      } else if (kind === 'slider') {
+        const def = Number((row.querySelector('[data-gs-default]') as HTMLInputElement).value);
+        const value = Number.isFinite(def) ? Math.min(2, Math.max(0.5, def)) : 1;
+        params.push({ key, type: 'slider', label, min: 0.5, max: 2, step: 0.1, default: value });
+      } else if (kind === 'text') {
+        params.push({ key, type: 'text', label, placeholder: { ru: 'Например: спокойно, медленно' } });
       }
     });
 
     const promptMax = Math.max(1, Number((this.root.querySelector('#gs-prompt-max') as HTMLInputElement).value) || 4000);
+
+    if (isAudioKind(caps.kind)) {
+      const placeholder = (this.root.querySelector('#gs-prompt-placeholder') as HTMLInputElement)?.value.trim()
+        || AUDIO_PLACEHOLDER[caps.kind];
+      const audio: IGenerationAudioConfig = caps.kind === 'speech'
+        ? { api: 'speech', format: 'mp3' }
+        : {
+            api: 'chat',
+            format: ((this.root.querySelector('#gs-audio-format') as HTMLSelectElement)?.value || 'mp3') as IGenerationAudioConfig['format'],
+          };
+      if (audio.format === 'pcm16') {
+        audio.sample_rate = Math.max(8000, Math.min(96000, Number((this.root.querySelector('#gs-audio-rate') as HTMLInputElement)?.value) || 24000));
+        audio.channels = (this.root.querySelector('#gs-audio-channels') as HTMLSelectElement)?.value === '2' ? 2 : 1;
+      }
+      return {
+        ...this.base,
+        modes,
+        params,
+        prompt: { ...(this.base.prompt || {}), required: true, max_length: promptMax, placeholder: { ru: placeholder } },
+        negative_prompt: { enabled: false },
+        pricing: this._pricing(),
+        audio,
+      };
+    }
+
     const negOn = (this.root.querySelector('#gs-neg') as HTMLInputElement).checked;
     const negMax = Math.max(1, Number((this.root.querySelector('#gs-neg-max') as HTMLInputElement).value) || 2000);
 
