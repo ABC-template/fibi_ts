@@ -1,7 +1,8 @@
 // ============================================
 // src/economy/EconomyService.ts
 // Фасад для работы с экономикой через API
-// Версия: 5.3.0 — конфиг обмена: exchange_enabled = доступен этому пользователю (сервер),
+// Версия: 5.4.0 — удалён неиспользуемый toggleUserLock (заморозка монет — /admin/users)
+//          5.3.0 — конфиг обмена: exchange_enabled = доступен этому пользователю (сервер),
 //                  при ошибке — выключен; без bonus_tokens_per_day / whitelist_enabled
 //          5.2.0 — удалён spendCoins (/economy/spend больше нет)
 //          5.1.0 — монеты из игр через /economy/game (клиент больше не начисляет монеты сам)
@@ -305,19 +306,6 @@ export class EconomyService {
     } catch (err) {
       console.error('[EconomyService.getAudit] Error:', err);
       return { success: false, logs: [], total: 0 };
-    }
-  }
-
-  /**
-   * Блокировка/разблокировка пользователя (для админки)
-   */
-  async toggleUserLock(userId: number, locked: boolean): Promise<boolean> {
-    try {
-      const result = await apiClient.post('/economy/lock', { userId, locked });
-      return result.success === true;
-    } catch (err) {
-      console.error('[EconomyService.toggleUserLock] Error:', err);
-      return false;
     }
   }
 }
