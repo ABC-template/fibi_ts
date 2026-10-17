@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/attach-file.ts
 // Прикрепление текстовых файлов (.md, .txt — repomix-дампы и т.п.)
-// Версия: 1.0.0 — v1: доступно только creator/admin, файл НЕ сохраняется,
+// Версия: 1.0.1 - без console.log с устаревшим номером версии
+//          1.0.0 — v1: доступно только creator/admin, файл НЕ сохраняется,
 //                  содержимое уходит только в один запрос (см. send.ts и
 //                  api/chat/stream.ts), жёсткий потолок размера — клиентская
 //                  проверка здесь лишь для быстрой обратной связи,
@@ -159,5 +160,3 @@ let currentAttachedFileName: string | null = null;
   const fileInput = document.getElementById('hidden-text-file-input') as HTMLInputElement;
   if (fileInput) fileInput.value = '';
 };
-
-console.log('✅ ChatAttachFile v1.0.0 загружен');
