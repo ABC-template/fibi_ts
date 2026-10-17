@@ -8,7 +8,10 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.4.1 — оценка цены по agent.markup с сервера (тариф больше не передаётся)
+// Версия: 3.5.0 — форма и просмотрщик — слои в стеке навигации: «Назад» Telegram закрывает
+//                  их, а не уводит из чата; просмотрщик: медиа по центру экрана, с учётом
+//                  выреза/полосы снизу; чат без названия получает его из первого запроса
+//          3.4.1 — оценка цены по agent.markup с сервера (тариф больше не передаётся)
 //          3.4.0 — одна генерация на пользователя: сервер отвечает 409 generation_busy
 //                  с chat_id — в форме «Дождитесь окончания генерации» и кнопка
 //                  «Перейти в чат» (если генерация идёт в другом чате)
@@ -33,6 +36,7 @@
 import { chatStore } from '@/store/ChatStore';
 import { economyStore } from '@/economy/EconomyStore';
 import { eventBus } from '@/core/event-bus';
+import { navigationState } from '@/core/navigation-state';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { apiClient, ApiError } from '@/services/api';
@@ -70,6 +74,9 @@ const AWAIT_RESULT_MS = 4 * 60 * 1000;
 const AGENTS_TTL_MS = 60 * 1000;
 
 const LOCAL_PENDING_ID = 'gen-local-pending';
+/** Слои в стеке навигации: «Назад» Telegram закрывает их */
+const FORM_LAYER_ID = 'generation-form';
+const VIEWER_LAYER_ID = 'generation-viewer';
 
 export interface IGenerationHost {
   getChatId(): UUID | null;
@@ -141,9 +148,16 @@ export class GenerationController {
   private _polling = false;
 
   private _viewer: HTMLElement | null = null;
+  private _unsubBack: (() => void) | null = null;
 
   constructor(host: IGenerationHost) {
     this.host = host;
+    // «Назад» Telegram: NavigationState снял слой — закрываем его здесь
+    this._unsubBack = eventBus.on('modal:state_changed', (data: any) => {
+      if (data?.action !== 'back') return;
+      if (data.modalId === VIEWER_LAYER_ID) this._closeViewer();
+      else if (data.modalId === FORM_LAYER_ID) this.close();
+    }, this);
   }
 
   // ==========================================
@@ -182,10 +196,18 @@ export class GenerationController {
 
   close(): void {
     this._formOpen = false;
+    navigationState.toggleModal(false, FORM_LAYER_ID);
     document.getElementById('generation-form-overlay')?.remove();
     for (const url of this._objectUrls) URL.revokeObjectURL(url);
     this._objectUrls = [];
     this._refs = [];
+  }
+
+  /** Уничтожение модуля чата: снять подписки */
+  dispose(): void {
+    this.stop();
+    this._unsubBack?.();
+    this._unsubBack = null;
   }
 
   /** Вызывается при уходе из чата / уничтожении модуля */
@@ -357,6 +379,7 @@ export class GenerationController {
     `;
 
     document.body.appendChild(overlay);
+    navigationState.toggleModal(true, FORM_LAYER_ID);
 
     const promptEl = overlay.querySelector('#gen-prompt') as HTMLTextAreaElement;
     promptEl.value = preset?.prompt || '';
@@ -917,6 +940,13 @@ export class GenerationController {
     chatStore.holdChat(chatId);
 
     try {
+      // Чат без названия называется по первому запросу (на сервер — при создании чата)
+      const renamed = chatStore.autoTitle(chatId, preset.prompt);
+      if (renamed && chatStore.findChatById(chatId)?.chat.synced) {
+        const title = chatStore.findChatById(chatId)?.chat.title;
+        if (title) void chatService.renameChat(chatId, title);
+      }
+
       const ensured = await chatService.ensureRemoteChat(chatId);
       if (!ensured) throw new Error('Не удалось подготовить чат на сервере');
 
@@ -1390,11 +1420,15 @@ export class GenerationController {
 
     const scroller = document.createElement('div');
     scroller.className = 'gen-viewer-body';
+    // Сцена по центру экрана; если не помещается — прокрутка
+    const stage = document.createElement('div');
+    stage.className = 'gen-viewer-stage';
+    scroller.appendChild(stage);
 
     for (const item of media) {
       const holder = document.createElement('div');
       holder.className = 'gen-media gen-skeleton gen-media-large';
-      scroller.appendChild(holder);
+      stage.appendChild(holder);
       this._mountMedia(holder, item, undefined, media.length === 1);
     }
 
@@ -1415,7 +1449,7 @@ export class GenerationController {
     if (Array.isArray(meta.media_inputs) && meta.media_inputs.length > 0) {
       info.appendChild(this._infoLine('Референсы', String(meta.media_inputs.length)));
     }
-    scroller.appendChild(info);
+    stage.appendChild(info);
 
     const actions = document.createElement('div');
     actions.className = 'gen-viewer-actions';
@@ -1453,11 +1487,14 @@ export class GenerationController {
     overlay.append(close, scroller, actions);
     document.body.appendChild(overlay);
     this._viewer = overlay;
+    navigationState.toggleModal(true, VIEWER_LAYER_ID);
   }
 
   private _closeViewer(): void {
-    this._viewer?.remove();
+    if (!this._viewer) return;
+    this._viewer.remove();
     this._viewer = null;
+    navigationState.toggleModal(false, VIEWER_LAYER_ID);
   }
 
   private _infoLine(label: string, value: string): HTMLElement {
