@@ -1,12 +1,24 @@
 // ============================================
 // api/_lib/validators.ts
 // Описание: Все валидации для Edge-функций
-// Версия: 2.2.0 - удалён неиспользуемый список действий (ALLOWED_ACTIONS, ChatAction,
+// Версия: 2.3.0 - intParam: целое из параметра запроса в пределах (limit/offset во всех списках)
+//          2.2.0 - удалён неиспользуемый список действий (ALLOWED_ACTIONS, ChatAction,
 //                 isValidAction, validateAction) вместе с маршрутом batch
 //          2.1.0 - длина сообщения до 100 000 символов (MAX_MESSAGE_CHARS);
 //                 normalizeOrganizerTopic ('all' или тема)
 //          2.0.0 - TypeScript
 // ============================================
+
+// ==========================================
+// Параметры запроса
+// ==========================================
+
+/** Целое из параметра запроса в пределах [min, max]; нечисло или пусто → fallback */
+export function intParam(raw: string | null, fallback: number, min: number, max: number): number {
+  const n = raw === null || raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
 
 // ==========================================
 // UUID валидация
