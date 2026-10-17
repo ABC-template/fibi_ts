@@ -1,13 +1,13 @@
 // ============================================
 // api/quests/verify.ts
 // Верифицировать задание (админ)
-// Версия: 1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+// Версия: 1.1.1 - без неиспользуемых импортов и переменных
+//          1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
 //          1.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
