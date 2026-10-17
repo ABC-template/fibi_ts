@@ -1,13 +1,16 @@
 // ============================================
 // src/modules/chat/ChatPatcher.ts
 // Описание: Точечные обновления DOM для чата
-// Версия: 1.3.0 - Markdown только через utils/html (без DOMPurify — текст, не сырой HTML)
+// Версия: 1.4.0 - обновление текста меняет только .msg-content: кнопки действий под ответом
+//                 больше не пропадают (Realtime присылал тот же ответ — блок перезаписывался
+//                 целиком); сообщение пользователя обновляется текстом, без Markdown;
+//                 тот же текст не перерисовывается
+//          1.3.0 - Markdown только через utils/html (без DOMPurify — текст, не сырой HTML)
 //          1.2.0 - decorator для сообщений с metadata (генерации), updateMessage
 //          1.1.1 - замена @types → @app-types
 // ============================================
 
 import { uiRenderer } from '@/modules/ui/renderer';
-import { renderMarkdown } from '@/utils/html';
 import type { IMessage, UUID } from '@app-types';
 
 export type MessageDecorator = (message: IMessage, element: HTMLElement) => void;
@@ -15,6 +18,8 @@ export type MessageDecorator = (message: IMessage, element: HTMLElement) => void
 export class ChatPatcher {
   private container: HTMLElement;
   private decorator: MessageDecorator | null = null;
+  /** Последний показанный текст блока — повтор (эхо Realtime) не перерисовывается */
+  private shownText = new WeakMap<HTMLElement, string>();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -144,16 +149,23 @@ export class ChatPatcher {
     // Оформленные сообщения (карточки генераций) текстом не перезаписываем
     if (element.dataset.genSig !== undefined) return;
 
-    // Находим контейнер с содержимым
-    const content = element.querySelector('.msg-content') || element;
+    // Только блок текста: кнопки действий живут рядом и не трогаются
+    let content = element.querySelector('.msg-content') as HTMLElement | null;
+    const isUser = element.classList.contains('user-msg');
+    if (!content) {
+      content = isUser ? document.createElement('span') : uiRenderer.createAIContent();
+      content.className = 'msg-content';
+      element.insertBefore(content, element.firstChild);
+    }
 
-    // Markdown → очищенный HTML (без DOMPurify — просто текст)
-    content.innerHTML = renderMarkdown(text);
+    if (this.shownText.get(content) === text) return;
+    this.shownText.set(content, text);
 
-    // Обрабатываем кнопки копирования кода
-    this._setupCodeCopyButtons(element);
-
-    console.log(`✅ [ChatPatcher] Текст сообщения ${messageId} обновлён (${text.length} символов)`);
+    if (isUser) {
+      content.textContent = text;
+    } else {
+      uiRenderer.fillAIContent(content, text);
+    }
   }
 
   /**
@@ -221,70 +233,5 @@ export class ChatPatcher {
    */
   hasMessage(messageId: UUID): boolean {
     return !!document.getElementById(`msg-block-${messageId}`);
-  }
-
-  /**
-   * Настройка кнопок копирования кода внутри элемента
-   * @param rootElement - Корневой элемент
-   */
-  private _setupCodeCopyButtons(rootElement: HTMLElement): void {
-    const preElements = rootElement.querySelectorAll('pre');
-    
-    for (const pre of preElements) {
-      // Проверяем, есть ли уже кнопка
-      if (pre.parentElement?.querySelector('.code-copy-btn')) {
-        continue;
-      }
-
-      const codeText = pre.querySelector('code')?.innerText || pre.innerText;
-      
-      // Оборачиваем pre в wrapper если нужно
-      let wrapper = pre.parentElement;
-      if (!wrapper || wrapper.tagName !== 'DIV' || !wrapper.classList.contains('code-wrapper')) {
-        wrapper = document.createElement('div');
-        wrapper.className = 'code-wrapper';
-        wrapper.style.cssText = 'position: relative; width: 100%;';
-        pre.parentNode?.insertBefore(wrapper, pre);
-        wrapper.appendChild(pre);
-      }
-
-      // Создаём кнопку копирования
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'code-copy-btn';
-      copyBtn.textContent = '📋 Копировать';
-      copyBtn.style.cssText = `
-        position: absolute;
-        bottom: 8px;
-        right: 8px;
-        background: var(--app-bg-secondary);
-        border: 1px solid var(--app-border-color);
-        border-radius: 8px;
-        font-size: 12px;
-        padding: 4px 12px;
-        cursor: pointer;
-        color: var(--app-text-secondary);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        opacity: 0.9;
-        transition: all 0.15s ease;
-        z-index: 10;
-        min-height: 32px;
-      `;
-      
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(codeText).then(() => {
-          copyBtn.textContent = '✅ Готово!';
-          setTimeout(() => {
-            copyBtn.textContent = '📋 Копировать';
-          }, 1500);
-        }).catch(() => {
-          copyBtn.textContent = '❌ Ошибка';
-          setTimeout(() => {
-            copyBtn.textContent = '📋 Копировать';
-          }, 1500);
-        });
-      };
-
-      wrapper.appendChild(copyBtn);
-    }
   }
 }
