@@ -1,7 +1,8 @@
 // ============================================
 // src/services/network.ts
 // Обработка офлайн/онлайн
-// Версия: 1.2.0 — sync_token с привязкой к Telegram ID (user-storage)
+// Версия: 1.3.0 — Realtime после восстановления сети — по флагу сервера syncEnabled (без роли «pro»)
+//          1.2.0 — sync_token с привязкой к Telegram ID (user-storage)
 //          1.1.0 — после восстановления сети обновляется сайдбар/чат (ChatListModule удалён)
 //          1.0.0
 // ============================================
@@ -65,8 +66,8 @@ async function handleLongOffline(): Promise<void> {
             (window as any).chatUI?.refreshUI?.();
         }
 
-        const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
-        if (isPro && syncService) {
+        // Синхронизацию разрешает сервер (can_sync), а не список ролей
+        if (result.syncEnabled === true && syncService) {
             const userId = userStore.userId;
             if (userId) syncService.subscribe(userId);
         }
