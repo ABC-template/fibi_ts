@@ -1,7 +1,9 @@
 // ============================================
 // src/services/messages.ts
 // Работа с сообщениями (HARD DELETE)
-// Версия: 4.6.0 - удаление сообщения на сервере — /chats/actions/message (delete_message);
+// Версия: 4.7.0 - чат стал пустым → только удаление; выход из открытого чата делает
+//                 ChatModule по событию удаления (на предыдущий раздел, а не всегда к агентам)
+//          4.6.0 - удаление сообщения на сервере — /chats/actions/message (delete_message);
 //                 дублирующий /chats/mutations/delete-with-confirm удалён
 //          4.5.0 - чат стал пустым после удаления сообщения → переход к агентам через
 //                 навигацию (история и «Назад» не сбиваются)
@@ -20,7 +22,6 @@ import { userStore } from '@/store/UserStore';
 import { userStorage, saveSyncToken } from '@/utils/user-storage';
 import { chatService } from './chats';
 import { uiRenderer } from '@/modules/ui/renderer';
-import { navigationState } from '@/core/navigation-state';
 import type { UUID, MessageType, IMessage } from '@app-types';
 
 /** Очередь неотправленных сообщений (localStorage, своя у каждого аккаунта) */
@@ -284,10 +285,8 @@ export class MessageService {
 
     if (willBeEmpty) {
       console.log(`🧹 [deleteMessage] Чат ${chatId} стал пустым, удаляем...`);
+      // Открытый чат сам уходит на предыдущий раздел (ChatModule слушает удаление)
       chatStore.permanentDeleteChat(chatId);
-
-      // Чат исчез — к списку агентов (после анимации удаления сообщения)
-      setTimeout(() => navigationState.goToAgents(), 300);
     }
 
     return true;
