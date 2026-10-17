@@ -1,16 +1,17 @@
 // ============================================
 // api/chats/actions/update.ts
 // Описание: Обновление чата (переименование, контекст, удаление, закрепление) с sync_token
-// Версия: 4.2.0 - переименование, контекст и закрепление — только при разрешённой
+// Версия: 4.2.1 - без неиспользуемых импортов и переменных
+//          4.2.0 - переименование, контекст и закрепление — только при разрешённой
 //                 синхронизации (can_sync); удалить свой чат можно всегда
 //          4.1.0 - удаление чата запрещено (409), пока в нём идёт запрос/генерация
 //   4.0.0 - добавлен pin_chat
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken, canUserSync } from '../../_lib/supabase-client';
-import { isValidUUID, validateUUID } from '../../_lib/validators';
+import { validateUUID } from '../../_lib/validators';
 import { assertChatsNotBusy } from '../../_lib/chat-lock';
 import { HttpError } from '../../_lib/http-error';
 
