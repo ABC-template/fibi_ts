@@ -1,14 +1,15 @@
 // ============================================
 // api/organizer/reminders/create.ts
 // Описание: Создание напоминания
-// Версия: 2.1.0 - создание работало с ошибкой: раздел 'all' не проходил проверку,
+// Версия: 2.1.1 - без неиспользуемых импортов и переменных
+//          2.1.0 - создание работало с ошибкой: раздел 'all' не проходил проверку,
 //                 а user_uuid (обязательный в БД) не передавался; проверка даты,
 //                 не больше 100 активных напоминаний
 //          2.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, getUserUuid } from '../../_lib/supabase-client';
 import { normalizeOrganizerTopic } from '../../_lib/validators';
 
