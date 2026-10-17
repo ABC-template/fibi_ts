@@ -1,11 +1,12 @@
 /* ============================================
    src/modules/profile/profile.css
    Стили профиля
-   Версия: 1.0.0
+   Версия: 1.1.0 — без отступа под нижнее меню (его даёт #app-screen)
+   1.0.0
    ============================================ */
 
 .profile-container {
-    padding: 16px 16px 100px 16px;
+    padding: 16px;
     flex: 1;
     overflow-y: auto;
     display: flex;
