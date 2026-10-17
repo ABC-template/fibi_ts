@@ -1,7 +1,9 @@
 // ============================================
 // api/chat/stream.ts
 // Описание: Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 3.7.0 — финансы: курс ⚡ за $1 из настроек экономики (был зашит 10 000);
+// Версия: 3.8.0 — пока идёт ответ, замок чата и резерв энергии продлеваются раз в минуту
+//                  (длинный ответ больше не переживает их 300 с)
+//          3.7.0 — финансы: курс ⚡ за $1 из настроек экономики (был зашит 10 000);
 //                  каждый ответ пишется в журнал расходов ai_usage (модель, токены, $,
 //                  бонусная/постоянная энергия) вместо openrouter_usage/agent_usage_logs;
 //                  без usage.cost и токенов от OpenRouter списание считается по реально
@@ -63,6 +65,7 @@ import { getMarkupForTier } from '../_lib/markup-helper';
 import {
   CHAT_LOCK_TTL,
   acquireChatLock,
+  startLeaseRenewal,
   chatBusyResponse,
   isValidChatId,
 } from '../_lib/chat-lock';
@@ -726,8 +729,19 @@ export default async function handler(request: Request): Promise<Response> {
     // Пока модель не начала отвечать, раз в несколько секунд уходит невидимый
     // «пульс» (\u0000) — приложение его вырезает. Ошибка до первого слова
     // приходит одним сообщением с префиксом \u0000\u0001 + JSON.
+    // Продление замка и резерва, пока идёт ответ (снимается в конце потока и при обрыве)
+    let stopLease: () => void = () => {};
+
     const readable = new ReadableStream<Uint8Array>({
       async start(controller) {
+        stopLease = startLeaseRenewal({
+          userId,
+          chatId,
+          lockToken: chatLock?.token ?? null,
+          holdId,
+          ttlSeconds: CHAT_LOCK_TTL.text,
+          config,
+        });
         const send = (text: string) => {
           try {
             controller.enqueue(encoder.encode(text));
@@ -923,6 +937,7 @@ export default async function handler(request: Request): Promise<Response> {
           }
         } finally {
           clearInterval(heartbeat);
+          stopLease();
           // Страховка (обе операции идемпотентны). При обрыве клиентом заморозкой
           // распоряжается cancel()
           if (!clientCancelled) await closeHold(0, '', null);
@@ -934,6 +949,7 @@ export default async function handler(request: Request): Promise<Response> {
         // ответа модели. Отданная часть ответа уже оплачена нами в OpenRouter,
         // поэтому списываем за неё (иначе обрыв в конце = бесплатный ответ)
         clientCancelled = true;
+        stopLease();
         // Списание запускается ДО ожидания чего-либо: closeHold синхронно ставит флаг,
         // и завершение потока уже не снимет заморозку бесплатно
         const delivered = deliveredCharge('cancelled');
