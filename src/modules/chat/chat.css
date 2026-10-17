@@ -1,7 +1,11 @@
 /* ============================================
    src/modules/chat/chat.css
    Стили чата (сообщения, капсула, кнопки)
-   Версия: 1.2.0 — просмотрщик генераций: медиа по центру экрана (без растяжения на всю
+   Версия: 1.3.0 — время под сообщениями и разделители дней как в Telegram; запрос
+            пользователя — пузырь и строка «удалить … время» шириной с пузырь (у короткого
+            пузыря минимальная ширина); у ответа кнопки слева, время справа; время
+            в подписи карточки генерации
+   1.2.0 — просмотрщик генераций: медиа по центру экрана (без растяжения на всю
             ширину), с учётом выреза сверху и полосы снизу
    1.1.0 — убраны стили сообщения-запроса генерации (его больше нет)
             1.0.0
@@ -37,9 +41,20 @@
     position: relative;
 }
 
-.user-msg {
-    max-width: 85%;
+/* Запрос пользователя: блок = пузырь + строка под ним; ширина блока = ширина пузыря */
+.user-block {
+    display: flex;
+    flex-direction: column;
     align-self: flex-end;
+    max-width: 85%;
+    animation: fadeInUp 0.25s cubic-bezier(0.1, 0.8, 0.25, 1);
+    border-radius: var(--app-radius-lg);
+}
+
+.user-block .msg { animation: none; will-change: auto; }
+
+.user-msg {
+    min-width: 92px;
     background: var(--app-msg-user-bg);
     color: var(--app-msg-user-text);
     border-radius: var(--app-radius-lg);
@@ -60,6 +75,58 @@
 
 .welcome-msg { opacity: 0.7; }
 
+/* Строка под запросом: «удалить» слева, время справа — не шире пузыря */
+.msg-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 2px 0 0;
+    min-width: 0;
+}
+
+.action-btn.msg-meta-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    min-height: 28px;
+    opacity: 0.6;
+}
+
+.action-btn.msg-meta-btn .lucide { width: 16px; height: 16px; }
+
+.msg-time {
+    flex: none;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--app-text-tertiary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Разделитель дня: «Сегодня», «Вчера», «15 октября» — прилипает к верху при прокрутке */
+.chat-day-sep {
+    position: sticky;
+    top: 4px;
+    z-index: 2;
+    align-self: center;
+    display: flex;
+    justify-content: center;
+    margin: var(--app-spacing-sm) 0 2px;
+    pointer-events: none;
+}
+
+.chat-day-sep span {
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--app-text-secondary);
+    background: rgba(128, 128, 128, 0.18);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
 .highlight-msg {
   background: rgba(212, 175, 55, 0.15) !important;
   transition: background 0.5s ease;
@@ -68,6 +135,8 @@
 /* ===== КНОПКИ ДЕЙСТВИЙ ===== */
 .msg-actions {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: var(--app-spacing-sm);
     margin-top: var(--app-spacing-sm);
     padding-top: var(--app-spacing-sm);
@@ -78,6 +147,15 @@
 }
 
 .msg-actions:hover, .msg-actions:focus-within { opacity: 1; }
+
+.msg-actions-group {
+    display: flex;
+    gap: var(--app-spacing-sm);
+    flex-wrap: wrap;
+}
+
+/* У карточки генерации время в подписи запроса */
+.msg-generation > .msg-actions > .msg-time { display: none; }
 
 .action-btn {
     background: transparent;
@@ -103,6 +181,8 @@
 .action-btn .lucide { width: 20px; height: 20px; stroke: currentColor; }
 .action-btn:active { transform: scale(0.88); background: var(--app-bg-hover); }
 .action-btn.is-favorite { color: var(--app-accent-danger); }
+.action-btn.action-btn-danger { color: #e74c3c; }
+.msg-actions .action-btn.action-btn-danger { background: rgba(231, 76, 60, 0.05); }
 
 .action-btn::after {
     content: attr(data-tooltip);
@@ -523,8 +603,10 @@
     position: absolute; right: 8px; bottom: 8px; padding: 2px 8px; border-radius: 10px;
     background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; font-weight: 600;
 }
+.gen-caption-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; padding: 0 4px; }
+.gen-caption-row .msg-time { padding-top: 2px; }
 .gen-caption {
-    margin-top: 6px; padding: 0 4px; font-size: 12px; color: var(--app-text-tertiary);
+    flex: 1; min-width: 0; font-size: 12px; color: var(--app-text-tertiary);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .gen-actions { display: flex; gap: 8px; margin-top: 8px; }
