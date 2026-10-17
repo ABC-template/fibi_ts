@@ -1,7 +1,8 @@
 // ============================================
 // src/core/theme-manager.ts
 // Управление темами оформления
-// Версия: 3.0.0 - TypeScript
+// Версия: 3.0.1 - без console.log с устаревшим номером версии
+//          3.0.0 - TypeScript
 // ============================================
 
 export type ThemeType = 'light' | 'amoled';
@@ -97,4 +98,3 @@ export class ThemeManager {
 
 // Создаем экземпляр
 export const themeManager = new ThemeManager();
-console.log('✅ ThemeManager v3.0.0 загружен');
