@@ -1,7 +1,8 @@
 // ============================================
 // src/economy/EconomyStore.ts
 // Хранилище для UI (кеш балансов)
-// Версия: 4.1.0 — config: IExchangeConfig (обмен для текущего пользователя); при ошибке
+// Версия: 4.1.1 - без console.log с устаревшим номером версии
+//          4.1.0 — config: IExchangeConfig (обмен для текущего пользователя); при ошибке
 //                  загрузки обмен считается выключенным, а не берётся из старого кэша
 //          4.0.0 — spent_today/daily_limit/bypass | old: 3.0.2 - миграция старых данных + защита
 // ============================================
@@ -79,7 +80,6 @@ export class EconomyStore extends BaseStore<IEconomyStoreData> {
     if (this._data.tokens.bypass === undefined) this._data.tokens.bypass = false;
 
     this.subscribeToEvents();
-    console.log('✅ EconomyStore v3.0.2 инициализирован', this._data);
   }
 
   private getDefaultData(): IEconomyStoreData {
