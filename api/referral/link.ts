@@ -1,18 +1,16 @@
 // ============================================
 // api/referral/link.ts
 // Получение реферальной ссылки
-// Версия: 1.1.0 — ссылка вида t.me/<бот>?startapp=ref_<id36> (открывает Mini App)
+// Версия: 1.1.1 - без неиспользуемых импортов и переменных
+//          1.1.0 — ссылка вида t.me/<бот>?startapp=ref_<id36> (открывает Mini App)
 //          1.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
-  getSupabaseConfig,
-  supabaseFetch,
 } from '../_lib/index';
 
 export const config = { runtime: 'edge' };
@@ -34,7 +32,6 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const userId = auth.userId!;
-    const config = getSupabaseConfig('service');
 
     // Генерируем реферальный код (base64 от userId)
     // Ссылка сразу открывает Mini App: параметр startapp приходит в initData
