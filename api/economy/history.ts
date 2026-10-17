@@ -1,12 +1,13 @@
 // ============================================
 // api/economy/history.ts
 // Получение истории транзакций (коины + токены)
-// Версия: 2.0.0
+// Версия: 2.1.0 — limit 1…50, offset ≥ 0 (нечисловые значения больше не ломают запрос)
+//          2.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
+  intParam,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -35,8 +36,8 @@ export default async function handler(request: Request): Promise<Response> {
 
     const url = new URL(request.url);
     const type = url.searchParams.get('type') || 'coins'; // 'coins' | 'tokens'
-    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 50);
-    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+    const limit = intParam(url.searchParams.get('limit'), 50, 1, 50);
+    const offset = intParam(url.searchParams.get('offset'), 0, 0, 1_000_000);
 
     let data: any;
 
