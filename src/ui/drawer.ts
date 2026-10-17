@@ -1,7 +1,10 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 3.0.1 - без console.log с устаревшим номером версии
+// Версия: 3.1.0 - пункт «Экономика» убран (балансы в шапке ведут туда); монеты в шапке
+//                 сайдбара — тоже в «Экономику»; иконки меню и роли — Lucide; удаление
+//                 открытого чата — выход на предыдущий раздел делает сам чат (ChatModule)
+//          3.0.1 - без console.log с устаревшим номером версии
 //          3.0.0 — фильтр чатов по агентам (список с сервера вместо зашитых тем, чаты —
 //                  по agent_id); у агента без чатов — кнопка «Создать чат»; без чатов
 //                  вообще — «Выбрать агента»; из меню убраны «ИИ-агенты» и «Задания»
@@ -115,6 +118,12 @@ export function renderChatsInDrawer(): void {
         appendDrawerNav(container);
 
         setTimeout(() => updateDrawerTrashCount(), 50);
+        // Иконки меню (Lucide) — и в пустом списке
+        setTimeout(() => {
+            if (typeof (window as any).lucide !== 'undefined') {
+                (window as any).lucide.createIcons();
+            }
+        }, 50);
         return;
     }
 
@@ -294,7 +303,7 @@ function createChatItem(chat: any): HTMLElement {
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'chat-icon';
-    iconSpan.textContent = chat.pinned ? '📌' : '💬';
+    iconSpan.innerHTML = `<i data-lucide="${chat.pinned ? 'pin' : 'message-square'}"></i>`;
 
     const infoDiv = document.createElement('div');
     infoDiv.className = 'chat-info';
@@ -527,13 +536,7 @@ export function deleteChatFromDrawer(chatId: string): void {
     const confirmMsg = window.getLangString ? window.getLangString('confirm_del_chat') : 'Удалить чат в корзину?';
 
     const action = (): void => {
-        // Если удаляем открытый сейчас чат — после удаления уйдём к агентам
-        const chatMod = (window as any).chatModule;
-        const wasCurrentOpen =
-            chatMod &&
-            chatMod._isShowing &&
-            String(chatMod._chatId) === String(chatId);
-
+        // Открытый сейчас чат сам уйдёт на предыдущий раздел (ChatModule слушает удаление)
         chatStore.deleteChat(chatId);
         if (userStore.canSync() && window.chatService) {
             window.chatService.deleteChat(chatId).then(deleted => {
@@ -553,8 +556,6 @@ export function deleteChatFromDrawer(chatId: string): void {
         if (uiRenderer) {
             uiRenderer.showToast('🗑️ Чат отправлен в корзину', 'info', 1500);
         }
-
-        if (wasCurrentOpen) navigationState.goToAgents();
     };
 
     if (window.Telegram?.WebApp?.showConfirm) {
@@ -583,35 +584,28 @@ export function appendDrawerNav(container: HTMLElement): void {
     }> = [
         {
             id: 'drawer-favorites',
-            icon: '⭐',
+            icon: 'star',
             label: 'Избранное',
             action: () => window.showFavoritesModal(),
             show: true,
         },
         {
             id: 'drawer-trash',
-            icon: '🗑️',
+            icon: 'trash-2',
             label: 'Корзина',
             action: () => window.showTrashModal(),
             show: true,
         },
         {
-            id: 'drawer-economy',
-            icon: '💰',
-            label: 'Экономика',
-            action: () => navigation.switchTab('economy'),
-            show: true,
-        },
-        {
             id: 'drawer-referral',
-            icon: '🤝',
+            icon: 'handshake',
             label: 'Рефералы',
             action: () => navigation.switchTab('referral'),
             show: true,
         },
         {
             id: 'drawer-admin-item',
-            icon: '👑',
+            icon: 'crown',
             label: 'Админ-панель',
             action: () => navigation.switchTab('admin'),
             // По Telegram ID: роль владелец может переключать для тестов
@@ -632,14 +626,14 @@ export function appendDrawerNav(container: HTMLElement): void {
     }> = [
         {
             id: 'drawer-profile',
-            icon: '⚙️',
+            icon: 'settings',
             label: 'Настройки',
             action: () => window.goToProfile(),
             show: true,
         },
         {
             id: 'drawer-theme-toggle',
-            icon: '🎨',
+            icon: 'palette',
             label: `Тема: ${themeLabel}`,
             action: () => {
                 const themeManager = window.themeManager;
@@ -661,7 +655,7 @@ export function appendDrawerNav(container: HTMLElement): void {
         },
         {
             id: 'drawer-clear-cache',
-            icon: '🗑️',
+            icon: 'eraser',
             label: 'Очистить кэш',
             action: () => {
                 confirmClearCache(() => {
@@ -680,7 +674,7 @@ export function appendDrawerNav(container: HTMLElement): void {
         el.className = 'drawer-nav-item';
         el.id = item.id;
         el.innerHTML = `
-            <span class="nav-icon">${item.icon}</span>
+            <span class="nav-icon"><i data-lucide="${item.icon}"></i></span>
             ${item.label}
             ${item.id === 'drawer-trash' ? `
                 <span id="drawer-trash-count" class="nav-badge" style="display:none;">0</span>
@@ -703,12 +697,12 @@ export function appendDrawerNav(container: HTMLElement): void {
 
         if (item.id === 'drawer-theme-toggle') {
             el.innerHTML = `
-                <span class="nav-icon">${item.icon}</span>
+                <span class="nav-icon"><i data-lucide="${item.icon}"></i></span>
                 Тема: <span id="drawer-theme-label">${themeLabel}</span>
             `;
         } else {
             el.innerHTML = `
-                <span class="nav-icon">${item.icon}</span>
+                <span class="nav-icon"><i data-lucide="${item.icon}"></i></span>
                 ${item.label}
             `;
         }
@@ -791,9 +785,9 @@ export function initDrawer(): void {
                         <div class="drawer-user-name" id="drawer-user-name">Пользователь</div>
                         <div class="drawer-user-username" id="drawer-user-username">@username</div>
                         <div class="drawer-user-status">
-                            <span class="drawer-user-role" id="drawer-user-role">🔓 Бесплатный</span>
-                            <span class="drawer-coins-badge" id="drawer-coins-badge" onclick="window.goToTasks()">
-                                <i data-lucide="coins" style="width:16px;height:16px;color:var(--app-accent-primary);"></i>
+                            <span class="drawer-user-role" id="drawer-user-role"><i data-lucide="user"></i><span>Бесплатный</span></span>
+                            <span class="drawer-coins-badge" id="drawer-coins-badge" onclick="window.goToEconomy()">
+                                <i data-lucide="coins"></i>
                                 <span class="coin-amount" id="drawer-coins-amount">0</span>
                             </span>
                         </div>
