@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.4.1 - без console.log с устаревшим номером версии
+// Версия: 2.5.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll)
+//          2.4.1 - без console.log с устаревшим номером версии
 //          2.4.0 — шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.3.0 — без пробного периода (activateTrial / trialUsed / is_trial);
 //                  обмен показывается, только если сервер сказал, что он доступен
@@ -101,7 +102,7 @@ export class EconomyModule {
     const premiumUntil = this.userStore.premiumUntil;
 
     this.container.innerHTML = `
-      <div class="economy-container">
+      <div class="economy-container app-scroll">
         <!-- Панель подписки -->
         <div class="subscription-panel">
           <div class="tier-info">
