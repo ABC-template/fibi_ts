@@ -1,7 +1,8 @@
 // ============================================
 // src/config/index.ts
 // Экспорт центрального конфига и всех типов
-// Версия: 3.2.0 - без IBatchRequest
+// Версия: 3.3.0 - без IUsageLimit и IUserStats
+//          3.2.0 - без IBatchRequest
 //          3.1.0 - без IExportRequest / IExportResponse; IExportArchiveMessage
 //          3.0.1 - замена @types → @app-types
 // ============================================
@@ -44,8 +45,6 @@ export type {
   IAppUser,
   IAuthResult,
   IAuthCheckResponse,
-  IUserStats,
-  IUserDevice,
   // Organizer
   IReminder,
   ICreateReminderData,
@@ -74,7 +73,4 @@ export type {
   ICreateChatResponse,
   IChatActionRequest,
   IMessageActionRequest,
-  IUsageLimit,
 } from '@app-types';
-
-console.log('✅ Config v3.1.0 загружен');
