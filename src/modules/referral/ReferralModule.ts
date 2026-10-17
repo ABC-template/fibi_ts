@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 2.4.0 - имя приглашённого (его Telegram username) экранируется; сумма — числом
+// Версия: 2.4.1 - без console.log с устаревшим номером версии
+//          2.4.0 - имя приглашённого (его Telegram username) экранируется; сумма — числом
 //          2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.2.0 - ссылка и список приглашённых загружаются с сервера при открытии
 //          2.1.0 - награду за реферала начисляет только сервер (убрано клиентское начисление),
@@ -9,10 +10,9 @@
 //          2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
-import { referralStore, REFERRAL_TIERS, REFERRAL_REWARD_LIMIT } from './ReferralStore';
+import { referralStore, REFERRAL_TIERS } from './ReferralStore';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
-import { uiRenderer } from '@/modules/ui/renderer';
 import { apiClient } from '@/services/api';
 import { escapeHtml } from '@/utils/html';
 
@@ -23,7 +23,6 @@ export class ReferralModule {
   private eventBus = eventBus;
   private referralStore = referralStore;
   private userStore = userStore;
-  private uiRenderer = uiRenderer;
   
   private userId: number | null = null;
 
@@ -42,7 +41,6 @@ export class ReferralModule {
     void this._syncFromServer();
 
     this.isInitialized = true;
-    console.log('✅ ReferralModule v2.0.0 инициализирован (экономика через EventBus)');
   }
 
   /** Ссылка и список приглашённых — с сервера (источник правды) */
@@ -296,7 +294,6 @@ export class ReferralModule {
             ${REFERRAL_TIERS.map(tier => {
               const isActive = stats.current_tier === tier.name;
               const isCompleted = stats.total > tier.to;
-              const isNext = stats.total >= tier.from && stats.total <= tier.to;
               const isLocked = stats.total < tier.from;
 
               return `
@@ -486,4 +483,3 @@ export class ReferralModule {
 };
 
 (window as any).ReferralModule = ReferralModule;
-console.log('✅ ReferralModule v2.0.0 загружен (экономика через EventBus)');
