@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based) с поддержкой агентов
-// Версия: 6.1.0 — сообщение нельзя удалить, пока в его чате идёт ответ или генерация
+// Версия: 6.1.1 - без console.log с устаревшим номером версии
+//          6.1.0 — сообщение нельзя удалить, пока в его чате идёт ответ или генерация
 //                  (сервер тоже отвечает 409)
 //          6.0.0 — без request-quota — прикрепление текстового файла (attach-file.ts), по тому
 //                  же образцу, что и изображение: короткая пометка в text,
@@ -26,7 +27,6 @@ export class ChatSend {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ ChatSend v6.0.0 загружен (с поддержкой агентов)');
   }
 
   private async _ensureStreamFunction(): Promise<void> {
@@ -382,4 +382,3 @@ export class ChatSend {
 }
 
 export const chatSend = new ChatSend();
-console.log('✅ ChatSend v6.0.0 загружен (с поддержкой агентов)');
