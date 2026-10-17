@@ -1,13 +1,14 @@
 // ============================================
 // api/economy/rules.ts
 // Получение правил (для админки)
-// Версия: 2.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+// Версия: 2.2.0 — limit/offset проверяются (нечисловые и отрицательные значения ломали запрос)
+//          2.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
 //          2.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
+  intParam,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -42,8 +43,8 @@ export default async function handler(request: Request): Promise<Response> {
 
     // 3. Параметры пагинации
     const url = new URL(request.url);
-    const limit = parseInt(url.searchParams.get('limit') || '50', 10);
-    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+    const limit = intParam(url.searchParams.get('limit'), 50, 1, 100);
+    const offset = intParam(url.searchParams.get('offset'), 0, 0, 1_000_000);
 
     // 4. Получаем конфигурацию Supabase
     const config = getSupabaseConfig('service');
@@ -52,7 +53,7 @@ export default async function handler(request: Request): Promise<Response> {
     const result = await supabaseRPC(
       'get_economy_rules',
       {
-        p_limit: Math.min(limit, 100),
+        p_limit: limit,
         p_offset: offset,
       },
       config
