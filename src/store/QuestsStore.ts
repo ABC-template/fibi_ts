@@ -1,7 +1,9 @@
 // ============================================
 // src/store/QuestsStore.ts
 // Хранилище заданий (с ежедневным входом и стриком)
-// Версия: 2.5.0 - submitProof без proofData (доказательство формирует сервер);
+// Версия: 2.6.0 - claim без «бонуса» с клиента (claimWithBonus/bonusAmount удалены: сумму
+//                 награды определяет сервер); результат с success и текстом ошибки
+//          2.5.0 - submitProof без proofData (доказательство формирует сервер);
 //                 в результате ошибки — retryAt (повтор после отказа не раньше чем через 24 ч)
 //          2.4.0 - убраны claimDailyLogin / updateStreak / updateProgress: вызывали
 //                 несуществующие /users/streak и /quests/progress (вход и прогресс
@@ -186,10 +188,10 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   }
 
   // ==========================================
-  // ЗАБРАТЬ НАГРАДУ С БОНУСОМ
+  // ЗАБРАТЬ НАГРАДУ (сумму определяет сервер)
   // ==========================================
 
-  async claimWithBonus(userQuestId: string, bonusAmount: number = 0): Promise<{
+  async claim(userQuestId: string): Promise<{
     success: boolean;
     reward: number;
     newBalance: number;
@@ -200,10 +202,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
     }
 
     try {
-      const result = await apiClient.post('/quests/claim', {
-        userQuestId,
-        bonusAmount,
-      });
+      const result = await apiClient.post('/quests/claim', { userQuestId });
 
       if (result.success) {
         const quest = this._data.quests.find(q => q.user_quest_id === userQuestId);
@@ -221,7 +220,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
           transactionId: result.transactionId || undefined,
         };
         
-        console.log(`💰 [claimWithBonus] Отправляем событие обновления баланса:`, balanceEvent);
         eventBus.emit('economy:balance:updated', balanceEvent);
 
         // ✅ ИСПРАВЛЕНО: используем updateCoinBalance
@@ -249,7 +247,7 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
         error: result.error || 'Unknown error',
       };
     } catch (err) {
-      console.error('❌ [claimWithBonus] Error:', err);
+      console.error('❌ [claim] Error:', err);
       return { success: false, reward: 0, newBalance: 0, error: (err as Error).message };
     }
   }
@@ -303,10 +301,6 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
   // ==========================================
   // ДЕЙСТВИЯ
   // ==========================================
-
-  async claim(userQuestId: string): Promise<{ reward: number } | null> {
-    return this.claimWithBonus(userQuestId, 0);
-  }
 
   async submitProof(userQuestId: string): Promise<ISubmitProofResult> {
     if (!this.userId) return { ok: false, error: 'Ошибка авторизации' };
@@ -438,4 +432,3 @@ export class QuestsStore extends BaseStore<IQuestsCacheData> {
 }
 
 export const questsStore = new QuestsStore();
-console.log('✅ QuestsStore v2.3.0 загружен (исправлены методы EconomyStore)');
