@@ -1,12 +1,13 @@
 // ============================================
 // api/economy/exchange.ts
 // Обмен коинов на токены
-// Версия: 1.0.0
+// Версия: 1.1.0 — количество монет — целое от 1 до 1 000 000 (дробное или строка уходили в
+//                  RPC с integer-параметром и давали 500)
+//          1.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -16,9 +17,8 @@ import {
 
 export const config = { runtime: 'edge' };
 
-interface IExchangeRequest {
-  coins_amount: number;
-}
+/** Верхняя граница одного обмена (дальше — ограничения из настроек в RPC) */
+const MAX_COINS_PER_EXCHANGE = 1_000_000;
 
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
@@ -37,17 +37,16 @@ export default async function handler(request: Request): Promise<Response> {
     const userId = auth.userId!;
     const config = getSupabaseConfig('service');
 
-    let body: IExchangeRequest;
+    let body: any;
     try {
       body = await request.json();
     } catch (err) {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { coins_amount } = body;
-
-    if (!coins_amount || coins_amount <= 0) {
-      return errorResponse('Invalid coins amount (must be > 0)', 400);
+    const coins_amount = Number(body?.coins_amount);
+    if (!Number.isInteger(coins_amount) || coins_amount < 1 || coins_amount > MAX_COINS_PER_EXCHANGE) {
+      return errorResponse('Количество монет — целое число больше нуля', 400);
     }
 
     // Выполняем обмен через RPC
