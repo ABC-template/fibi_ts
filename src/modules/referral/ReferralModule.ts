@@ -1,14 +1,14 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 2.2.0 - ссылка и список приглашённых загружаются с сервера при открытии
+// Версия: 2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+//          2.2.0 - ссылка и список приглашённых загружаются с сервера при открытии
 //          2.1.0 - награду за реферала начисляет только сервер (убрано клиентское начисление),
 //                 баланс — getCoinBalance
 //          2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
 import { referralStore, REFERRAL_TIERS, REFERRAL_REWARD_LIMIT } from './ReferralStore';
-import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
@@ -18,7 +18,6 @@ export class ReferralModule {
   private container: HTMLElement;
   private isInitialized: boolean = false;
   private _subscriptions: Array<() => void> = [];
-  private headerManager = headerManager;
   private eventBus = eventBus;
   private referralStore = referralStore;
   private userStore = userStore;
@@ -34,9 +33,6 @@ export class ReferralModule {
     if (this.isInitialized) return;
 
     this.userId = this.userStore.userId;
-    
-    this.headerManager.setTitle('🤝 Рефералы');
-    this.headerManager.setActions([]);
 
     this._render();
     this._subscribeToEvents();
@@ -115,7 +111,6 @@ export class ReferralModule {
         padding: 16px;
         flex: 1;
         overflow-y: auto;
-        padding-bottom: 80px;
         display: flex;
         flex-direction: column;
         height: 100%;
@@ -444,22 +439,14 @@ export class ReferralModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    this.headerManager.setTitle('🤝 Рефералы');
-    this.headerManager.setActions([]);
     this._updateUI();
 
-    if ((window as any).navigation) {
-      (window as any).navigation.hide();
-    }
   }
 
   hide(): void {
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
 
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
   }
 
   destroy(): void {
