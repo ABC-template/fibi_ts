@@ -1,7 +1,8 @@
 // ============================================
 // src/utils/validators.ts
 // Клиентские валидации
-// Версия: 2.2.0 - sanitizeHTML через utils/html (общие правила, без style/id/img);
+// Версия: 2.2.1 - без console.log с устаревшим номером версии
+//          2.2.0 - sanitizeHTML через utils/html (общие правила, без style/id/img);
 //                 длина сообщения до 100 000 (как на сервере)
 //          2.1.0 - добавлены window
 // ============================================
@@ -93,5 +94,3 @@ export function sanitizeHTML(html: string): string {
 (window as any).isValidFileSize = isValidFileSize;
 (window as any).isValidImageBase64 = isValidImageBase64;
 (window as any).sanitizeHTML = sanitizeHTML;
-
-console.log('✅ Validators v2.1.0 загружен');
