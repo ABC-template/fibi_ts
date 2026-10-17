@@ -1,10 +1,11 @@
 // ============================================
 // api/config.ts
 // Описание: Эндпоинт для получения конфигурации клиентом
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.0.1 - без неиспользуемых импортов и переменных
+//          2.0.0 - TypeScript
 // ============================================
 
-import { corsHeaders, handleCORS, jsonResponse } from './_lib/cors';
+import { handleCORS, jsonResponse } from './_lib/cors';
 
 export const config = { runtime: 'edge' };
 
