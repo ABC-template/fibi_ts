@@ -1,12 +1,13 @@
 // ============================================
 // api/organizer/reminders/get.ts
 // Описание: Получение напоминаний
-// Версия: 2.1.0 - фильтр по разделу: 'all' — все записи, тема — её и общие; тема проверяется
+// Версия: 2.1.1 - без неиспользуемых импортов и переменных
+//          2.1.0 - фильтр по разделу: 'all' — все записи, тема — её и общие; тема проверяется
 //          2.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
 import { isValidTopic } from '../../_lib/validators';
 
