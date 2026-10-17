@@ -1,7 +1,8 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.7.0 - убраны неиспользуемые глобальные переменные config.ts, updateLimitDisplay,
+// Версия: 2.8.0 - goToTasks → goToEconomy; убран updateRealtimeIndicator
+//          2.7.0 - убраны неиспользуемые глобальные переменные config.ts, updateLimitDisplay,
 //                 событие economy:earn
 //          2.6.0 - убран downloadMultiPartArchive (локальный архив собирается на устройстве)
 //          2.5.0 - убраны события economy:spend и economy:error
@@ -42,10 +43,9 @@ declare global {
         openChat: (chatId: UUID, topic: TopicId) => void;
         goToChatList: () => void;
         goToProfile: () => void;
-        goToTasks: () => void;
+        goToEconomy: () => void;
         fullDataReload: () => Promise<boolean>;
         refreshSyncToken: () => Promise<string | null>;
-        updateRealtimeIndicator: (status: 'connected' | 'connecting' | 'offline' | 'syncing') => void;
         showBetaAlert: () => void;
         initExportButtons: () => void;
 
