@@ -1,7 +1,8 @@
 // ============================================
 // src/ui/drawer.ts
 // ВСЁ о сайдбаре (обновлен для экономики и агентов)
-// Версия: 3.0.0 — фильтр чатов по агентам (список с сервера вместо зашитых тем, чаты —
+// Версия: 3.0.1 - без console.log с устаревшим номером версии
+//          3.0.0 — фильтр чатов по агентам (список с сервера вместо зашитых тем, чаты —
 //                  по agent_id); у агента без чатов — кнопка «Создать чат»; без чатов
 //                  вообще — «Выбрать агента»; из меню убраны «ИИ-агенты» и «Задания»
 //                  (есть в нижнем меню)
@@ -39,7 +40,6 @@ const MAX_PINNED_CHATS = 10;
 let drawerFilter: string = 'all';
 /** Список агентов в фильтре уже отрисован по этим id (перерисовка — только при изменении) */
 let renderedAgentKey = '';
-let activeChatMenu: HTMLElement | null = null;
 
 export function openDrawer(): void {
     const overlay = document.getElementById('drawer-overlay');
@@ -92,7 +92,6 @@ export function renderChatsInDrawer(): void {
     const container = document.getElementById('drawer-chats-list');
     if (!container) return;
 
-    const existingNav = container.querySelector('.drawer-nav-bottom');
     container.innerHTML = '';
 
     const agents = filterAgents();
@@ -238,7 +237,6 @@ function createEmptyState(agent: IPublicAgent | null): HTMLElement {
 }
 
 function collectChats(): any[] {
-    const allChats: any[] = [];
     const pinnedChats: any[] = [];
     const unpinnedChats: any[] = [];
 
@@ -364,7 +362,6 @@ function createChatMenu(chatId: string, chatTitle: string, isPinned: boolean): H
             if (!isOpen) {
                 menu.classList.add('open');
                 positionChatMenu(this, menu);
-                activeChatMenu = menu;
             }
         }
     });
@@ -403,9 +400,6 @@ export function toggleChatMenu(chatId: string, container: HTMLElement): void {
         if (button) {
             positionChatMenu(button, menu);
         }
-        activeChatMenu = menu;
-    } else {
-        activeChatMenu = null;
     }
 }
 
@@ -419,7 +413,6 @@ export function closeAllChatMenus(): void {
         el.style.overflowY = '';
         el.style.transformOrigin = '';
     });
-    activeChatMenu = null;
 }
 
 export function handleChatAction(action: string, chatId: string, chatTitle: string, isPinned: boolean): void {
@@ -851,5 +844,3 @@ export function setupDrawerEventListeners(): void {
 (window as any).togglePinChat = togglePinChat;
 (window as any).renameChatFromDrawer = renameChatFromDrawer;
 (window as any).deleteChatFromDrawer = deleteChatFromDrawer;
-
-console.log('✅ drawer.ts v2.10.0 загружен');
