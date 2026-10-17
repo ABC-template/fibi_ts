@@ -1,13 +1,14 @@
 // ============================================
 // api/organizer/trackers/delete-log.ts
 // Описание: Удаление лога из трекера
-// Версия: 2.0.0 - TypeScript
+// Версия: 2.0.1 - без неиспользуемых импортов и переменных
+//          2.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch } from '../../_lib/supabase-client';
-import { isValidUUID, validateUUID } from '../../_lib/validators';
+import { validateUUID } from '../../_lib/validators';
 
 export const config = { runtime: 'edge' };
 
