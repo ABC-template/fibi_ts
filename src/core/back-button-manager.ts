@@ -1,7 +1,8 @@
 // ============================================
 // src/core/back-button-manager.ts
 // Управление системной кнопкой «Назад» Telegram
-// Версия: 6.2.0 - без особого случая для игр: открытая игра — слой в стеке навигации
+// Версия: 6.2.1 - без console.log с устаревшим номером версии
+//          6.2.0 - без особого случая для игр: открытая игра — слой в стеке навигации
 //                 (её закрывает «Назад» через NavigationState, как модалки и просмотрщик)
 //          6.1.0 - обновлена логика
 // ============================================
@@ -63,7 +64,6 @@ export class BackButtonManager {
 
     setTimeout(() => this._update(), 100);
 
-    console.log('✅ BackButtonManager v6.1.0 инициализирован');
   }
 
   private _update(): void {
@@ -129,4 +129,3 @@ export class BackButtonManager {
 }
 
 export const backButtonManager = new BackButtonManager();
-console.log('✅ BackButtonManager v6.1.0 загружен');
