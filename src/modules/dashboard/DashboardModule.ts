@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/dashboard/DashboardModule.ts
 // Главная страница (заглушка)
-// Версия: 2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+// Версия: 2.3.1 - без console.log с устаревшим номером версии
+//          2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.2.0 - плитки «Чат AI» → раздел «Агенты», «Избранное» → окно избранного
 //                 (вели в удалённый раздел chat-list)
 //          2.1.0 - исправлен импорт
@@ -9,7 +10,6 @@
 
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
-import { questsStore } from '@/store/QuestsStore';
 
 export class DashboardModule {
   private container: HTMLElement;
@@ -17,7 +17,6 @@ export class DashboardModule {
   private _subscriptions: Array<() => void> = [];
   private eventBus = eventBus;
   private chatStore = chatStore;
-  private questsStore = questsStore;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -90,7 +89,6 @@ export class DashboardModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ DashboardModule v2.1.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -171,4 +169,3 @@ export class DashboardModule {
 
 // Экспортируем класс в глобальный объект для регистрации в ModuleLoader
 (window as any).DashboardModule = DashboardModule;
-console.log('✅ DashboardModule v2.1.0 загружен');
