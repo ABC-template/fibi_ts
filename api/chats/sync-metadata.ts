@@ -1,13 +1,14 @@
 // ============================================
 // api/chats/sync-metadata.ts
 // Описание: Получение метаданных чатов для синхронизации
-// Версия: 3.1.0 - чаты и избранное страницами по 1000 (раньше обрезалось на 1000);
+// Версия: 3.1.1 - без неиспользуемых импортов и переменных
+//          3.1.0 - чаты и избранное страницами по 1000 (раньше обрезалось на 1000);
 //                 избранное фильтруется через связь с чатом, а не списком id в адресе
 //          3.0.0 - TypeScript
 // ============================================
 
 import { authenticate } from '../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, canUserSync } from '../_lib/supabase-client';
 
 export const config = { runtime: 'edge' };
