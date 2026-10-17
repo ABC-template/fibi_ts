@@ -1,7 +1,8 @@
 // ============================================
 // api/chats/actions/favorite.ts
 // Описание: Управление избранными сообщениями с sync_token
-// Версия: 3.1.0 - отметка «избранное» в облаке — только с синхронизацией (can_sync), как
+// Версия: 3.1.1 - без неиспользуемых импортов и переменных
+//          3.1.0 - отметка «избранное» в облаке — только с синхронизацией (can_sync), как
 //                 остальные изменения чатов
 //          3.0.0 - TypeScript
 // ============================================
@@ -9,7 +10,7 @@
 import { authenticate } from '../../_lib/auth';
 import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken, canUserSync } from '../../_lib/supabase-client';
-import { isValidUUID, validateUUID } from '../../_lib/validators';
+import { validateUUID } from '../../_lib/validators';
 
 export const config = { runtime: 'edge' };
 
