@@ -1,9 +1,11 @@
 // ============================================
 // types/generation.ts
 // Типы для генеративных агентов (image / video / audio)
+// Версия: 1.1.0 - IGenerationPricing без energy_per_usd (курс — в настройках экономики);
+//                 без неиспользуемого импорта ISODateString
 // ============================================
 
-import type { UUID, ISODateString } from './common';
+import type { UUID } from './common';
 import type { IAgentName } from './agents';
 
 /** Модальность генерации */
