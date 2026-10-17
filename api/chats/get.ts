@@ -1,13 +1,14 @@
 // ============================================
 // api/chats/get.ts
 // Описание: Получение чата с сообщениями (с user_uuid)
-// Версия: 4.0.0 - добавлен pinned
+// Версия: 4.0.1 - без неиспользуемых импортов и переменных
+//          4.0.0 - добавлен pinned
 // ============================================
 
 import { authenticate } from '../_lib/auth';
 import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, getUserUuid } from '../_lib/supabase-client';
-import { isValidUUID, validateUUID } from '../_lib/validators';
+import { isValidUUID } from '../_lib/validators';
 
 export const config = { runtime: 'edge' };
 
