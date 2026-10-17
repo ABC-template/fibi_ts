@@ -1,13 +1,21 @@
 // ============================================
 // src/modules/games/GamesModule.ts
 // Модуль игр (контейнер) с полноэкранным режимом
-// Версия: 6.2.0 - исправлен импорт
+// Версия: 6.3.0 - открытая игра — слой в стеке навигации: «Назад» Telegram закрывает игру
+//                 (раньше закрывались и игра, и раздел — два обработчика одной кнопки);
+//                 нижнее меню скрывается на время игры через navigation.setVisible;
+//                 шапку не трогает (рамку экрана ведёт ModuleLoader); уход из раздела
+//                 закрывает игру через closeGame
+//          6.2.0 - исправлен импорт
 // ============================================
 
-import { headerManager } from '@/core/header-manager';
 import { navigationState } from '@/core/navigation-state';
+import { navigation } from '@/core/navigation';
 import { eventBus } from '@/core/event-bus';
 import { questsStore } from '@/store/QuestsStore';
+
+/** Открытая игра в стеке слоёв навигации («Назад» закрывает её) */
+const GAME_LAYER_ID = 'game';
 
 export class GamesModule {
   private container: HTMLElement;
@@ -21,7 +29,6 @@ export class GamesModule {
   private _gameTitle: HTMLElement | null = null;
   private _isFullscreen: boolean = false;
   private _isLoadingGame: boolean = false;
-  private headerManager = headerManager;
   private navigationState = navigationState;
   private eventBus = eventBus;
   private questsStore = questsStore;
@@ -36,9 +43,6 @@ export class GamesModule {
     if (this.isInitialized) return;
 
     (window as any).gamesModule = this;
-
-    this.headerManager.setTitle(null);
-    this.headerManager.setActions([]);
 
     this._render();
     this._subscribeToEvents();
@@ -71,7 +75,7 @@ export class GamesModule {
 
   private _render(): void {
     this.container.innerHTML = `
-      <div style="padding: 16px; flex:1; overflow-y:auto; padding-bottom: 80px;">
+      <div style="padding: 16px; flex:1; overflow-y:auto;">
         <h2 style="font-size:18px; font-weight:700; margin:0 0 16px 0; color:var(--app-text-primary); display:flex; align-items:center; gap:8px;">
           <i data-lucide="gamepad-2" style="width:24px;height:24px;"></i>
           Игры
@@ -151,9 +155,7 @@ export class GamesModule {
       header.classList.add('hidden');
     }
 
-    if ((window as any).navigation) {
-      (window as any).navigation.hide();
-    }
+    navigation.setVisible(false);
 
     if (this._gameContainer) {
       this._gameContainer.style.position = 'fixed';
@@ -183,9 +185,7 @@ export class GamesModule {
       header.classList.remove('hidden');
     }
 
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
+    navigation.setVisible(true);
 
     if (this._gameContainer) {
       this._gameContainer.style.position = '';
@@ -301,21 +301,8 @@ export class GamesModule {
       this._mode = 'game';
       this._currentGameId = gameId;
 
-      this.headerManager.setTitle(gameName);
-      this.headerManager.setActions([]);
-
       this._enterFullscreen();
-
-      if (this.navigationState) {
-        (this.navigationState as any)._state.params = {
-          ...(this.navigationState as any)._state.params,
-          gameMode: 'game',
-          gameId: gameId
-        };
-        (this.navigationState as any)._updateBackButton();
-      }
-
-      this.eventBus.emit('games:mode_changed', { mode: 'game', gameId }, this);
+      this.navigationState.toggleModal(true, GAME_LAYER_ID);
 
       console.log(`✅ Игра ${gameId} открыта в полноэкранном режиме`);
     } catch (err) {
@@ -349,22 +336,9 @@ export class GamesModule {
       this._gameContent.innerHTML = '';
     }
 
-    this.headerManager.setTitle(null);
-    this.headerManager.setActions([]);
-
     this._mode = 'list';
     this._currentGameId = null;
-
-    if (this.navigationState) {
-      (this.navigationState as any)._state.params = {
-        ...(this.navigationState as any)._state.params,
-        gameMode: 'list',
-        gameId: null
-      };
-      (this.navigationState as any)._updateBackButton();
-    }
-
-    this.eventBus.emit('games:mode_changed', { mode: 'list' }, this);
+    this.navigationState.toggleModal(false, GAME_LAYER_ID);
 
     this._updateHighScores();
 
@@ -377,8 +351,9 @@ export class GamesModule {
     }, this);
     this._subscriptions.push(unsubScore);
 
-    const unsubNav = this.eventBus.on('navigation:go_back', () => {
-      if (this._mode === 'game' && this._gameInstance) {
+    // «Назад» Telegram: NavigationState снял слой игры — закрываем её
+    const unsubNav = this.eventBus.on('modal:state_changed', (data) => {
+      if (data?.action === 'back' && data.modalId === GAME_LAYER_ID && this._mode === 'game') {
         this.closeGame();
       }
     }, this);
@@ -406,69 +381,19 @@ export class GamesModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    if (this._mode === 'game' && this._currentGameId) {
-      const gameNames: Record<string, string> = {
-        tetris: '🧩 Тетрис',
-        sudoku: '🧩 Судоку',
-        snake: '🐍 Змейка',
-        hangman: '💀 Виселица'
-      };
-      this.headerManager.setTitle(gameNames[this._currentGameId] || 'Игра');
-      this.headerManager.setActions([]);
-      if (!this._isFullscreen) {
-        this._enterFullscreen();
-      }
-    } else {
-      this.headerManager.setTitle(null);
-      this.headerManager.setActions([]);
-      if (this._isFullscreen) {
-        this._exitFullscreen();
-      }
-    }
-
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
-
     this._updateHighScores();
   }
 
+  /** Уход из раздела закрывает игру (она живёт только на экране игр) */
   hide(): void {
-    if (this._mode === 'game' && this._gameInstance) {
-      try {
-        this._gameInstance.destroy();
-      } catch (err) {
-        console.warn('⚠️ Ошибка при уничтожении игры:', err);
-      }
-      this._gameInstance = null;
-      this._mode = 'list';
-      this._currentGameId = null;
-
-      this._exitFullscreen();
-
-      if (this._gameContainer) {
-        this._gameContainer.style.display = 'none';
-      }
-      if (this._gameContent) {
-        this._gameContent.innerHTML = '';
-      }
-    }
+    if (this._mode === 'game') this.closeGame();
 
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
   }
 
   destroy(): void {
-    if (this._gameInstance) {
-      try {
-        this._gameInstance.destroy();
-      } catch (err) {
-        console.warn('⚠️ Ошибка при уничтожении игры:', err);
-      }
-      this._gameInstance = null;
-    }
-
-    this._exitFullscreen();
+    if (this._mode === 'game') this.closeGame();
 
     for (const unsub of this._subscriptions) {
       try {
