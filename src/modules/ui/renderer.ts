@@ -1,7 +1,11 @@
 // ============================================
 // src/modules/ui/renderer.ts
 // Базовый рендеринг UI-элементов
-// Версия: 4.4.0 - удалены остатки старого лимита запросов (_updateLimitDisplay и подписки)
+// Версия: 4.5.0 - время под сообщениями: у ответа ИИ кнопки (копировать, поделиться,
+//                 избранное, удалить) слева, время справа; запрос пользователя — пузырь и
+//                 под ним строка шириной с пузырь: слева «удалить», справа время;
+//                 блок сообщения хранит дату (data-ts / data-day) для разделителей дней
+//          4.4.0 - удалены остатки старого лимита запросов (_updateLimitDisplay и подписки)
 //          4.3.0 - текст сообщения лежит в .msg-content, кнопки действий — рядом, отдельно:
 //                 обновление текста (стрим, Realtime) их больше не стирает;
 //                 fillAIContent / createMessageActions — общие для чата, стрима и патчера
@@ -11,6 +15,7 @@
 // ============================================
 import './ui.css';
 import { renderMarkdown, sanitizeRichHtml, escapeHtml } from '@/utils/html';
+import { dayKey, formatDayLabel, formatMessageTime } from '@/utils/chat-time';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
 import type { MessageType, UUID } from '@app-types';
@@ -63,20 +68,24 @@ export class UIRenderer {
     text: string,
     type: MessageType,
     msgId: UUID | null = null,
-    isFavorite: boolean = false
+    isFavorite: boolean = false,
+    createdAt: string | null = null
   ): HTMLElement | null {
     const container = document.getElementById('chat-container');
     if (!container) return null;
 
     const finalMsgId = msgId || this.chatStore.generateUUID();
+    const time = createdAt || new Date().toISOString();
     const msgDiv = document.createElement('div');
-    msgDiv.className = `msg ${type} msg-animated`;
     msgDiv.id = `msg-block-${finalMsgId}`;
+    this.stampBlock(msgDiv, time);
 
     if (type === 'ai-msg') {
-      this.renderAIMessage(msgDiv, text, finalMsgId, isFavorite);
+      msgDiv.className = 'msg ai-msg msg-animated';
+      this.renderAIMessage(msgDiv, text, finalMsgId, isFavorite, time);
     } else {
-      this.renderUserMessage(msgDiv, text, finalMsgId);
+      msgDiv.className = 'msg-block user-block';
+      this.renderUserMessage(msgDiv, text, finalMsgId, time);
     }
 
     container.appendChild(msgDiv);
@@ -84,17 +93,42 @@ export class UIRenderer {
     return msgDiv;
   }
 
+  /** Дата сообщения на блоке: по ней ставятся разделители дней */
+  stampBlock(block: HTMLElement, createdAt: string): void {
+    block.dataset.ts = createdAt;
+    block.dataset.day = dayKey(createdAt);
+  }
+
+  /** Разделитель дня в ленте: «Сегодня», «Вчера», «15 октября» */
+  createDaySeparator(createdAt: string): HTMLElement {
+    const sep = document.createElement('div');
+    sep.className = 'chat-day-sep';
+    sep.dataset.day = dayKey(createdAt);
+    const label = document.createElement('span');
+    label.textContent = formatDayLabel(createdAt);
+    sep.appendChild(label);
+    return sep;
+  }
+
+  private _createTime(createdAt: string): HTMLElement {
+    const time = document.createElement('span');
+    time.className = 'msg-time';
+    time.textContent = formatMessageTime(createdAt);
+    time.title = new Date(createdAt).toLocaleString('ru-RU');
+    return time;
+  }
+
   // ==========================================
   // AI СООБЩЕНИЕ — кнопки для ВСЕХ сообщений
   // ==========================================
 
-  renderAIMessage(container: HTMLElement, text: string, msgId: UUID, isFavorite: boolean): void {
+  renderAIMessage(container: HTMLElement, text: string, msgId: UUID, isFavorite: boolean, createdAt: string): void {
     const contentDiv = this.createAIContent();
     this.fillAIContent(contentDiv, text);
     container.appendChild(contentDiv);
 
     // Кнопки действий для всех AI-сообщений
-    container.appendChild(this.createMessageActions(msgId, isFavorite));
+    container.appendChild(this.createMessageActions(msgId, isFavorite, createdAt));
   }
 
   /** Блок текста ответа ИИ (.msg-content) — его обновляют стрим и патчер */
@@ -135,45 +169,51 @@ export class UIRenderer {
   }
 
   // ==========================================
-  // USER СООБЩЕНИЕ
+  // USER СООБЩЕНИЕ: пузырь и под ним строка «удалить … время» шириной с пузырь
   // ==========================================
 
-  renderUserMessage(container: HTMLElement, text: string, msgId: UUID): void {
+  renderUserMessage(container: HTMLElement, text: string, msgId: UUID, createdAt: string): void {
+    const bubble = document.createElement('div');
+    bubble.className = 'msg user-msg';
     const textSpan = document.createElement('span');
     textSpan.className = 'msg-content';
     textSpan.textContent = text;
-    container.appendChild(textSpan);
+    bubble.appendChild(textSpan);
+    container.appendChild(bubble);
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'action-btn msg-delete-btn';
+    delBtn.className = 'action-btn msg-meta-btn action-btn-danger';
     delBtn.dataset.action = 'delete-message';
     delBtn.dataset.msgId = msgId;
-    delBtn.style.cssText = 'background:transparent; border:none; outline:none; cursor:pointer; margin-left:8px; opacity:0.4; padding:0; vertical-align:middle;';
-    delBtn.innerHTML = '<i data-lucide="trash-2" style="width:16px;height:16px;"></i>';
-    container.appendChild(delBtn);
+    delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+    meta.appendChild(delBtn);
+    meta.appendChild(this._createTime(createdAt));
+    container.appendChild(meta);
 
-    setTimeout(() => {
-      if (typeof (window as any).lucide !== 'undefined') {
-        (window as any).lucide.createIcons();
-      }
-    }, 50);
+    this._refreshIcons();
   }
 
   // ==========================================
-  // КНОПКИ ДЕЙСТВИЙ
+  // КНОПКИ ДЕЙСТВИЙ ОТВЕТА: слева кнопки, справа время
   // ==========================================
 
-  createMessageActions(msgId: UUID, isFavorite: boolean): HTMLElement {
+  createMessageActions(msgId: UUID, isFavorite: boolean, createdAt: string): HTMLElement {
     const actions = document.createElement('div');
     actions.className = 'msg-actions';
-    
+
+    const group = document.createElement('div');
+    group.className = 'msg-actions-group';
+
     const copyBtn = document.createElement('button');
     copyBtn.className = 'action-btn';
     copyBtn.dataset.action = 'copy-message';
     copyBtn.dataset.msgId = msgId;
     copyBtn.dataset.tooltip = '📋';
     copyBtn.innerHTML = '<i data-lucide="copy"></i>';
-    actions.appendChild(copyBtn);
+    group.appendChild(copyBtn);
 
     const shareBtn = document.createElement('button');
     shareBtn.className = 'action-btn';
@@ -181,31 +221,36 @@ export class UIRenderer {
     shareBtn.dataset.msgId = msgId;
     shareBtn.dataset.tooltip = '🔗';
     shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
-    actions.appendChild(shareBtn);
+    group.appendChild(shareBtn);
 
     const favBtn = document.createElement('button');
     favBtn.className = `action-btn ${isFavorite ? 'is-favorite' : ''}`;
     favBtn.dataset.action = 'toggle-favorite';
     favBtn.dataset.msgId = msgId;
     favBtn.dataset.isFavorite = String(isFavorite);
-    favBtn.innerHTML = `<i data-lucide="${isFavorite ? 'heart' : 'heart'}"></i>`;
-    actions.appendChild(favBtn);
+    favBtn.innerHTML = '<i data-lucide="heart"></i>';
+    group.appendChild(favBtn);
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'action-btn';
+    delBtn.className = 'action-btn action-btn-danger';
     delBtn.dataset.action = 'delete-message';
     delBtn.dataset.msgId = msgId;
-    delBtn.style.cssText = 'margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;';
     delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
-    actions.appendChild(delBtn);
+    group.appendChild(delBtn);
 
+    actions.appendChild(group);
+    actions.appendChild(this._createTime(createdAt));
+
+    this._refreshIcons();
+    return actions;
+  }
+
+  private _refreshIcons(): void {
     setTimeout(() => {
       if (typeof (window as any).lucide !== 'undefined') {
         (window as any).lucide.createIcons();
       }
     }, 50);
-
-    return actions;
   }
 
   /** Очистка готового HTML; без DOMPurify — HTML показывается как текст */
