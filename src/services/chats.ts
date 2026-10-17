@@ -1,7 +1,8 @@
 // ============================================
 // src/services/chats.ts
 // CRUD операции с чатами
-// Версия: 3.8.0 - диалог ошибки выгрузки без innerHTML и inline onclick (самоXSS через название чата)
+// Версия: 3.8.1 - без console.log с устаревшим номером версии
+//          3.8.0 - диалог ошибки выгрузки без innerHTML и inline onclick (самоXSS через название чата)
 //          3.7.0 - sync_token с привязкой к Telegram ID (user-storage); удалены флаги upload_*
 //          3.6.0 - «Отменить» при выгрузке больше не «откатывает»: откат удалял и чаты,
 //                 которые уже были в облаке, и не работал (удаление навсегда требует
@@ -946,4 +947,3 @@ export class ChatService {
 }
 
 export const chatService = new ChatService();
-console.log('✅ ChatService v3.4.0 загружен');
