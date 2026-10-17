@@ -2,9 +2,15 @@
 // api/_lib/openrouter-media.ts
 // Клиент отдельных медиа-API OpenRouter:
 //   видео  — POST /videos (асинхронное задание), GET /videos/{id}, скачивание;
-//   фото   — POST /images (синхронно, b64_json).
+//   фото   — POST /images (синхронно, b64_json);
+//   аудио  — POST /audio/speech (озвучка, готовый файл) и POST /chat/completions
+//            с modalities ['text','audio'] (музыка и аудио-ответы, поток base64).
 // Плюс перевод параметров формы в поля API и оценка цены в $.
-// Версия: 1.1.0 — энергия считается в energy-pricing.ts по общему курсу из настроек
+// Версия: 1.2.0 — аудио: generateSpeech / generateChatAudio, определение формата по
+//                  содержимому (mp3 / wav / ogg / flac), сырой pcm16 → WAV; цена озвучки
+//                  за символ (per_char) и музыки за запрос (per_request); фактическая цена
+//                  озвучки — по X-Generation-Id из GET /generation
+//          1.1.0 — энергия считается в energy-pricing.ts по общему курсу из настроек
 //                  (energy_per_usd в прайсе агента больше не используется; удалён energyForUsd)
 //          1.0.0
 // ============================================
@@ -310,11 +316,274 @@ export async function downloadVideo(
 }
 
 // ============================================
+// Аудио: POST /audio/speech и POST /chat/completions (modalities audio)
+// ============================================
+
+export interface IAudioResult {
+  item: { bytes: Uint8Array; mime: string };
+  costUsd: number | null;
+}
+
+export interface IAudioOutput {
+  /** Что просим у модели */
+  format: string;
+  /** Для сырого pcm16: частота и каналы WAV-заголовка */
+  sampleRate: number;
+  channels: number;
+}
+
+const SPEECH_API_PARAMS = ['voice', 'speed', 'instructions'];
+
+/** Формат по первым байтам файла (null — не похоже ни на один контейнер) */
+function sniffAudioMime(bytes: Uint8Array): string | null {
+  const ascii = (from: number, len: number) =>
+    String.fromCharCode(...Array.from(bytes.subarray(from, from + len)));
+  if (bytes.length < 12) return null;
+  if (ascii(0, 3) === 'ID3' || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0)) return 'audio/mpeg';
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WAVE') return 'audio/wav';
+  if (ascii(0, 4) === 'OggS') return 'audio/ogg';
+  if (ascii(0, 4) === 'fLaC') return 'audio/flac';
+  return null;
+}
+
+/** Сырой PCM 16 бит → WAV (заголовок 44 байта) */
+function pcm16ToWav(pcm: Uint8Array, sampleRate: number, channels: number): Uint8Array {
+  const out = new Uint8Array(44 + pcm.length);
+  const view = new DataView(out.buffer);
+  const text = (at: number, value: string) => {
+    for (let i = 0; i < value.length; i++) out[at + i] = value.charCodeAt(i);
+  };
+  const blockAlign = channels * 2;
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.length, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  text(36, 'data');
+  view.setUint32(40, pcm.length, true);
+  out.set(pcm, 44);
+  return out;
+}
+
+/** Байты ответа модели → файл: известный контейнер как есть, pcm16 — в WAV */
+function toAudioFile(bytes: Uint8Array, output: IAudioOutput): { bytes: Uint8Array; mime: string } {
+  if (bytes.length === 0) throw new Error('Модель вернула пустой звук');
+  if (bytes.length > MEDIA_LIMITS.outputMaxBytes) throw new Error('Аудио слишком большое');
+  const mime = sniffAudioMime(bytes);
+  // Сырой PCM может случайно начинаться как кадр mp3 (0xFF 0xE…): при pcm16 верим только WAV-заголовку
+  if (output.format === 'pcm16' || output.format === 'pcm') {
+    if (mime === 'audio/wav') return { bytes, mime };
+    return { bytes: pcm16ToWav(bytes, output.sampleRate, output.channels), mime: 'audio/wav' };
+  }
+  if (mime) return { bytes, mime };
+  throw new Error(`Неизвестный формат аудио от модели (ожидался ${output.format})`);
+}
+
+/** Фактическая цена запроса по его id (GET /generation); статистика появляется с задержкой */
+async function generationCost(id: string | null, key: string): Promise<number | null> {
+  if (!id) return null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const res = await fetch(`${OPENROUTER}/generation?id=${encodeURIComponent(id)}`, { headers: headers(key) });
+      if (res.ok) {
+        const cost = Number((await res.json())?.data?.total_cost);
+        if (Number.isFinite(cost) && cost > 0) return cost;
+      }
+    } catch {
+      // повторим
+    }
+  }
+  return null;
+}
+
+/** Озвучка текста: POST /audio/speech, в ответ — файл (mp3) */
+export async function generateSpeech(opts: {
+  model: string;
+  text: string;
+  params: Record<string, any>;
+}): Promise<IAudioResult> {
+  const keys = routerKeys();
+  if (keys.length === 0) throw new Error('Server keys not configured');
+
+  const body: Record<string, any> = { model: opts.model, input: opts.text, response_format: 'mp3' };
+  for (const k of SPEECH_API_PARAMS) {
+    if (opts.params[k] !== undefined && opts.params[k] !== '') body[k] = opts.params[k];
+  }
+  if (body.speed !== undefined) body.speed = Number(body.speed);
+
+  let lastError = 'Speech generation failed';
+  for (const { key } of keys) {
+    // Другой ключ пробуем только если запрос не принят; принятый (и оплаченный) не повторяем
+    let res: Response;
+    try {
+      res = await fetch(`${OPENROUTER}/audio/speech`, {
+        method: 'POST',
+        headers: headers(key),
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      lastError = (e as Error).message;
+      continue;
+    }
+    if (!res.ok) {
+      const txt = await res.text();
+      lastError = `OpenRouter ${res.status}: ${txt.substring(0, 200)}`;
+      if (res.status === 400 || res.status === 422) break;
+      continue;
+    }
+
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > MEDIA_LIMITS.outputMaxBytes) throw new Error('Аудио слишком большое');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const item = toAudioFile(bytes, { format: 'mp3', sampleRate: 24000, channels: 1 });
+    const costUsd = await generationCost(res.headers.get('x-generation-id'), key);
+    return { item, costUsd };
+  }
+  throw new Error(lastError);
+}
+
+/** Декодер base64 по кускам: куски потока не выровнены по 4 символа */
+class Base64Collector {
+  private tail = '';
+  private parts: Uint8Array[] = [];
+  private size = 0;
+
+  push(chunk: string): void {
+    const text = this.tail + chunk.replace(/\s+/g, '');
+    const cut = text.length - (text.length % 4);
+    this.tail = text.slice(cut);
+    if (cut === 0) return;
+    const part = base64ToBytes(text.slice(0, cut));
+    this.size += part.length;
+    if (this.size > MEDIA_LIMITS.outputMaxBytes) throw new Error('Аудио слишком большое');
+    this.parts.push(part);
+  }
+
+  bytes(): Uint8Array {
+    if (this.tail) {
+      const part = base64ToBytes(this.tail.padEnd(Math.ceil(this.tail.length / 4) * 4, '='));
+      this.parts.push(part);
+      this.size += part.length;
+      this.tail = '';
+    }
+    const out = new Uint8Array(this.size);
+    let at = 0;
+    for (const p of this.parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  }
+}
+
+/**
+ * Музыка и аудио-ответы: POST /chat/completions с modalities ['text','audio'] и stream
+ * (звук приходит только потоком: choices[0].delta.audio.data — куски base64)
+ */
+export async function generateChatAudio(opts: {
+  model: string;
+  prompt: string;
+  systemPrompt: string | null;
+  params: Record<string, any>;
+  output: IAudioOutput;
+}): Promise<IAudioResult> {
+  const keys = routerKeys();
+  if (keys.length === 0) throw new Error('Server keys not configured');
+
+  const audio: Record<string, any> = { format: opts.output.format };
+  if (opts.params.voice) audio.voice = String(opts.params.voice);
+  const messages: Array<{ role: string; content: string }> = [];
+  if (opts.systemPrompt) messages.push({ role: 'system', content: opts.systemPrompt });
+  messages.push({ role: 'user', content: opts.prompt });
+
+  const body = { model: opts.model, messages, modalities: ['text', 'audio'], audio, stream: true };
+
+  let lastError = 'Audio generation failed';
+  for (const { key } of keys) {
+    // Другой ключ пробуем только если запрос не принят; начатую генерацию не повторяем
+    let res: Response;
+    try {
+      res = await fetch(`${OPENROUTER}/chat/completions`, {
+        method: 'POST',
+        headers: headers(key),
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      lastError = (e as Error).message;
+      continue;
+    }
+    if (!res.ok || !res.body) {
+      const txt = await res.text();
+      lastError = `OpenRouter ${res.status}: ${txt.substring(0, 200)}`;
+      if (res.status === 400 || res.status === 422) break;
+      continue;
+    }
+    return readAudioStream(res.body, opts.output);
+  }
+  throw new Error(lastError);
+}
+
+/** Поток SSE чата: склеивает куски звука (delta.audio.data), берёт usage.cost */
+async function readAudioStream(stream: ReadableStream<Uint8Array>, output: IAudioOutput): Promise<IAudioResult> {
+  const collector = new Base64Collector();
+  let costUsd: number | null = null;
+  let streamError: string | null = null;
+
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') return;
+    let json: any;
+    try {
+      json = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (json?.error) {
+      streamError = String(json.error?.message || json.error);
+      return;
+    }
+    const delta = json?.choices?.[0]?.delta;
+    const piece = typeof delta?.audio === 'string' ? delta.audio : delta?.audio?.data;
+    if (typeof piece === 'string' && piece) collector.push(piece);
+    const cost = Number(json?.usage?.cost);
+    if (Number.isFinite(cost) && cost > 0) costUsd = cost;
+  };
+
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl = buffer.indexOf('\n');
+    while (nl !== -1) {
+      handleLine(buffer.slice(0, nl));
+      buffer = buffer.slice(nl + 1);
+      nl = buffer.indexOf('\n');
+    }
+  }
+  if (buffer) handleLine(buffer);
+
+  if (streamError) throw new Error(streamError);
+  return { item: toAudioFile(collector.bytes(), output), costUsd };
+}
+
+// ============================================
 // Цена и энергия
 // ============================================
 
 export interface IPricing {
-  kind: 'per_second' | 'per_image';
+  kind: 'per_second' | 'per_image' | 'per_char' | 'per_request';
   prices?: Record<string, number>;
   /** Цена за секунду со звуком (если у модели она другая) */
   audio_prices?: Record<string, number>;
@@ -323,7 +592,7 @@ export interface IPricing {
 
 export function readPricing(gen: any): IPricing | null {
   const p = gen?.pricing;
-  if (!p || (p.kind !== 'per_second' && p.kind !== 'per_image')) return null;
+  if (!p || !['per_second', 'per_image', 'per_char', 'per_request'].includes(p.kind)) return null;
   return p as IPricing;
 }
 
@@ -341,9 +610,15 @@ function perSecondUsd(p: any, params: Record<string, any>): number {
   return options.length ? Math.max(...options) : NaN;
 }
 
-/** Оценка стоимости запроса в долларах по прайсу из generation_config */
-export function estimateUsd(pricing: IPricing | null, params: Record<string, any>): number | null {
+/** Оценка стоимости запроса в долларах по прайсу из generation_config (prompt — для цены за символ) */
+export function estimateUsd(pricing: IPricing | null, params: Record<string, any>, prompt = ''): number | null {
   if (!pricing) return null;
+
+  if (pricing.kind === 'per_char' || pricing.kind === 'per_request') {
+    const usd = Number(pricing.usd);
+    if (!Number.isFinite(usd) || usd <= 0) return null;
+    return pricing.kind === 'per_char' ? usd * Math.max(1, prompt.length) : usd;
+  }
 
   if (pricing.kind === 'per_image') {
     const usd = Number(pricing.usd);
