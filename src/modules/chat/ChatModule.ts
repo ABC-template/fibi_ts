@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.5.0 — чат удалён (последнее сообщение, корзина, другое устройство) — выход на
+// Версия: 9.6.0 — верхняя полоса энергии убрана (энергия — в шапке рядом с монетами);
+//                  полоска над полем ввода — иконки Lucide, энергия компактно (как в шапке),
+//                  без доступа — «Доступ ограничен»; лента начинается под «парящей» шапкой
+//          9.5.0 — чат удалён (последнее сообщение, корзина, другое устройство) — выход на
 //                  предыдущий раздел; открытый чат публикуется в open-chat (отправка идёт
 //                  только в него); сообщения рисует только ChatPatcher (разделители дней)
 //          9.4.1 - без console.log с устаревшим номером версии
@@ -36,8 +39,8 @@ import { escapeHtml } from '@/utils/html';
 import { ChatPatcher } from './ChatPatcher';
 import { GenerationController } from './generation';
 import { setOpenChatId } from './open-chat';
-import { economyStore } from '@/economy/EconomyStore';
 import { userStore } from '@/store/UserStore';
+import { formatEnergy } from '@/ui/header';
 import { 
   getWelcomeText, 
   type TopicId, 
@@ -53,7 +56,6 @@ export class ChatModule {
   private headerManager = headerManager;
   private navigationState = navigationState;
   private moduleLoader = moduleLoader;
-  private economyStore = economyStore;
   private userStore = userStore;
 
   private _chatId: UUID | null = null;
@@ -316,7 +318,7 @@ export class ChatModule {
 
     const unsubTokens = this.eventBus.on('economy:tokens:updated', () => {
       if (this._isShowing) {
-        this._updateTokenIndicator();
+        this._updateEnergyBar();
       }
     }, this);
     this._subscriptions.push(unsubTokens);
@@ -405,7 +407,7 @@ export class ChatModule {
       }
     }
 
-    this._updateTokenIndicator();
+    this._updateEnergyBar();
   }
 
   private _showAccessDeniedModal(): void {
@@ -505,41 +507,6 @@ export class ChatModule {
     return 'агента';
   }
 
-  private _updateTokenIndicator(): void {
-    const indicator = document.getElementById('token-indicator');
-    if (!indicator) return;
-
-    const tokens = this.economyStore.getTokenBalances();
-    const isBlocked = !this._agentAccess;
-
-    if (isBlocked) {
-      indicator.innerHTML = `
-        <span class="token-badge blocked" style="
-          display: inline-flex; align-items: center; gap: 4px;
-          padding: 2px 12px; border-radius: 12px;
-          background: rgba(231, 76, 60, 0.12); color: #e74c3c;
-          font-weight: 600; font-size: 12px;
-        ">🔒 Доступ ограничен</span>
-      `;
-      indicator.style.display = 'flex';
-      indicator.style.justifyContent = 'center';
-      return;
-    }
-
-    // Только общий баланс «Энергия» (детали — в разделе Экономика)
-    const total = tokens.total ?? 0;
-    indicator.innerHTML = `
-      <span class="token-badge total" title="Энергия (бонус + постоянные)" style="
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 2px 12px; border-radius: 12px;
-        background: rgba(212, 175, 55, 0.12); color: var(--app-text-primary);
-        font-weight: 600; font-size: 12px;
-      ">⚡ Энергия ${total}</span>
-    `;
-    indicator.style.display = 'flex';
-    indicator.style.justifyContent = 'flex-end';
-  }
-
   async show(params: Record<string, any> = {}): Promise<void> {
     console.log('📱 ChatModule.show()', params);
 
@@ -612,7 +579,7 @@ export class ChatModule {
     // Уже этот чат — без полной перерисовки сообщений
     if (sameChat) {
       this._updateHeader();
-      this._updateTokenIndicator();
+      this._updateEnergyBar();
       this._updateSendButton();
       // Тот же чат, но открыли из избранного — только скролл к msg
       if (this._pendingScrollMsgId) {
@@ -636,7 +603,7 @@ export class ChatModule {
     this._checkAgentAccess().then(() => {
       this._updateHeader();
       this._loadMessages();
-      this._updateTokenIndicator();
+      this._updateEnergyBar();
       this._updateSendButton();
     });
 
@@ -657,7 +624,7 @@ export class ChatModule {
     } else {
       // Тот же чат — без renderAll (единый путь через show/_openChat)
       this._updateHeader();
-      this._updateTokenIndicator();
+      this._updateEnergyBar();
       this._updateSendButton();
     }
   }
@@ -674,36 +641,10 @@ export class ChatModule {
         animation: fadeIn 0.3s ease;
         position: relative;
       ">
-        <div id="token-indicator" style="
-          display: flex;
-          gap: 8px;
-          padding: 4px 16px;
-          background: var(--app-bg-secondary);
-          border-bottom: 1px solid var(--app-border-color-light);
-          font-size: 12px;
-          align-items: center;
-          justify-content: flex-end;
-          flex-shrink: 0;
-          min-height: 32px;
-        ">
-          <span class="token-badge empty" title="Загрузка..." style="
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
-            border-radius: 12px;
-            background: rgba(149, 165, 166, 0.08);
-            color: #95a5a6;
-            font-size: 11px;
-          ">
-            ⏳ Загрузка...
-          </span>
-        </div>
-
         <div id="chat-container" style="
           flex: 1;
           overflow-y: auto;
-          padding: 8px 8px 120px;
+          padding: calc(var(--app-header-space, 0px) + 8px) 8px 120px;
           display: flex;
           flex-direction: column;
           gap: 4px;
@@ -1134,9 +1075,6 @@ export class ChatModule {
     const bar = this.container.querySelector('#energy-bar') as HTMLElement | null;
     if (!bar) return;
 
-    const tokens = this.economyStore.getTokenBalances();
-    const total = tokens.total ?? 0;
-
     let contextCount = 0;
     if (this._chatId && !this._isGenerative) {
       const found = this.chatStore.findChatById(this._chatId);
@@ -1145,10 +1083,19 @@ export class ChatModule {
       contextCount = Math.min(visible.length, limit);
     }
 
-    const energy = tokens.bypass ? '∞' : String(total);
-    bar.textContent = contextCount > 0
-      ? `⚡ ${energy}  ·  в контексте ${contextCount} сообщ.`
-      : `⚡ ${energy}`;
+    const blocked = this._agentAccess === false;
+    const html = blocked
+      ? '<i data-lucide="lock"></i><span>Доступ ограничен</span>'
+      : `<i data-lucide="zap"></i><span>${formatEnergy()}</span>${
+          contextCount > 0 ? `<span class="energy-bar-sep">·</span><i data-lucide="brain"></i><span>в контексте ${contextCount} сообщ.</span>` : ''
+        }`;
+    // Вызывается на каждый ввод символа — перерисовка и иконки только при изменении
+    if (bar.dataset.html === html) return;
+    bar.dataset.html = html;
+    bar.innerHTML = html;
+    if (typeof (window as any).lucide !== 'undefined') {
+      (window as any).lucide.createIcons();
+    }
   }
 
 
