@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.3.2 — окно «Доступ ограничен»: название чата экранируется (самоXSS); текст про
+// Версия: 9.4.0 — в шапке только название чата (без 🤖); нижнее меню не трогает (его прячет
+//                  ModuleLoader на время чата); удалён неиспользуемый _redirectIfEmpty
+//                  (слал событие, которого никто не слушал: пустой чат удаляется при уходе)
+//          9.3.2 — окно «Доступ ограничен»: название чата экранируется (самоXSS); текст про
 //                  тариф без устаревших названий Plus/Ultra
 //          9.3.1 — убран неиспользуемый импорт IAiAgentWithAccess (тип удалён)
 //          9.3.0 — кнопка «Память чата» в шапке открывает настройку (событие без
@@ -19,7 +22,7 @@
 //                  (.file-btn → attach-file.ts, по образцу .media-btn)
 // ============================================
 import './chat.css';
-import { chatStore } from '@/store/ChatStore';
+import { chatStore, NEW_CHAT_TITLE } from '@/store/ChatStore';
 import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { navigationState } from '@/core/navigation-state';
@@ -586,10 +589,6 @@ export class ChatModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    if ((window as any).navigation) {
-      (window as any).navigation.hide();
-    }
-
     this._isShowing = true;
     this.chatStore.setActiveChat(actualTopic, this._chatId);
 
@@ -1053,14 +1052,7 @@ export class ChatModule {
     const found = this.chatStore.findChatById(this._chatId);
     if (!found) return;
 
-    const chatTitle = found.chat.title || 'Versatile AI';
-    
-    let titleWithIndicator = chatTitle;
-    if (this._agentId) {
-      titleWithIndicator = `🤖 ${chatTitle}`;
-    }
-
-    this.headerManager.setTitle(titleWithIndicator);
+    this.headerManager.setTitle(found.chat.title || NEW_CHAT_TITLE);
     // «Память чата» — только для текстовых агентов: генерация истории не использует
     const contextAction = this._isGenerative ? [] : [{
       id: 'context',
@@ -1114,10 +1106,6 @@ export class ChatModule {
     this._isShowing = false;
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
-
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
   }
 
   getPatcher(): ChatPatcher | null {
@@ -1174,20 +1162,6 @@ export class ChatModule {
   }
 
 
-  private _redirectIfEmpty(): void {
-    if (!this._chatId || !this._isShowing) return;
-
-    const found = this.chatStore.findChatById(this._chatId);
-    if (!found) return;
-
-    const messages = (found.chat.messages || []).filter((m: any) => !m.deleted_at);
-    if (messages.length === 0 && this.chatStore.isDisposableEmpty(found.chat)) {
-      console.log(`🧹 [empty] Чат ${this._chatId} стал пустым — редирект на агентов`);
-      this.chatStore.permanentDeleteChat(this._chatId);
-      this.eventBus.emit('navigation:open_module', { module: 'agents' });
-    }
-  }
-
   destroy(): void {
     console.log('🗑️ ChatModule.destroy()');
 
@@ -1197,7 +1171,7 @@ export class ChatModule {
       console.log('🧹 Обработчик делегирования удален при destroy');
     }
 
-    this._generation.stop();
+    this._generation.dispose();
     (window as any).chatModule = null;
 
     for (const unsub of this._subscriptions) {
@@ -1219,4 +1193,3 @@ export class ChatModule {
 }
 
 (window as any).ChatModule = ChatModule;
-console.log('✅ ChatModule v9.1.0 (generation.ts) загружен');
