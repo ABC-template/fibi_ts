@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/media.ts
 // Работа с изображениями
-// Версия: 3.0.0 - TypeScript
+// Версия: 3.0.1 - без console.log с устаревшим номером версии
+//          3.0.0 - TypeScript
 // ============================================
 
 import { userStore } from '@/store/UserStore';
@@ -155,5 +156,3 @@ let currentAttachedImageBase64: string | null = null;
   const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
   if (fileInput) fileInput.value = '';
 };
-
-console.log('✅ ChatMedia v3.0.0 загружен');
