@@ -1,15 +1,18 @@
 // ============================================
 // api/chats/trash.ts
 // Описание: Работа с корзиной (GET, POST, DELETE) с sync_token
-// Версия: 4.2.0 - limit/offset: нечисловые и отрицательные значения больше не ломают запрос (500)
+// Версия: 4.3.0 - восстановление из корзины в облаке — только с синхронизацией (can_sync);
+//                 смотреть корзину и удалять своё навсегда можно всегда
+//          4.2.1 - intParam — общий из _lib/validators
+//          4.2.0 - limit/offset: нечисловые и отрицательные значения больше не ломают запрос (500)
 //          4.1.0 - удаление навсегда запрещено (409), пока в чате идёт ответ или генерация
 //          4.0.0 - при восстановлении сбрасываем pinned
 // ============================================
 
 import { authenticate } from '../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
-import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken } from '../_lib/supabase-client';
-import { isValidUUID, validateUUID } from '../_lib/validators';
+import { handleCORS, jsonResponse, errorResponse } from '../_lib/cors';
+import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken, canUserSync } from '../_lib/supabase-client';
+import { intParam, isValidUUID, validateUUID } from '../_lib/validators';
 import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../_lib/chat-lock';
 import { HttpError } from '../_lib/http-error';
 
@@ -258,13 +261,6 @@ async function permanentDeleteFromTrash(
   return { success: true, syncToken: newSyncToken };
 }
 
-/** Целое из параметра запроса в пределах [min, max]; нечисло → значение по умолчанию */
-function intParam(raw: string | null, fallback: number, min: number, max: number): number {
-  const n = raw === null || raw.trim() === '' ? NaN : Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(n)));
-}
-
 export default async function handler(request: Request): Promise<Response> {
   const corsResponse = handleCORS(request);
   if (corsResponse) return corsResponse;
@@ -305,6 +301,10 @@ export default async function handler(request: Request): Promise<Response> {
       const { id, type } = body;
       if (!id || !type) {
         return errorResponse('Missing id or type', 400);
+      }
+
+      if (!(await canUserSync(userId, config))) {
+        return errorResponse('Синхронизация недоступна для вашего тарифа', 403);
       }
 
       const result = await restoreFromTrash(userId, id, type, config);
