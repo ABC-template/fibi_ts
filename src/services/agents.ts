@@ -1,47 +1,37 @@
 // ============================================
 // src/services/agents.ts
-// Описание: Работа с ИИ-агентами (админка + пользовательская часть)
-// Версия: 1.1.0 - пользовательский список агентов типизирован как IPublicAgent
-//          1.0.1 - исправлен импорт apiClient
+// Описание: ИИ-агенты для пользователя — список с флагом доступа, кэш списка,
+//           открытие нового чата с агентом
+// Версия: 2.0.0 - кэш списка (сайдбар, раздел «Агенты»); openNewAgentChat — один способ
+//                 начать чат с агентом (раздел «Агенты» и кнопка «Создать» в сайдбаре);
+//                 значки типов агентов; удалены неиспользуемые функции админки
+//                 (админка работает с /admin/agents напрямую)
+//          1.1.0 - пользовательский список агентов типизирован как IPublicAgent
 // ============================================
 
 import { apiClient } from './api';
-import type { IAiAgent, IAiAgentInput, IPublicAgent, AgentModality } from '../../types/agents';
+import { chatStore } from '@/store/ChatStore';
+import { eventBus } from '@/core/event-bus';
+import type { IPublicAgent, AgentModality } from '../../types/agents';
+import type { TopicId } from '@app-types';
 
-export interface OpenRouterModelOption {
-  id: string;
-  name: string;
-  context_length?: number;
-  pricing?: {
-    prompt: string;
-    completion: string;
-  };
-}
+/** Значок типа агента */
+export const AGENT_MODALITY_EMOJI: Record<AgentModality, string> = {
+  text: '💬',
+  image: '🖼️',
+  video: '🎬',
+  audio: '🎧',
+};
 
-/**
- * Получить список моделей OpenRouter по modality (только для админки)
- */
-export async function fetchModelsByModality(modality: AgentModality): Promise<OpenRouterModelOption[]> {
-  const res = await apiClient.get(`/admin/agents/models?modality=${modality}`);
-  if (!res.success) {
-    throw new Error(res.error || 'Failed to load models');
-  }
-  return res.models || [];
-}
+/** Список агентов меняется редко: повторно запрашиваем не чаще раза в минуту */
+const AGENTS_CACHE_MS = 60_000;
+
+let cachedAgents: IPublicAgent[] | null = null;
+let cachedAt = 0;
+let inflight: Promise<IPublicAgent[]> | null = null;
 
 /**
- * Получить все агенты (админка)
- */
-export async function fetchAllAgents(): Promise<IAiAgent[]> {
-  const res = await apiClient.get('/admin/agents');
-  if (!res.success) {
-    throw new Error(res.error || 'Failed to load agents');
-  }
-  return res.agents || [];
-}
-
-/**
- * Получить активные агенты + флаг доступа (для пользователей)
+ * Получить активные агенты + флаг доступа (всегда с сервера; обновляет кэш)
  */
 export async function fetchAgentsWithAccess(): Promise<{
   agents: IPublicAgent[];
@@ -52,38 +42,44 @@ export async function fetchAgentsWithAccess(): Promise<{
   if (!res.success) {
     throw new Error(res.error || 'Failed to load agents');
   }
+  const agents: IPublicAgent[] = res.agents || [];
+  cachedAgents = agents;
+  cachedAt = Date.now();
   return {
-    agents: res.agents || [],
+    agents,
     user_role: res.user_role || 'guest',
     user_pro_tier: res.user_pro_tier || null,
   };
 }
 
-/**
- * Создать агента
- */
-export async function createAgent(data: IAiAgentInput): Promise<IAiAgent> {
-  const res = await apiClient.post('/admin/agents', data);
-  if (!res.success) {
-    throw new Error(res.error || 'Failed to create agent');
+/** Последний загруженный список (null — ещё не загружался) */
+export function getCachedAgents(): IPublicAgent[] | null {
+  return cachedAgents;
+}
+
+/** Список из кэша, если он свежий; иначе — с сервера (параллельные вызовы ждут один запрос) */
+export async function loadAgentsCached(): Promise<IPublicAgent[]> {
+  if (cachedAgents && Date.now() - cachedAt < AGENTS_CACHE_MS) return cachedAgents;
+  if (!inflight) {
+    inflight = fetchAgentsWithAccess()
+      .then((data) => data.agents)
+      .finally(() => {
+        inflight = null;
+      });
   }
-  return res.agent;
+  return inflight;
 }
 
 /**
- * Обновить агента
+ * Новый чат с агентом (старые — в сайдбаре и избранном). Название чат получит
+ * из первого сообщения. false — чат создать не удалось.
  */
-export async function updateAgent(id: string, data: Partial<IAiAgentInput> & { is_active?: boolean }): Promise<IAiAgent> {
-  const res = await apiClient.patch(`/admin/agents/${id}`, data);
-  if (!res.success) {
-    throw new Error(res.error || 'Failed to update agent');
-  }
-  return res.agent;
-}
-
-/**
- * Переключить активность агента
- */
-export async function toggleAgentActive(id: string, isActive: boolean): Promise<IAiAgent> {
-  return updateAgent(id, { is_active: isActive });
+export function openNewAgentChat(agent: IPublicAgent): boolean {
+  const chat = chatStore.createTempChat(agent.slug as TopicId, {
+    agent_id: agent.id,
+    modality: agent.modality,
+  });
+  if (!chat) return false;
+  eventBus.emit('navigation:open_chat', { chatId: chat.id, topic: agent.slug });
+  return true;
 }
