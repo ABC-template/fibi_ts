@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/games/GamesModule.ts
 // Модуль игр (контейнер) с полноэкранным режимом
-// Версия: 6.3.0 - открытая игра — слой в стеке навигации: «Назад» Telegram закрывает игру
+// Версия: 6.3.1 - без console.log с устаревшим номером версии
+//          6.3.0 - открытая игра — слой в стеке навигации: «Назад» Telegram закрывает игру
 //                 (раньше закрывались и игра, и раздел — два обработчика одной кнопки);
 //                 нижнее меню скрывается на время игры через navigation.setVisible;
 //                 шапку не трогает (рамку экрана ведёт ModuleLoader); уход из раздела
@@ -55,7 +56,6 @@ export class GamesModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ GamesModule v6.2.0 инициализирован');
   }
 
   private _subscribeToBalance(): void {
@@ -408,4 +408,3 @@ export class GamesModule {
 }
 
 (window as any).GamesModule = GamesModule;
-console.log('✅ GamesModule v6.2.0 загружен');
