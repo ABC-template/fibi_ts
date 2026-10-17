@@ -3,7 +3,8 @@
 // «Живая» генерация: сообщение в статусе pending/processing, которое ещё не
 // считается потерянным. Окно разное: фото ждём минуты, видео — до 20 минут
 // (сервер держит замок чата и само задание столько же).
-// Версия: 1.0.0
+// Версия: 1.1.0 — окно аудио (озвучка, музыка): 6 минут — сервер ждёт модель до ~5
+//          1.0.0
 // ============================================
 
 import type { IChat, IMessage } from '@app-types';
@@ -11,6 +12,7 @@ import type { IChat, IMessage } from '@app-types';
 export const LIVE_WINDOW_MS: Record<string, number> = {
   image: 5 * 60 * 1000,
   video: 21 * 60 * 1000,
+  audio: 6 * 60 * 1000,
 };
 
 const DEFAULT_WINDOW_MS = LIVE_WINDOW_MS.image;
