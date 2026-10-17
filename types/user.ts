@@ -1,7 +1,8 @@
 // ============================================
 // types/user.ts
 // Типы для пользователя и аутентификации
-// Версия: 2.0.0 - без password_hash и JWT; IAuthCheckResponse — только в types/api.ts
+// Версия: 2.2.0 - удалён IUserDevice (устройства не регистрируются); удалён IUserStats (эндпоинт /users/stats не вызывался)
+//          2.0.0 - без password_hash и JWT; IAuthCheckResponse — только в types/api.ts
 // ============================================
 
 import { UserRole, UserLanguage, UUID, ISODateString } from './common';
@@ -38,26 +39,4 @@ export interface IAuthResult {
   userId: number | null;
   error: string | null;
   status?: number;
-}
-
-/** Статистика пользователя */
-export interface IUserStats {
-  total_chats: number;
-  total_messages: number;
-  total_favorites: number;
-  used_today?: number;
-  daily_limit?: number;
-}
-
-/** Устройство пользователя */
-export interface IUserDevice {
-  id: UUID;
-  user_id: number;
-  device_fingerprint: string;
-  raw_fingerprint?: string;
-  signed_fingerprint?: string;
-  platform: 'android' | 'ios' | 'web';
-  is_active: boolean;
-  last_seen: ISODateString;
-  created_at: ISODateString;
 }
