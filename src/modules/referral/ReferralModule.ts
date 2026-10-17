@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 2.4.1 - без console.log с устаревшим номером версии
+// Версия: 2.5.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll)
+//          2.4.1 - без console.log с устаревшим номером версии
 //          2.4.0 - имя приглашённого (его Telegram username) экранируется; сумма — числом
 //          2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.2.0 - ссылка и список приглашённых загружаются с сервера при открытии
@@ -107,7 +108,7 @@ export class ReferralModule {
     const currentBalance = (window as any).economyStore?.getCoinBalance?.() || 0;
 
     this.container.innerHTML = `
-      <div style="
+      <div class="app-scroll" style="
         padding: 16px;
         flex: 1;
         overflow-y: auto;
