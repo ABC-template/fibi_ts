@@ -145,9 +145,9 @@
 <div id="header" class="hidden">
     <div class="header-glass">
         <img id="user-avatar" src="" alt="Аватар" class="header-avatar" onclick="window.openDrawer()">
-        <div class="coins-badge" onclick="window.goToTasks()">
-            <span class="coin-icon">🪙</span>
-            <span class="coin-amount" id="header-coins-amount">0</span>
+        <div class="balance-badge" id="header-balance" role="button" title="Экономика">
+            <span class="balance-row coins"><i data-lucide="coins"></i><span class="coin-amount" id="header-coins-amount">0</span></span>
+            <span class="balance-row energy"><i data-lucide="zap"></i><span id="header-energy-amount">—</span></span>
         </div>
     </div>
     <div class="header-center" id="header-center"></div>
