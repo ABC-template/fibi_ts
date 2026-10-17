@@ -5,7 +5,8 @@
 // Курс, коэффициент и минимум голоса — в economy_settings (админка → Настройки).
 // Цена модели за токен нужна только для оценки до запроса и max_tokens;
 // факт — usage.cost из ответа OpenRouter.
-// Версия: 1.0.0 — вместо text-pricing.ts: курс из настроек (был зашит 10 000 в коде
+// Версия: 1.1.0 — тип расхода audio (озвучка, музыка)
+//          1.0.0 — вместо text-pricing.ts: курс из настроек (был зашит 10 000 в коде
 //                  и отдельно energy_per_usd у каждого генеративного агента);
 //                  тип записи журнала расходов ai_usage
 // ============================================
@@ -70,7 +71,7 @@ export function agentMinCharge(agent: { min_charge?: number | null } | null | un
 // Журнал расходов (ai_usage) — пишется в settle_energy
 // ============================================
 
-export type UsageKind = 'text' | 'image' | 'video' | 'voice';
+export type UsageKind = 'text' | 'image' | 'video' | 'audio' | 'voice';
 /** usage — ответ OpenRouter; tokens — токены × цена; estimate — оценка; none — неизвестно */
 export type UsageCostSource = 'usage' | 'tokens' | 'estimate' | 'none';
 /** done — целиком; cancelled — оборвал пользователь; broken — оборвалась модель; empty — пустой ответ */
