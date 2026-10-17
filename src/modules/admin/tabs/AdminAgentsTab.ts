@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.6.0 — в таблице агентов название, slug и модель экранируются
+// Версия: 3.7.0 — аудио-агенты настраиваются той же панелью, что фото и видео: модели
+//                  озвучки (speech) и музыки / аудио-ответов (audio) приходят с возможностями
+//          3.6.0 — в таблице агентов название, slug и модель экранируются
 //          3.5.0 — мин. списание: целое ≥ 1 с проверкой (раньше 0 молча становился 50);
 //                  курс ⚡ за $1 приходит с GET /admin/agents и передаётся панели генерации
 //          3.4.0 — «Доступ по тарифам»: тариф trial выбрать нельзя (ничего не выбрано —
@@ -32,7 +34,7 @@ interface OpenRouterModelOption {
     prompt: string;
     completion: string;
   };
-  /** Только image/video: возможности модели, по ним строится панель настроек */
+  /** Генеративные модели: возможности модели, по ним строится панель настроек */
   capabilities?: IModelCapabilities;
 }
 
@@ -459,7 +461,10 @@ export class AdminAgentsTab implements IAdminTab {
 
     const modelId = (document.getElementById('agent-model') as HTMLSelectElement)?.value;
     const caps = this.availableModels.find(m => m.id === modelId)?.capabilities || null;
-    const usable = !!caps && (modality === 'image' || modality === 'video') && caps.kind === modality;
+    // Аудио-агенту подходят модели озвучки (speech) и аудио-ответов / музыки (audio)
+    const usable = !!caps && (
+      modality === 'audio' ? caps.kind === 'speech' || caps.kind === 'audio' : caps.kind === modality
+    );
 
     // Сохранённая конфигурация подставляется, только пока выбрана та же модель
     const saved = this.editingAgent && this.editingAgent.model_id === modelId
@@ -470,9 +475,7 @@ export class AdminAgentsTab implements IAdminTab {
 
     if (note) {
       note.style.display = usable ? 'none' : 'block';
-      note.textContent = modality === 'audio'
-        ? 'Для аудио настройки пока задаются JSON-ом ниже.'
-        : 'У выбранной модели нет данных о возможностях (её нет в текущем списке OpenRouter). Выберите другую модель или задайте настройки JSON-ом ниже.';
+      note.textContent = 'У выбранной модели нет данных о возможностях (её нет в текущем списке OpenRouter). Выберите другую модель или задайте настройки JSON-ом ниже.';
     }
     if (jsonWrap) jsonWrap.open = !usable;
   }
