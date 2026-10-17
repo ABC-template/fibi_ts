@@ -1,7 +1,8 @@
 // ============================================
 // src/services/organizer.ts
 // API для органайзера (напоминания, трекеры)
-// Версия: 3.0.2 - замена @types → @app-types
+// Версия: 3.0.3 - без console.log с устаревшим номером версии
+//          3.0.2 - замена @types → @app-types
 // ============================================
 
 import { apiClient } from './api';
@@ -196,4 +197,3 @@ export class OrganizerService {
 }
 
 export const organizerService = new OrganizerService();
-console.log('✅ OrganizerService v3.0.2 загружен');
