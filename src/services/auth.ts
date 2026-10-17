@@ -1,7 +1,8 @@
 // ============================================
 // src/services/auth.ts
 // Сервис авторизации (Telegram initData; без JWT)
-// Версия: 7.3.0 - роль, срок хранения облака и sync_token хранятся с привязкой к Telegram ID
+// Версия: 7.4.0 - удалён неиспользуемый getUserStats (эндпоинт /users/stats удалён)
+//          7.3.0 - роль, срок хранения облака и sync_token хранятся с привязкой к Telegram ID
 //                 (userStorage); удалены неиспользуемые checkSession/logout и ключи session_*
 //          7.2.1 - без trial_used
 //          7.2.0 - в результате access (блокировка / нужна подписка на канал, ссылка)
@@ -204,24 +205,6 @@ export class AuthService {
       serverModels: {}
     };
   }
-
-  // ==========================================
-  // СТАТИСТИКА ПОЛЬЗОВАТЕЛЯ
-  // ==========================================
-
-  async getUserStats(): Promise<any> {
-    try {
-      const data = await apiClient.get('/users/stats');
-      if (data.success && data.stats) {
-        return data.stats;
-      }
-      return null;
-    } catch (err) {
-      console.error('Get user stats error:', err);
-      return null;
-    }
-  }
 }
 
 export const authService = new AuthService();
-console.log('✅ AuthService v7.3.0 загружен');
