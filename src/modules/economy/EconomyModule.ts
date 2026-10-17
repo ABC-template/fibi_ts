@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.3.0 — без пробного периода (activateTrial / trialUsed / is_trial);
+// Версия: 2.4.0 — шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+//          2.3.0 — без пробного периода (activateTrial / trialUsed / is_trial);
 //                  обмен показывается, только если сервер сказал, что он доступен
 //                  этому пользователю; названия и описания тарифов экранируются
 //          2.2.1 — экранирование description/source в истории транзакций
@@ -13,7 +14,6 @@
 // ============================================
 
 import './economy.css';
-import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 import { economyStore } from '@/economy/EconomyStore';
@@ -32,7 +32,6 @@ export class EconomyModule {
   private isInitialized: boolean = false;
   private _subscriptions: Array<() => void> = [];
   private _activeTab: TabType = 'coins';
-  private headerManager = headerManager;
   private eventBus = eventBus;
   private userStore = userStore;
   private economyStore = economyStore;
@@ -51,9 +50,6 @@ export class EconomyModule {
   async init(): Promise<void> {
     (window as any).economyModule = this;
     if (this.isInitialized) return;
-
-    this.headerManager.setTitle('💰 Экономика');
-    this.headerManager.setActions([]);
 
     await this.economyStore.loadBalances();
     await this.economyStore.loadConfig();
@@ -639,25 +635,16 @@ export class EconomyModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    this.headerManager.setTitle('💰 Экономика');
-    this.headerManager.setActions([]);
-
     this.economyStore.loadBalances();
     this.economyStore.loadConfig();
     this.subscriptionStore.loadTiers();
 
-    if ((window as any).navigation) {
-      (window as any).navigation.hide();
-    }
   }
 
   hide(): void {
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
 
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
   }
 
   destroy(): void {
