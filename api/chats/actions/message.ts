@@ -1,7 +1,10 @@
 // ============================================
 // api/chats/actions/message.ts
 // Описание: Работа с сообщениями (создание, удаление) с sync_token
-// Версия: 3.4.0 - новые сообщения в облако — только при разрешённой синхронизации
+// Версия: 3.5.0 - delete_message удаляет сообщение навсегда (как вызывает приложение; раньше
+//                 приложение ходило в дублирующий /chats/mutations/delete-with-confirm,
+//                 а здесь оставалась неиспользуемая мягкая пометка)
+//          3.4.0 - новые сообщения в облако — только при разрешённой синхронизации
 //                 (can_sync: PRO/admin); удалять своё можно всегда
 //          3.3.0 - удаление сообщения запрещено (409), пока в чате идёт ответ или
 //                 генерация (иначе можно было стереть сообщение-задание и обойти
@@ -17,7 +20,7 @@
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import { getSupabaseConfig, supabaseFetch, updateSyncToken, getSyncToken, canUserSync } from '../../_lib/supabase-client';
 import { isValidUUID, validateUUID, validateMessageLength } from '../../_lib/validators';
 import { assertChatsNotBusy, MESSAGE_DELETE_BUSY_MESSAGE } from '../../_lib/chat-lock';
@@ -197,7 +200,7 @@ async function addMessage(
 }
 
 /**
- * Удалить сообщение (soft delete)
+ * Удалить сообщение навсегда (в корзину сообщения не попадают — так работает приложение)
  */
 async function deleteMessage(
   userId: number,
@@ -223,24 +226,18 @@ async function deleteMessage(
     await assertChatsNotBusy(userId, [chatId], config, MESSAGE_DELETE_BUSY_MESSAGE);
 
     const msgCheck = await supabaseFetch(
-      `messages?id=eq.${messageId}&chat_id=eq.${chatId}&deleted_at=is.null&select=id`,
+      `messages?id=eq.${messageId}&chat_id=eq.${chatId}&select=id`,
       { method: 'GET' },
       config
     );
 
     if (!msgCheck || !Array.isArray(msgCheck) || msgCheck.length === 0) {
-      return { success: false, error: 'Message not found or already deleted' };
+      return { success: false, error: 'Message not found' };
     }
 
     await supabaseFetch(
-      `messages?id=eq.${messageId}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({
-          deleted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-      },
+      `messages?id=eq.${messageId}&chat_id=eq.${chatId}`,
+      { method: 'DELETE' },
       config
     );
 
@@ -257,7 +254,7 @@ async function deleteMessage(
     await updateSyncToken(userId, config);
     const newSyncToken = await getSyncToken(userId, config);
 
-    console.log(`🗑️ Сообщение ${messageId} помечено как удалённое`);
+    console.log(`🗑️ Сообщение ${messageId} удалено навсегда`);
     return { success: true, syncToken: newSyncToken, error: null };
   } catch (err) {
     if (err instanceof HttpError) throw err;
