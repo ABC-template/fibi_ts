@@ -1,7 +1,8 @@
 // ============================================
 // src/core/modal-manager.ts
 // Универсальный менеджер модалок
-// Версия: 4.2.0 - «Назад» закрывает модалку, только если в стеке навигации наверху была
+// Версия: 4.2.1 - без console.log с устаревшим номером версии
+//          4.2.0 - «Назад» закрывает модалку, только если в стеке навигации наверху была
 //                 именно она (по modalId); стек ведёт NavigationState.toggleModal —
 //                 дублирующие события modal:open / modal:close удалены
 //          4.1.0 - добавлены window.showModal/closeModal
@@ -44,7 +45,6 @@ export class ModalManager {
     constructor() {
         this._initElements();
         this._initEvents();
-        console.log('✅ ModalManager v4.1.0 инициализирован');
     }
 
     private _initElements(): void {
@@ -371,5 +371,3 @@ export const modalManager = new ModalManager();
 
 (window as any).showModal = modalManager.open.bind(modalManager);
 (window as any).closeModal = modalManager.close.bind(modalManager);
-
-console.log('✅ ModalManager v4.1.0 загружен');
