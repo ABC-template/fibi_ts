@@ -1,7 +1,9 @@
 // ============================================
 // src/core/back-button-manager.ts
 // Управление системной кнопкой «Назад» Telegram
-// Версия: 6.1.0 - обновлена логика
+// Версия: 6.2.0 - без особого случая для игр: открытая игра — слой в стеке навигации
+//                 (её закрывает «Назад» через NavigationState, как модалки и просмотрщик)
+//          6.1.0 - обновлена логика
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -43,15 +45,8 @@ export class BackButtonManager {
     }, this);
     this._subscriptions.push(unsub3);
 
-    const unsub4 = this.eventBus.on('games:mode_changed', () => {
+    const unsub5 = this.eventBus.on('modal:state_changed', () => {
       this._update();
-    }, this);
-    this._subscriptions.push(unsub4);
-
-    const unsub5 = this.eventBus.on('modal:state_changed', (data) => {
-      if (data && data.action === 'back') {
-        this._update();
-      }
     }, this);
     this._subscriptions.push(unsub5);
 
@@ -82,15 +77,6 @@ export class BackButtonManager {
   }
 
   private _shouldShow(): boolean {
-    if (!this.navigationState) {
-      return false;
-    }
-
-    const gamesModule = (window as any).gamesModule;
-    if (gamesModule && gamesModule.isGameOpen()) {
-      return true;
-    }
-
     return this.navigationState.shouldShowBackButton();
   }
 
@@ -121,20 +107,7 @@ export class BackButtonManager {
   }
 
   private _handleBackPress(): void {
-    console.log('🔙 BackButton нажат');
-
-    const gamesModule = (window as any).gamesModule;
-    if (gamesModule && gamesModule.isGameOpen()) {
-      console.log('🎮 Закрываем игру через BackButton');
-      gamesModule.closeGame();
-      return;
-    }
-
-    if (this.navigationState) {
-      this.navigationState.back();
-    } else {
-      this.eventBus.emit('navigation:go_back');
-    }
+    this.navigationState.back();
   }
 
   refresh(): void {
