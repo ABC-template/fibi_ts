@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.4.0 — новый чат открывает общий openNewAgentChat (как кнопка «Создать» в
+// Версия: 1.4.1 - без console.log с устаревшим номером версии
+//          1.4.0 — новый чат открывает общий openNewAgentChat (как кнопка «Создать» в
 //                  сайдбаре); значки типов — общие (AGENT_MODALITY_EMOJI)
 //          1.3.0 — новый чат с агентом называется по первому сообщению (не именем агента);
 //                  агент и тип чата задаются при создании; модуль не скрывает себя сам
@@ -36,7 +37,6 @@ export class AgentsModule {
   async init(): Promise<void> {
     this._subscribe();
     await this.loadAgents();
-    console.log('✅ AgentsModule v1.2.0 инициализирован');
   }
 
   private _subscribe(): void {
@@ -312,4 +312,3 @@ export class AgentsModule {
 }
 
 (window as any).AgentsModule = AgentsModule;
-console.log('✅ AgentsModule v1.1.2 загружен');
