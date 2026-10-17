@@ -1,7 +1,9 @@
 // ============================================
 // src/utils/global.ts
 // Глобальные функции для window
-// Версия: 1.4.0 - удалён неиспользуемый showGuest (экран гостя заменён заглушкой access-gate)
+// Версия: 1.5.0 - goToTasks заменён на goToEconomy (монеты и энергия ведут в «Экономику»);
+//                 убран мёртвый updateRealtimeIndicator
+//          1.4.0 - удалён неиспользуемый showGuest (экран гостя заменён заглушкой access-gate)
 //          1.3.0 - sync_token с привязкой к Telegram ID (user-storage)
 //          1.2.0 - добавлен questsStore
 // ============================================
@@ -30,7 +32,7 @@ import { inputManager } from '@/core/input-manager';
 import { themeManager } from '@/core/theme-manager';
 
 import { openDrawer, closeDrawer, renderChatsInDrawer, updateDrawerCoins, updateDrawerTrashCount } from '@/ui/drawer';
-import { updateCoinsDisplay, updateDrawerUserInfo, updateDrawerRole, updateRealtimeIndicator } from '@/ui/header';
+import { updateCoinsDisplay, updateDrawerUserInfo, updateDrawerRole } from '@/ui/header';
 import { updateThemeLabel } from '@/ui/drawer';
 import { showFavoritesModal, showTrashModal, showContextModal, initExportButtons } from '@/ui/modals';
 import { showOfflineBanner, hideOfflineBanner } from '@/services/network';
@@ -89,7 +91,6 @@ export function setupGlobalFunctions(): void {
     // HEADER
     // ==========================================
     window.updateCoinsDisplay = updateCoinsDisplay;
-    window.updateRealtimeIndicator = updateRealtimeIndicator;
 
     // ==========================================
     // MODALS
@@ -210,17 +211,10 @@ export function setupGlobalFunctions(): void {
         }
     };
 
-    window.goToTasks = function(): void {
-        console.log('🪙 [goToTasks] Переход в задания');
+    // Балансы (монеты, энергия) в шапке, сайдбаре и настройках → «Экономика»
+    window.goToEconomy = function(): void {
         closeDrawer({ instant: true });
-        if (navigationState) {
-            navigationState.navigate('quests', {}, { addToHistory: true });
-        } else if (moduleLoader) {
-            moduleLoader.load('quests');
-        }
-        if (navigation) {
-            navigation.setActive('quests');
-        }
+        void navigationState.navigate('economy', {}, { addToHistory: true });
     };
 
     window.handleNewChatClick = function(): void {
