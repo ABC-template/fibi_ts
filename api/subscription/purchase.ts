@@ -1,14 +1,17 @@
 // ============================================
 // api/subscription/purchase.ts
 // Покупка подписки через Telegram Stars
-// Версия: 1.2.0 — до подключения оплаты Stars покупка доступна только создателю
+// Версия: 1.3.0 — «создатель» определяется по CREATOR_ID (как везде), а не по роли в БД;
+//                  покупка не понижает admin/creator до premium (раньше создатель терял роль
+//                  и безлимит)
+//          1.2.0 — до подключения оплаты Stars покупка доступна только создателю
 //                  (остальным 403 «скоро»); проверка формата tier_key
 //          1.1.0 — бесплатные тарифы (price_stars = 0) купить нельзя
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
+  isCreator,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -38,15 +41,18 @@ export default async function handler(request: Request): Promise<Response> {
 
     // Оплата Telegram Stars ещё не подключена: без неё эндпоинт выдавал бы
     // подписку и энергию бесплатно. Пока — только для тестов создателя.
+    if (!isCreator(userId)) {
+      return errorResponse('Оплата подписки скоро появится', 403);
+    }
+
     const roleRes = await supabaseFetch(
       `users?telegram_id=eq.${userId}&select=role`,
       { method: 'GET' },
       config
     );
-    const role = Array.isArray(roleRes) && roleRes[0] ? roleRes[0].role : null;
-    if (role !== 'creator') {
-      return errorResponse('Оплата подписки скоро появится', 403);
-    }
+    const currentRole = Array.isArray(roleRes) && roleRes[0] ? roleRes[0].role : null;
+    // admin / creator остаются собой: подписка добавляет тариф и энергию, роль не понижает
+    const nextRole = currentRole === 'admin' || currentRole === 'creator' ? currentRole : 'premium';
 
     const body = await request.json();
     const { tier_key } = body;
@@ -110,7 +116,7 @@ export default async function handler(request: Request): Promise<Response> {
       {
         method: 'PATCH',
         body: JSON.stringify({
-          role: 'premium',
+          role: nextRole,
           premium_until: expires_at.toISOString(),
           subscription_tier: pkg.tier_key,
           updated_at: new Date().toISOString(),
