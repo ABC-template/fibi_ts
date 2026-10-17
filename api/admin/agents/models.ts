@@ -1,12 +1,16 @@
 // ============================================
 // api/admin/agents/models.ts
 // Список моделей OpenRouter для формы агента (по модальности)
-// Версия: 2.0.0
+// Версия: 3.0.0 — аудио: модели озвучки (/models?output_modalities=speech, голоса —
+//                  supported_voices) и модели музыки / аудио-ответов (output_modalities=audio)
+//                  одним списком с capabilities.kind = speech | audio; цены модели — в
+//                  pricing_usd (по ним админка подставляет оценку цены)
+//          2.0.0
 //   - изображения: GET /images/models, видео: GET /videos/models — отдельные API
 //     OpenRouter с описанием возможностей модели (разрешения, соотношения сторон,
 //     длительности, кадры, референсы, цены). Они приходят в поле capabilities и
 //     по ним админка строит настройки формы генерации
-//   - текст и аудио: GET /models?output_modalities=... (без подбора по подстрокам в id:
+//   - текст: GET /models?output_modalities=text (без подбора по подстрокам в id:
 //     раньше «minimax»/«hunyuan» попадали в видео, хотя это текстовые модели)
 // ============================================
 
@@ -55,6 +59,8 @@ function imageModel(m: any): IModelOption {
     generate_audio: false,
     seed: !!p.seed,
     pricing_skus: {},
+    voices: [],
+    pricing_usd: {},
   };
   return { id: String(m.id), name: String(m.name || m.id), capabilities: caps };
 }
@@ -82,8 +88,88 @@ function videoModel(m: any): IModelOption {
     generate_audio: m?.generate_audio === true,
     seed: m?.seed === true,
     pricing_skus: skus,
+    voices: [],
+    pricing_usd: {},
   };
   return { id: String(m.id), name: String(m.name || m.id), capabilities: caps };
+}
+
+/** Голоса из supported_voices: строки или объекты { id | voice_id | name } */
+function voicesOf(m: any): string[] {
+  const out: string[] = [];
+  for (const v of arr(m?.supported_voices)) {
+    const id = typeof v === 'string' ? v : v?.id ?? v?.voice_id ?? v?.name;
+    if (id !== undefined && id !== null && String(id).trim()) out.push(String(id).trim());
+  }
+  return Array.from(new Set(out));
+}
+
+/** Цены из /models: строки → числа, только положительные */
+function pricesOf(m: any): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(m?.pricing || {})) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) out[key] = n;
+  }
+  return out;
+}
+
+/** Модель озвучки (speech) или музыки / аудио-ответов (audio) */
+function audioModel(m: any, kind: 'speech' | 'audio'): IModelOption {
+  const caps: IModelCapabilities = {
+    kind,
+    resolutions: [],
+    aspect_ratios: [],
+    durations: [],
+    qualities: [],
+    backgrounds: [],
+    max_n: 1,
+    max_input_references: 0,
+    frame_images: [],
+    generate_audio: false,
+    seed: false,
+    pricing_skus: {},
+    voices: voicesOf(m),
+    pricing_usd: pricesOf(m),
+  };
+  const suffix = kind === 'speech' ? 'озвучка' : 'аудио';
+  return {
+    id: String(m.id),
+    name: `${String(m.name || m.id)} · ${suffix}`,
+    context_length: m.context_length,
+    pricing: m.pricing,
+    capabilities: caps,
+  };
+}
+
+/** Выход модели действительно содержит нужную модальность (фильтр API на всякий случай перепроверяем) */
+function outputs(m: any, modality: string): boolean {
+  const list = arr(m?.architecture?.output_modalities).map((x) => String(x));
+  return list.includes(modality);
+}
+
+/** Аудио-агенты: модели озвучки и модели аудио-ответов одним списком (без повторов) */
+async function audioModels(apiKey: string): Promise<IModelOption[]> {
+  const [speech, audio] = await Promise.allSettled([
+    fetchList('/models?output_modalities=speech', apiKey),
+    fetchList('/models?output_modalities=audio', apiKey),
+  ]);
+  if (speech.status === 'rejected' && audio.status === 'rejected') {
+    throw new Error('OpenRouter: не удалось получить аудио-модели');
+  }
+
+  const result = new Map<string, IModelOption>();
+  if (speech.status === 'fulfilled') {
+    for (const m of speech.value) {
+      if (outputs(m, 'speech')) result.set(String(m.id), audioModel(m, 'speech'));
+    }
+  }
+  if (audio.status === 'fulfilled') {
+    for (const m of audio.value) {
+      if (outputs(m, 'audio') && !result.has(String(m.id))) result.set(String(m.id), audioModel(m, 'audio'));
+    }
+  }
+  return Array.from(result.values());
 }
 
 async function fetchList(path: string, apiKey: string): Promise<any[]> {
@@ -137,6 +223,8 @@ export default async function handler(request: Request): Promise<Response> {
       models = (await fetchList('/images/models', apiKey)).map(imageModel);
     } else if (modality === 'video') {
       models = (await fetchList('/videos/models', apiKey)).map(videoModel);
+    } else if (modality === 'audio') {
+      models = await audioModels(apiKey);
     } else {
       const raw = await fetchList(`/models?output_modalities=${modality}`, apiKey);
       models = raw.map((m) => ({
