@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/quests/QuestsModule.ts
 // All quests 
-// Версия: 3.6.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+// Версия: 3.7.0 - отказ сервера при получении награды показывается как ошибка (раньше «+0 монет»)
+//          3.6.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          3.5.0 - отказ «retry_later» показывает, когда можно отправить снова
 //          3.4.0 - спонсорские задания: «Перейти» открывает канал спонсора, «Проверить»
 //                 показывает честный итог (подтверждено / засчитается позже / на проверке /
@@ -33,7 +34,6 @@ export class QuestsModule {
   private container: HTMLElement;
   private isInitialized: boolean = false;
   private _subscriptions: Array<() => void> = [];
-  private _isVisible: boolean = false;
   private _activeTab: QuestTab = 'daily';
 
   private questsStore = questsStore;
@@ -89,7 +89,6 @@ export class QuestsModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ QuestsModule v3.3.0 инициализирован');
   }
 
   private _bindEvents(): void {
@@ -173,7 +172,6 @@ export class QuestsModule {
 
   private _renderQuestList(type: IUserQuest['type'], title: string): string {
     const quests = this.questsStore.getQuestsByType(type);
-    const stats = this.questsStore.getStats();
 
     if (quests.length === 0) {
       return `
@@ -347,11 +345,12 @@ export class QuestsModule {
     }
 
     const result = await this.questsStore.claim(userQuestId);
-    if (result) {
+    if (result.success) {
       this.render();
       this.uiRenderer.showToast(`🎉 +${result.reward} монет!`, 'success', 1500);
     } else {
-      this.uiRenderer.showToast('⚠️ Не удалось забрать награду', 'error', 1500);
+      // Раньше любой ответ считался успехом и показывал «+0 монет»
+      this.uiRenderer.showToast(`⚠️ ${result.error || 'Не удалось забрать награду'}`, 'error', 2000);
     }
   }
 
@@ -434,7 +433,6 @@ export class QuestsModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    this._isVisible = true;
 
     this.render();
 
@@ -458,7 +456,6 @@ export class QuestsModule {
   }
 
   hide(): void {
-    this._isVisible = false;
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
   }
@@ -472,10 +469,8 @@ export class QuestsModule {
       }
     }
     this._subscriptions = [];
-    this._isVisible = false;
     console.log('📡 QuestsModule отписан от событий');
   }
 }
 
 (window as any).QuestsModule = QuestsModule;
-console.log('✅ QuestsModule v3.3.0 загружен');
