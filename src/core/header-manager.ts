@@ -1,11 +1,11 @@
 // ============================================
 // src/core/header-manager.ts
 // Управление динамическим хедером
-// Версия: 5.2.0 - заголовок (название чата) экранируется
+// Версия: 5.2.1 - без console.log с устаревшим номером версии
+//          5.2.0 - заголовок (название чата) экранируется
 //          5.1.0 - добавлены window.updateHeader, updateChatTitle, getDefaultHeader
 // ============================================
 
-import { eventBus } from './event-bus';
 import { escapeHtml } from '@/utils/html';
 
 export interface IHeaderAction {
@@ -27,13 +27,9 @@ export interface IHeaderConfig {
 }
 
 export class HeaderManager {
-    private eventBus = eventBus;
     private _subscriptions: Array<() => void> = [];
-    private _currentTitle: string | null = null;
-    private _currentActions: IHeaderAction[] = [];
 
     constructor() {
-        console.log('✅ HeaderManager v5.1.0 загружен');
     }
 
     // ==========================================
@@ -47,7 +43,6 @@ export class HeaderManager {
         const centerEl = document.getElementById('header-center');
         if (!centerEl) return;
 
-        this._currentTitle = title;
 
         if (title && title.trim().length > 0) {
             centerEl.innerHTML = `
@@ -95,7 +90,6 @@ export class HeaderManager {
         const rightEl = document.getElementById('header-right');
         if (!rightEl) return;
 
-        this._currentActions = actions;
 
         rightEl.innerHTML = '';
         rightEl.style.cssText = 'display: flex; align-items: center; gap: 8px; flex-shrink: 0;';
@@ -210,5 +204,3 @@ export const headerManager = new HeaderManager();
 (window as any).updateHeader = headerManager.updateHeader.bind(headerManager);
 (window as any).updateChatTitle = headerManager.setTitle.bind(headerManager);
 (window as any).getDefaultHeader = (tabId: string) => ({ center: '', right: '' });
-
-console.log('✅ HeaderManager v5.1.0 загружен');
