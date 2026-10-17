@@ -1,7 +1,8 @@
 /* ============================================
    src/core/core.css
    Глобальные стили приложения
-   Версия: 2.2.0 - #app-screen отступает снизу на высоту нижнего меню (--app-nav-space):
+   Версия: 2.3.0 - удалены стили экрана гостя (#guest-screen)
+   2.2.0 - #app-screen отступает снизу на высоту нижнего меню (--app-nav-space):
                    меню больше не закрывает контент
    2.1.0 - добавлена нижняя навигация
    ============================================ */
@@ -207,33 +208,6 @@ body {
     background: var(--app-accent-glow);
     color: var(--app-accent-primary);
     box-shadow: var(--app-shadow-glow);
-}
-
-/* ===== GUEST SCREEN ===== */
-#guest-screen {
-    padding: 60px var(--app-spacing-2xl);
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    gap: var(--app-spacing-lg);
-}
-
-#guest-screen #error-title {
-    font-size: var(--app-font-size-3xl);
-    font-weight: 700;
-    background: var(--app-gradient-primary);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-#guest-screen #joke-text {
-    color: var(--app-text-secondary);
-    font-size: var(--app-font-size-lg);
-    max-width: 320px;
 }
 
 /* ===== APP SCREEN ===== */
