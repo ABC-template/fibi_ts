@@ -1,7 +1,8 @@
 // ============================================
 // src/utils/helpers.ts
 // Общие утилиты
-// Версия: 2.1.0 - добавлены window
+// Версия: 2.1.1 - без console.log с устаревшим номером версии
+//          2.1.0 - добавлены window
 // ============================================
 
 /**
@@ -139,5 +140,3 @@ export function throttle<T extends (...args: any[]) => any>(
 (window as any).cloneObject = cloneObject;
 (window as any).debounce = debounce;
 (window as any).throttle = throttle;
-
-console.log('✅ Helpers v2.1.0 загружен');
