@@ -1,7 +1,8 @@
 // ============================================
 // api/_lib/supabase-client.ts 
 // Описание: Работа с Supabase через fetch (Edge Runtime)
-// Версия: 15.1.0 — убрано поле trial_used (пробного периода больше нет)
+// Версия: 15.2.0 — удалён IUsageLimitResult (старый лимит запросов)
+//          15.1.0 — убрано поле trial_used (пробного периода больше нет)
 //          15.0.0 — без Supabase Auth: getOrCreateUser вместо getOrCreateAuthUser
 //                   (пароли и вход по паролю убраны), удалён setAppUserContext
 //                   (функция в БД удалена); убраны неиспользуемые updateStreak, claimQuest,
@@ -15,12 +16,6 @@ import type { ITelegramUser } from './auth';
 export interface ISupabaseConfig {
   url: string;
   key: string;
-}
-
-export interface IUsageLimitResult {
-  allowed: boolean;
-  used: number;
-  limit: number;
 }
 
 export function getSupabaseConfig(type: 'anon' | 'service' = 'anon'): ISupabaseConfig {
