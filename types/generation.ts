@@ -1,7 +1,10 @@
 // ============================================
 // types/generation.ts
 // Типы для генеративных агентов (image / video / audio)
-// Версия: 1.1.0 - IGenerationPricing без energy_per_usd (курс — в настройках экономики);
+// Версия: 1.2.0 - аудио: озвучка текста (OpenRouter /audio/speech) и музыка / аудио-ответы
+//                 (/chat/completions с modalities audio) — IGenerationAudioConfig, цена за
+//                 символ (per_char) и за запрос (per_request), возможности speech / audio
+//          1.1.0 - IGenerationPricing без energy_per_usd (курс — в настройках экономики);
 //                 без неиспользуемого импорта ISODateString
 // ============================================
 
@@ -101,19 +104,25 @@ export interface IGenerationPromptConfig {
  *               со звуком берётся audio_prices (если заданы)
  *  per_image  → usd за одно изображение (OpenRouter отдаёт цену за токены,
  *               поэтому оценку задаёт администратор)
+ *  per_char   → usd за символ запроса (озвучка текста)
+ *  per_request → usd за один запрос (музыка: песня / клип)
  * Энергия = usd × курс (economy_settings.energy_per_usd) × коэффициент агента,
  * не меньше min_charge.
  */
 export interface IGenerationPricing {
-  kind: 'per_second' | 'per_image';
+  kind: 'per_second' | 'per_image' | 'per_char' | 'per_request';
   prices?: Record<string, number>;
   audio_prices?: Record<string, number>;
   usd?: number;
 }
 
-/** Возможности модели OpenRouter (из /images/models и /videos/models) */
+/**
+ * Возможности модели OpenRouter: image — /images/models, video — /videos/models,
+ * speech — /models?output_modalities=speech (озвучка), audio — /models?output_modalities=audio
+ * (музыка и аудио-ответы через чат)
+ */
 export interface IModelCapabilities {
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'speech' | 'audio';
   resolutions: string[];
   aspect_ratios: string[];
   /** Только видео, секунды */
@@ -131,6 +140,25 @@ export interface IModelCapabilities {
   seed: boolean;
   /** Прайс-лист модели как есть (видео): sku → $ */
   pricing_skus: Record<string, number>;
+  /** Голоса модели (speech / audio), если OpenRouter их отдаёт */
+  voices: string[];
+  /** Цены модели из /models ($ за единицу: prompt, completion, request …) */
+  pricing_usd: Record<string, number>;
+}
+
+/** Как сервер получает аудио */
+export type GenerationAudioApi = 'speech' | 'chat';
+
+/**
+ * Аудио-агент: speech — POST /audio/speech (готовый файл); chat — /chat/completions
+ * с modalities ['text','audio'] (поток base64). format — что просим у модели;
+ * сырой pcm16 сервер упаковывает в WAV с sample_rate / channels.
+ */
+export interface IGenerationAudioConfig {
+  api: GenerationAudioApi;
+  format: 'mp3' | 'wav' | 'flac' | 'opus' | 'pcm16';
+  sample_rate?: number;
+  channels?: number;
 }
 
 /** Полный generation_config агента */
@@ -144,6 +172,8 @@ export interface IGenerationConfig {
     placeholder?: IAgentName;
   };
   pricing?: IGenerationPricing;
+  /** Только аудио-агенты */
+  audio?: IGenerationAudioConfig;
   /** Дополнительные настройки (лимиты, подсказки и т.д.) */
   [key: string]: any;
 }
