@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/ui/profile-ui.ts
 // Работа с модалками (Избранное, Корзина) + История чатов
-// Версия: 7.4.0 - кнопки в «Избранном» и «Корзине» снова работают: обработчик на фазе
+// Версия: 7.4.1 - без console.log с устаревшим номером версии
+//          7.4.0 - кнопки в «Избранном» и «Корзине» снова работают: обработчик на фазе
 //                 перехвата (модалка останавливает всплытие кликов, и обработчик на
 //                 document их не получал); переход из избранного к сообщению без правки
 //                 внутреннего состояния навигации; стек слоёв ведёт ModalManager
@@ -19,16 +20,11 @@ import { navigationState } from '@/core/navigation-state';
 import { modalManager } from '@/core/modal-manager';
 import { escapeHtml } from '@/utils/html';
 import { 
-  getActiveTopics, 
-  getTopicLabel, 
-  getTopicShortLabel, 
-  getTopicIcon,
+  getTopicLabel,
   getTopicEmoji,
-  isValidTopic,
   type UUID, 
   type TopicId, 
   type TopicFilter, 
-  type IFavoriteItem, 
   type IChat 
 } from '@/config';
 
@@ -45,7 +41,6 @@ export class ProfileUI {
   constructor() {
     this._subscribeToEvents();
     this._bindModalActions();
-    console.log('✅ ProfileUI v7.2.0 загружен');
   }
 
   /**
@@ -595,4 +590,3 @@ export class ProfileUI {
 
 // Создаем экземпляр
 export const profileUI = new ProfileUI();
-console.log('✅ ProfileUI v7.2.0 загружен');
