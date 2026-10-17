@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/organizer/OrganizerModule.ts
 // Модуль органайзера с вкладками
-// Версия: 4.2.1 - без console.log с устаревшим номером версии
+// Версия: 4.3.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll)
+//          4.2.1 - без console.log с устаревшим номером версии
 //          4.2.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          4.1.0 - текст напоминаний, значения и заметки трекеров экранируются
 //          4.0.3 - замена @types → @app-types
@@ -30,7 +31,7 @@ export class OrganizerModule {
     (window as any).organizerModule = this;
 
     this.container.innerHTML = `
-      <div style="padding: 16px; flex:1; overflow-y:auto; display:flex; flex-direction:column; height:100%;">
+      <div class="app-scroll" style="padding: 16px; flex:1; overflow-y:auto; display:flex; flex-direction:column; height:100%;">
         <h2 style="font-size:18px; font-weight:700; margin:0 0 16px 0; color:var(--app-text-primary); display:flex; align-items:center; gap:8px;">
           <i data-lucide="layout-dashboard" style="width:24px;height:24px;"></i>
           Органайзер
