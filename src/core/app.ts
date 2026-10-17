@@ -1,7 +1,8 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.7.0 — приложение открывается на «Главной» (было — «Агенты»); удалена повторная
+// Версия: 13.8.0 — синхронизация включается по флагу сервера syncEnabled (без роли «pro»)
+//          13.7.0 — приложение открывается на «Главной» (было — «Агенты»); удалена повторная
 //                  регистрация модулей (их регистрирует ModuleLoader — здесь были одни
 //                  предупреждения «уже зарегистрирован»)
 //          13.6.0 — данные аккаунта в localStorage привязаны к Telegram ID (user-storage):
@@ -49,7 +50,6 @@ import { authService } from '@/services/auth';
 import { syncService } from '@/services/sync';
 import { chatService } from '@/services/chats';
 import { messageService } from '@/services/messages';
-import { apiClient } from '@/services/api';
 import { applyAccessTransition } from '@/services/access-transition';
 
 // ✅ UI RENDERERS
@@ -64,8 +64,6 @@ import { chatSend } from '@/modules/chat/send';
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
 import { showAccessGate } from '@/ui/access-gate';
-
-console.log('🚀 App v13.0.1 начал загрузку');
 
 // ==========================================
 // 1. ПРИВЯЗКА К WINDOW
@@ -486,9 +484,9 @@ async function initApp(): Promise<void> {
             }
 
             // ✅ Берём и текущий баланс, и сколько начислили сегодня
-            const tokenInfo = (result as any).tokens || { bonus: 0, permanent: 0 };
             const todayBonusAdded = (result as any).today_bonus_added || 0;
-            const isPro = result.role === 'pro' || result.role === 'premium' || result.role === 'admin' || result.role === 'creator';
+            // Синхронизацию разрешает сервер (can_sync), а не список ролей
+            const isPro = result.syncEnabled === true;
             const needFullReload = authService.needFullReload(result.syncToken);
 
             updateDrawerRole(result.role);
@@ -641,7 +639,6 @@ async function initApp(): Promise<void> {
     updateSplashProgress(100, '✅ Готово! Добро пожаловать!');
     setTimeout(() => {
         hideSplash();
-        console.log('✅ Приложение v13.0.1 успешно загружено');
     }, 500);
 }
 
@@ -753,5 +750,3 @@ function initLucideIcons(): boolean {
 setTimeout(initLucideIcons, 300);
 window.addEventListener('load', initLucideIcons);
 setTimeout(initLucideIcons, 1000);
-
-console.log('✅ app.ts v13.0.2 полностью загружен');
