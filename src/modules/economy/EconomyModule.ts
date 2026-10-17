@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/economy/EconomyModule.ts
 // Модуль экономики (коины + токены)
-// Версия: 2.4.0 — шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+// Версия: 2.4.1 - без console.log с устаревшим номером версии
+//          2.4.0 — шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.3.0 — без пробного периода (activateTrial / trialUsed / is_trial);
 //                  обмен показывается, только если сервер сказал, что он доступен
 //                  этому пользователю; названия и описания тарифов экранируются
@@ -65,7 +66,6 @@ export class EconomyModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ EconomyModule v2.1.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -663,5 +663,3 @@ export class EconomyModule {
 
 // Привязываем к window
 (window as any).EconomyModule = EconomyModule;
-
-console.log('✅ EconomyModule v2.1.0 загружен');
