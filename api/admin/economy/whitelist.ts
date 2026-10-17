@@ -1,14 +1,15 @@
 // ============================================
 // api/admin/economy/whitelist.ts
 // Управление белым списком для обмена
-// Версия: 1.2.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+// Версия: 1.3.0 — пустой список больше не ломает GET (запрос users с пустым in.());
+//                  user_id при добавлении — целое Telegram ID
+//          1.2.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
 //          1.1.0 — удаление по user_id (так вызывает админка), не только по id записи
 //          1.0.0
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -39,22 +40,26 @@ export default async function handler(request: Request): Promise<Response> {
         { method: 'GET' },
         config
       );
+      const rows: any[] = Array.isArray(result) ? result : [];
 
-      // Получаем имена пользователей
-      const users = await supabaseFetch(
-        `users?telegram_id=in.(${(result || []).map((w: any) => w.user_id).join(',')})&select=telegram_id,username`,
-        { method: 'GET' },
-        config
-      );
+      // Имена пользователей (пустой список — без запроса: in.() PostgREST не принимает)
+      const ids = rows.map((w) => Number(w.user_id)).filter((id) => Number.isInteger(id) && id > 0);
+      const users = ids.length > 0
+        ? await supabaseFetch(
+            `users?telegram_id=in.(${ids.join(',')})&select=telegram_id,username`,
+            { method: 'GET' },
+            config
+          )
+        : [];
 
       const userMap = new Map();
-      for (const u of (users || [])) {
-        userMap.set(u.telegram_id, u.username || 'Пользователь');
+      for (const u of (Array.isArray(users) ? users : [])) {
+        userMap.set(Number(u.telegram_id), u.username || 'Пользователь');
       }
 
-      const list = (result || []).map((w: any) => ({
+      const list = rows.map((w: any) => ({
         ...w,
-        username: userMap.get(w.user_id) || 'Пользователь',
+        username: userMap.get(Number(w.user_id)) || 'Пользователь',
       }));
 
       return jsonResponse({
@@ -72,9 +77,9 @@ export default async function handler(request: Request): Promise<Response> {
   if (request.method === 'POST') {
     try {
       const body = await request.json();
-      const { user_id } = body;
+      const user_id = Number(body?.user_id);
 
-      if (!user_id || user_id <= 0) {
+      if (!Number.isSafeInteger(user_id) || user_id <= 0) {
         return errorResponse('Invalid user_id', 400);
       }
 
