@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/games/GamesModule.ts
 // Модуль игр (контейнер) с полноэкранным режимом
-// Версия: 6.3.1 - без console.log с устаревшим номером версии
+// Версия: 6.4.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll)
+//          6.3.1 - без console.log с устаревшим номером версии
 //          6.3.0 - открытая игра — слой в стеке навигации: «Назад» Telegram закрывает игру
 //                 (раньше закрывались и игра, и раздел — два обработчика одной кнопки);
 //                 нижнее меню скрывается на время игры через navigation.setVisible;
@@ -75,7 +76,7 @@ export class GamesModule {
 
   private _render(): void {
     this.container.innerHTML = `
-      <div style="padding: 16px; flex:1; overflow-y:auto;">
+      <div class="app-scroll" style="padding: 16px; flex:1; overflow-y:auto;">
         <h2 style="font-size:18px; font-weight:700; margin:0 0 16px 0; color:var(--app-text-primary); display:flex; align-items:center; gap:8px;">
           <i data-lucide="gamepad-2" style="width:24px;height:24px;"></i>
           Игры
