@@ -1,7 +1,8 @@
 // ============================================
 // src/core/input-manager.ts
 // Управление капсулой ввода
-// Версия: 2.6.0 - нижнее меню не трогает (в чате оно скрыто — решает ModuleLoader;
+// Версия: 2.6.1 - без console.log с устаревшим номером версии
+//          2.6.0 - нижнее меню не трогает (в чате оно скрыто — решает ModuleLoader;
 //                 раньше закрытие капсулы ставило меню display:flex)
 //          2.5.0 - FIXED: автофокус и клавиатура на мобильных
 // ============================================
@@ -17,7 +18,6 @@ export class InputManager {
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ InputManager v2.5.0 инициализирован');
   }
 
   private _subscribeToEvents(): void {
@@ -353,5 +353,3 @@ export const inputManager = new InputManager();
 (window as any).expandInputArea = inputManager.expandInputArea.bind(inputManager);
 (window as any).collapseInputArea = inputManager.collapseInputArea.bind(inputManager);
 (window as any).clearUserText = inputManager.clearUserText.bind(inputManager);
-
-console.log('✅ InputManager v2.5.0 загружен (FIXED: автофокус на мобильных)');
