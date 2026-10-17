@@ -5,7 +5,9 @@
 // типов агентов. Замок живёт в таблице chat_locks (см. sql/chat_locks.sql),
 // захват атомарный, у замка есть TTL — если функция упала и не сняла замок,
 // он сам освободится.
-// Версия: 2.2.0 — замок генерации фото 300 с (приложение ждёт ответ до 240 с; при 180 с
+// Версия: 2.3.0 — startLeaseRenewal: пока запрос идёт, замок и резерв энергии продлеваются
+//                  раз в минуту (sql/stage4_lease.sql) — длинный ответ больше не переживает их
+//          2.2.0 — замок генерации фото 300 с (приложение ждёт ответ до 240 с; при 180 с
 //                  замок истекал раньше и в чат проходил второй запрос)
 //          2.1.0 — assertChatsNotBusy принимает текст ошибки (удаление сообщения)
 //          2.0.0
@@ -171,6 +173,42 @@ export function chatBusyResponse(retryAfter: number): Response {
       'X-Chat-Busy': '1',
     },
   });
+}
+
+/** Как часто продлевать замок и резерв идущего запроса */
+const LEASE_RENEW_MS = 60_000;
+
+/**
+ * Продлевать замок чата и резерв энергии, пока запрос идёт (раз в минуту на ttlSeconds).
+ * Возвращает stop(). Если функция упадёт, продления прекратятся и всё истечёт само.
+ */
+export function startLeaseRenewal(opts: {
+  userId: number;
+  chatId: string;
+  lockToken: string | null;
+  holdId: string | null;
+  ttlSeconds: number;
+  config: ISupabaseConfig;
+}): () => void {
+  const lockToken = opts.lockToken && UUID_RE.test(opts.lockToken) ? opts.lockToken : null;
+  const holdId = opts.holdId && UUID_RE.test(opts.holdId) ? opts.holdId : null;
+  if (!lockToken && !holdId) return () => {};
+
+  const timer = setInterval(() => {
+    supabaseRPC(
+      'extend_request_lease',
+      {
+        p_user_id: opts.userId,
+        p_chat_id: opts.chatId,
+        p_lock_token: lockToken,
+        p_hold_id: holdId,
+        p_ttl_seconds: opts.ttlSeconds,
+      },
+      opts.config
+    ).catch((err: Error) => console.error('extend_request_lease failed:', err.message));
+  }, LEASE_RENEW_MS);
+
+  return () => clearInterval(timer);
 }
 
 /** Чистка давно просроченных замков (вызывается из cron) */
