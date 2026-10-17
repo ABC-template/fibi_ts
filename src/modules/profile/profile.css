@@ -153,36 +153,6 @@
 }
 
 /* ===== ЛИМИТ ===== */
-.profile-limit-row {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--app-border-color-light);
-}
-
-.profile-limit-row .labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    color: var(--app-text-secondary);
-    margin-bottom: 4px;
-}
-
-.profile-limit-row .bar {
-    width: 100%;
-    height: 6px;
-    background: var(--app-bg-tertiary);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.profile-limit-row .bar .fill {
-    width: 0%;
-    height: 100%;
-    background: var(--app-gradient-primary);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-}
-
 /* ===== НАСТРОЙКИ ===== */
 .profile-settings-card {
     background: var(--app-bg-secondary);
