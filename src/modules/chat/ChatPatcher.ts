@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/ChatPatcher.ts
 // Описание: Точечные обновления DOM для чата
-// Версия: 1.4.0 - обновление текста меняет только .msg-content: кнопки действий под ответом
+// Версия: 1.5.0 - разделители дней как в Telegram («Сегодня», «Вчера», «15 октября»):
+//                 ставятся при полной отрисовке и при добавлении, лишние убираются при
+//                 удалении; приветствие исчезает с первым сообщением; время под сообщением
+//          1.4.0 - обновление текста меняет только .msg-content: кнопки действий под ответом
 //                 больше не пропадают (Realtime присылал тот же ответ — блок перезаписывался
 //                 целиком); сообщение пользователя обновляется текстом, без Markdown;
 //                 тот же текст не перерисовывается
@@ -95,6 +98,7 @@ export class ChatPatcher {
     setTimeout(() => {
       if (element.parentNode) {
         element.remove();
+        this._pruneDaySeparators();
         console.log(`✅ [ChatPatcher] Сообщение ${messageId} удалено из DOM`);
       }
     }, 250);
@@ -108,7 +112,8 @@ export class ChatPatcher {
     // ✅ КРИТИЧЕСКАЯ ПРОВЕРКА: Нет ли уже такого сообщения в DOM?
     const existing = document.getElementById(`msg-block-${message.id}`);
     if (existing) {
-      console.log(`⚠️ [ChatPatcher] Сообщение ${message.id} уже есть в DOM, пропускаем добавление`);
+      // Блок уже построен (ответ из стрима) — нужен только разделитель дня
+      this._placeDaySeparator(existing);
       return;
     }
 
@@ -118,15 +123,20 @@ export class ChatPatcher {
       return;
     }
 
+    // Первое сообщение: приветствие больше не нужно
+    document.getElementById('welcome-message')?.remove();
+
     const element = uiRenderer.renderMessage(
       message.text,
       message.type,
       message.id,
-      message.isFavorite || false
+      message.isFavorite || false,
+      message.created_at || null
     );
 
     if (element) {
       this.container.appendChild(element);
+      this._placeDaySeparator(element);
       this.decorator?.(message, element);
       console.log(`✅ [ChatPatcher] Сообщение ${message.id} добавлено в DOM`);
     } else {
@@ -151,11 +161,12 @@ export class ChatPatcher {
 
     // Только блок текста: кнопки действий живут рядом и не трогаются
     let content = element.querySelector('.msg-content') as HTMLElement | null;
-    const isUser = element.classList.contains('user-msg');
+    const isUser = element.classList.contains('user-block');
     if (!content) {
+      const holder = isUser ? (element.querySelector('.user-msg') as HTMLElement | null) || element : element;
       content = isUser ? document.createElement('span') : uiRenderer.createAIContent();
       content.className = 'msg-content';
-      element.insertBefore(content, element.firstChild);
+      holder.insertBefore(content, holder.firstChild);
     }
 
     if (this.shownText.get(content) === text) return;
@@ -202,20 +213,68 @@ export class ChatPatcher {
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
+    let lastDay = '';
     for (const msg of sorted) {
       const element = uiRenderer.renderMessage(
         msg.text,
         msg.type,
         msg.id,
-        msg.isFavorite || false
+        msg.isFavorite || false,
+        msg.created_at || null
       );
       if (element) {
+        const day = element.dataset.day || '';
+        if (day !== lastDay) {
+          this.container.insertBefore(uiRenderer.createDaySeparator(element.dataset.ts || ''), element);
+          lastDay = day;
+        }
         this.container.appendChild(element);
         this.decorator?.(msg, element);
       }
     }
 
     console.log(`✅ [ChatPatcher] Полная перерисовка завершена (${sorted.length} сообщений)`);
+  }
+
+  // ==========================================
+  // РАЗДЕЛИТЕЛИ ДНЕЙ
+  // ==========================================
+
+  /** Перед блоком нужен разделитель, если предыдущее сообщение — из другого дня (или его нет) */
+  private _placeDaySeparator(element: HTMLElement): void {
+    const day = element.dataset.day;
+    if (!day || element.parentNode !== this.container) return;
+
+    let prev = element.previousElementSibling as HTMLElement | null;
+    while (prev) {
+      if (prev.classList.contains('chat-day-sep')) {
+        if (prev.dataset.day === day) return;
+        break;
+      }
+      if (prev.dataset.day) {
+        if (prev.dataset.day === day) return;
+        break;
+      }
+      prev = prev.previousElementSibling as HTMLElement | null;
+    }
+    this.container.insertBefore(uiRenderer.createDaySeparator(element.dataset.ts || ''), element);
+  }
+
+  /** Убрать разделители, за которыми не осталось сообщений их дня */
+  private _pruneDaySeparators(): void {
+    const seps = Array.from(this.container.querySelectorAll(':scope > .chat-day-sep')) as HTMLElement[];
+    for (const sep of seps) {
+      let next = sep.nextElementSibling as HTMLElement | null;
+      let hasMessages = false;
+      while (next && !next.classList.contains('chat-day-sep')) {
+        if (next.dataset.day) {
+          hasMessages = true;
+          break;
+        }
+        next = next.nextElementSibling as HTMLElement | null;
+      }
+      if (!hasMessages) sep.remove();
+    }
   }
 
   /**
