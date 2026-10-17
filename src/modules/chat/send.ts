@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/send.ts
 // Отправка сообщений (EventBus-based) с поддержкой агентов
-// Версия: 6.1.1 - без console.log с устаревшим номером версии
+// Версия: 6.2.0 — запрос уходит только в открытый на экране чат (open-chat): после удаления
+//                  последнего сообщения активный чат темы переключался на другой, и запрос
+//                  с ответом попадали туда; чата нет — отправка не идёт
+//          6.1.1 - без console.log с устаревшим номером версии
 //          6.1.0 — сообщение нельзя удалить, пока в его чате идёт ответ или генерация
 //                  (сервер тоже отвечает 409)
 //          6.0.0 — без request-quota — прикрепление текстового файла (attach-file.ts), по тому
@@ -13,6 +16,7 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { eventBus } from '@/core/event-bus';
+import { getOpenChatId, isChatOpen } from './open-chat';
 import type { UUID } from '@app-types';
 
 export class ChatSend {
@@ -104,6 +108,14 @@ export class ChatSend {
     let text = input.value.trim();
     if (!text) return;
 
+    // Только чат, открытый на экране (не «активный чат темы»)
+    const chatId = getOpenChatId();
+    const found = chatId ? this.chatStore.findChatById(chatId) : null;
+    if (!chatId || !found || found.chat.deleted_at) {
+      this.uiRenderer.showToast('Этот чат удалён — откройте другой', 'warning', 2500);
+      return;
+    }
+    const activeChat = found.chat;
 
     this.isSending = true;
     input.disabled = true;
@@ -125,20 +137,8 @@ export class ChatSend {
       text = `📎 [Прикреплён файл: ${fileToAttach.name}]\n${text}`;
     }
 
-    let activeChat = this.chatStore.getActiveChat();
-    
-    if (!activeChat) {
-      console.log('📝 [sendMessage] Нет активного чата, создаём новый...');
-      activeChat = this.chatStore.createTempChat(this.chatStore.currentTopic);
-      if (!activeChat) {
-        this.isSending = false;
-        return;
-      }
-    }
-
-    const chatId = activeChat.id;
     this.sendingChatId = chatId;
-    const chatTopic = this.chatStore.currentTopic;
+    const chatTopic = activeChat.topic || found.topic;
     const userLang = activeChat.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
     
     const agentId = activeChat.agent_id || null;
@@ -168,7 +168,7 @@ export class ChatSend {
 
     this.uiRenderer.showSkeleton();
 
-    const maxContextLimit = activeChat ? (activeChat.maxContext || 15) : 15;
+    const maxContextLimit = activeChat.maxContext || 15;
     const contextMessages = this.chatStore.getContextMessages(chatId, maxContextLimit);
     const cleanHistoryMessages = contextMessages.map(msg => ({
       type: String(msg.type),
@@ -198,10 +198,9 @@ export class ChatSend {
     } catch (error) {
       this.uiRenderer.hideSkeleton();
       console.error('Send error:', error);
-      this.uiRenderer.renderMessage(
-        `⚠️ Сбой связи: ${(error as Error).message}`,
-        'ai-msg'
-      );
+      if (isChatOpen(chatId)) {
+        this.uiRenderer.renderMessage(`⚠️ Сбой связи: ${(error as Error).message}`, 'ai-msg');
+      }
     } finally {
       if ((window as any).clearImageAttachment) {
         (window as any).clearImageAttachment();
@@ -264,14 +263,10 @@ export class ChatSend {
       return;
     }
 
-    let effectiveChatId = chatId;
+    const effectiveChatId = chatId || this.chatStore.findChatByMessageId(msgId)?.chat.id;
     if (!effectiveChatId) {
-      const activeChat = this.chatStore.getActiveChat();
-      if (!activeChat) {
-        console.warn('⚠️ Нет активного чата');
-        return;
-      }
-      effectiveChatId = activeChat.id;
+      console.warn(`⚠️ Чат сообщения ${msgId} не найден`);
+      return;
     }
 
     const { messageService } = await import('@/services/messages');
