@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/admin/tabs/AdminQuestsTab.ts
 // Полноценное управление квестами + проверка заданий (ручные и псевдо)
-// Версия: 2.0.0 — блок «На проверке»: одобрить / отклонить (POST /quests/verify);
+// Версия: 2.1.0 — название, external_id и тип квеста экранируются; числа — через Number;
+//                  создание: типы daily/sponsor/event (как принимает сервер), сброс — daily/never;
+//                  в фильтре убран несуществующий тип achievement
+//          2.0.0 — блок «На проверке»: одобрить / отклонить (POST /quests/verify);
 //                  псевдо-задания одобряются автоматически по сроку (cron), здесь — досрочно
 // ============================================
 
@@ -116,7 +119,6 @@ export class AdminQuestsTab implements IAdminTab {
             <option value="all" ${this.filterType==='all'?'selected':''}>Все типы</option>
             <option value="daily" ${this.filterType==='daily'?'selected':''}>daily</option>
             <option value="sponsor" ${this.filterType==='sponsor'?'selected':''}>sponsor</option>
-            <option value="achievement" ${this.filterType==='achievement'?'selected':''}>achievement</option>
             <option value="event" ${this.filterType==='event'?'selected':''}>event</option>
           </select>
           <select onchange="window.adminModule.setQuestFilter('active', this.value)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--app-border-color);background:var(--app-bg-primary);color:var(--app-text-primary);font-size:13px">
@@ -141,27 +143,27 @@ export class AdminQuestsTab implements IAdminTab {
             <tbody>
               ${filtered.length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--app-text-tertiary)">Нет квестов</td></tr>` :
                 filtered.map(q => {
-                  const title = typeof q.title === 'object' ? (q.title?.ru || q.title?.en || q.external_id) : (q.title || q.external_id);
+                  const title = esc(questTitle(q));
                   return `
                     <tr style="border-bottom:1px solid var(--app-border-color-light)">
                       <td style="padding:8px;font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${title}">
                         ${title}
-                        <div style="font-size:10px;color:var(--app-text-tertiary)">${q.external_id}</div>
+                        <div style="font-size:10px;color:var(--app-text-tertiary)">${esc(q.external_id)}</div>
                       </td>
                       <td style="text-align:center;padding:6px 8px">
-                        <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(52,152,219,0.15);color:#3498db">${q.type}</span>
+                        <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(52,152,219,0.15);color:#3498db">${esc(q.type)}</span>
                       </td>
-                      <td style="text-align:center;padding:6px 8px">${q.target}</td>
-                      <td style="text-align:center;padding:6px 8px;font-weight:700;color:#d4af37">${q.reward_coins} 🪙</td>
+                      <td style="text-align:center;padding:6px 8px">${Number(q.target) || 0}</td>
+                      <td style="text-align:center;padding:6px 8px;font-weight:700;color:#d4af37">${Number(q.reward_coins) || 0} 🪙</td>
                       <td style="text-align:center;padding:6px 8px">
                         <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;${q.is_active ? 'background:rgba(39,174,96,0.15);color:#27ae60' : 'background:rgba(149,165,166,0.15);color:#95a5a6'}">
                           ${q.is_active ? 'Активен' : 'Выкл'}
                         </span>
                       </td>
                       <td style="text-align:center;padding:6px 8px;white-space:nowrap">
-                        <button onclick="window.adminModule.editQuest('${q.id}')" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">✏️</button>
-                        <button onclick="window.adminModule.toggleQuest('${q.id}', ${!q.is_active})" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">${q.is_active ? '⏸' : '▶️'}</button>
-                        <button onclick="window.adminModule.deleteQuest('${q.id}')" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:rgba(231,76,60,0.15);color:#e74c3c;cursor:pointer;margin:0 2px">🗑</button>
+                        <button onclick="window.adminModule.editQuest('${esc(q.id)}')" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">✏️</button>
+                        <button onclick="window.adminModule.toggleQuest('${esc(q.id)}', ${!q.is_active})" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">${q.is_active ? '⏸' : '▶️'}</button>
+                        <button onclick="window.adminModule.deleteQuest('${esc(q.id)}')" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:rgba(231,76,60,0.15);color:#e74c3c;cursor:pointer;margin:0 2px">🗑</button>
                       </td>
                     </tr>
                   `;
@@ -266,7 +268,11 @@ export class AdminQuestsTab implements IAdminTab {
   async create(): Promise<void> {
     const externalId = prompt('external_id:');
     if (!externalId) return;
-    const type = prompt('type (daily/sponsor/achievement/event):', 'daily') || 'daily';
+    const type = prompt('type (daily/sponsor/event):', 'daily') || 'daily';
+    if (!['daily', 'sponsor', 'event'].includes(type)) {
+      alert('Тип: daily, sponsor или event');
+      return;
+    }
     const target = parseInt(prompt('target:', '1') || '1', 10);
     const reward = parseInt(prompt('reward_coins:', '10') || '10', 10);
     const title = prompt('Название (RU):', externalId) || externalId;
@@ -279,8 +285,7 @@ export class AdminQuestsTab implements IAdminTab {
         target,
         reward_coins: reward,
         title: { ru: title, en: title },
-        description: { ru: '', en: '' },
-        reset_type: type === 'daily' ? 'daily' : 'none',
+        reset_type: type === 'daily' ? 'daily' : 'never',
         verification_type: type === 'sponsor' ? 'manual' : 'auto',
         is_active: true,
       });
