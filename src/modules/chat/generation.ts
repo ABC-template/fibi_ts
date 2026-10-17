@@ -8,7 +8,12 @@
 //     или запрос оборвался по таймауту)
 // Медиа хранится в приватном Storage; в сообщениях лежат только storage_path,
 // ссылки для показа запрашиваются у сервера (services/generation-media.ts).
-// Версия: 3.5.0 — форма и просмотрщик — слои в стеке навигации: «Назад» Telegram закрывает
+// Версия: 3.6.0 — заглушка «Генерируется…» только в чате, где идёт запрос (раньше
+//                  появлялась в любом открытом чате) и только пока сервер не прислал свою
+//                  карточку задания (при возврате в чат было два индикатора); ошибка запроса
+//                  в другом чате — уведомлением, а не формой; время запроса справа от подписи
+//                  в карточке (в «Повторить» не попадает — там metadata.prompt)
+//          3.5.0 — форма и просмотрщик — слои в стеке навигации: «Назад» Telegram закрывает
 //                  их, а не уводит из чата; просмотрщик: медиа по центру экрана, с учётом
 //                  выреза/полосы снизу; чат без названия получает его из первого запроса
 //          3.4.1 — оценка цены по agent.markup с сервера (тариф больше не передаётся)
@@ -51,6 +56,7 @@ import {
   validateReferenceFile,
 } from '@/services/generation-media';
 import { isLiveGeneration, liveWindowMs } from '@/store/generation-live';
+import { formatMessageTime } from '@/utils/chat-time';
 import { getLocalUrl, isSavedLocally, saveFromUrl } from '@/services/media-vault';
 import { estimateEnergy } from '@/services/generation-pricing';
 import type { IMessage, UUID } from '@app-types';
@@ -142,6 +148,8 @@ export class GenerationController {
   private _objectUrls: string[] = [];
 
   private _inFlight = false;
+  /** Чат, в котором идёт запрос (заглушка показывается только в нём) */
+  private _pendingChatId: UUID | null = null;
   private _pendingPrompt = '';
   private _awaitingSince: number | null = null;
   private _pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -255,8 +263,14 @@ export class GenerationController {
 
   /** Запускает опрос чата, пока в нём есть живая генерация (или ждём потерянный ответ) */
   syncPolling(): void {
-    // Вернулись в чат, пока запрос ещё выполняется: заглушку нужно показать снова
-    if (this._inFlight && !document.getElementById(LOCAL_PENDING_ID)) {
+    // Вернулись в чат, пока запрос ещё выполняется: заглушку нужно показать снова —
+    // если сервер ещё не прислал свою карточку задания
+    if (
+      this._inFlight &&
+      this._pendingChatId === this.host.getChatId() &&
+      this._liveGenerations().length === 0 &&
+      !document.getElementById(LOCAL_PENDING_ID)
+    ) {
       this._showLocalPlaceholder(this._pendingPrompt);
     }
     if (this._needsPolling()) {
@@ -932,6 +946,7 @@ export class GenerationController {
     if (preset.negative_prompt) body.negative_prompt = preset.negative_prompt;
 
     this._inFlight = true;
+    this._pendingChatId = chatId;
     const startedAt = Date.now();
     this.close();
     this._showLocalPlaceholder(preset.prompt);
@@ -970,16 +985,23 @@ export class GenerationController {
     } catch (err) {
       this._removeLocalPlaceholder();
       this._inFlight = false;
-      this._handleSubmitError(err, preset, startedAt);
+      this._handleSubmitError(err, preset, startedAt, chatId);
     } finally {
       chatStore.releaseChat(chatId);
       this._inFlight = false;
+      this._pendingChatId = null;
       this.syncPolling();
     }
   }
 
-  private _handleSubmitError(err: unknown, preset: IGenerationPreset, startedAt: number): void {
+  private _handleSubmitError(err: unknown, preset: IGenerationPreset, startedAt: number, chatId: UUID): void {
     const e = err as Error & { status?: number };
+
+    // Пользователь уже в другом чате: форму там не открываем — только уведомление
+    if (this.host.getChatId() !== chatId) {
+      this._toast(`⚠️ Генерация не выполнена: ${e?.message || 'ошибка запроса'}`, 'warning', 3500);
+      return;
+    }
 
     if (err instanceof ApiError) {
       // Одна генерация на пользователя: показываем, где идёт текущая
@@ -1174,6 +1196,8 @@ export class GenerationController {
     const sig = `res|${status}|${stale ? 's' : ''}|${media.map((m) => m.storage_path).join(',')}|${meta.error || ''}`;
     if (block.dataset.genSig === sig) return;
     block.dataset.genSig = sig;
+    // Время у карточки — в подписи, а не в строке кнопок
+    block.classList.add('msg-generation');
 
     // Карточка задания в работе сама показывает состояние; готовый результат или ошибка
     // убирают заглушку, если запрос уже не выполняется (старые карточки во время нового
@@ -1205,12 +1229,14 @@ export class GenerationController {
 
     if (stale) {
       card.appendChild(this._statusBlock('⚠️', 'Генерация прервана', meta.prompt));
+      card.appendChild(this._captionRow(msg, false));
       card.appendChild(this._actionsRow(msg, false));
       return card;
     }
 
     if (status === 'failed' || media.length === 0) {
       card.appendChild(this._statusBlock('⚠️', 'Не удалось сгенерировать', meta.error || meta.prompt));
+      card.appendChild(this._captionRow(msg, false));
       card.appendChild(this._actionsRow(msg, false));
       return card;
     }
@@ -1229,14 +1255,28 @@ export class GenerationController {
       holder.appendChild(more);
     }
 
-    if (meta.prompt) {
-      const caption = document.createElement('div');
-      caption.className = 'gen-caption';
-      caption.textContent = meta.prompt;
-      card.appendChild(caption);
-    }
+    card.appendChild(this._captionRow(msg, true));
     card.appendChild(this._actionsRow(msg, true));
     return card;
+  }
+
+  /** Подпись карточки: запрос слева (по желанию), время справа. Только для показа —
+   *  «Повторить» берёт запрос из metadata.prompt */
+  private _captionRow(msg: IMessage, withPrompt: boolean): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'gen-caption-row';
+
+    const caption = document.createElement('div');
+    caption.className = 'gen-caption';
+    const prompt = (msg.metadata as any)?.prompt;
+    if (withPrompt && prompt) caption.textContent = prompt;
+    row.appendChild(caption);
+
+    const time = document.createElement('span');
+    time.className = 'msg-time';
+    time.textContent = formatMessageTime(msg.created_at);
+    row.appendChild(time);
+    return row;
   }
 
   private _statusBlock(icon: string, title: string, detail?: string): HTMLElement {
@@ -1367,7 +1407,8 @@ export class GenerationController {
     this._pendingPrompt = prompt;
     this._removeLocalPlaceholder();
     const container = document.getElementById('chat-container');
-    if (!container) return;
+    // Только в чате, где идёт запрос
+    if (!container || this._pendingChatId !== this.host.getChatId()) return;
 
     // Первая генерация в новом чате: приветствие больше не нужно
     document.getElementById('welcome-message')?.remove();
