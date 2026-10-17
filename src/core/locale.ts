@@ -1,7 +1,8 @@
 // ============================================
 // src/core/locale.ts
 // Локализация интерфейса
-// Версия: 3.3.0 - исправлены типы + window
+// Версия: 3.4.0 - удалён старый лимит запросов в сутки (updateLimitDisplay, строка «Лимит»)
+//          3.3.0 - исправлены типы + window
 // ============================================
 
 export type LocaleKey = keyof typeof locales.ru;
@@ -9,7 +10,6 @@ export type LocaleKey = keyof typeof locales.ru;
 export const locales = {
     ru: {
         "new_chat": "+ Новый чат",
-        "limit": "Лимит",
         "beta": "🚀 Versatile AI — Beta Версия",
         "sync": "Синхронизация...",
         "organizer_title": "📅 Органайзер Прогресса",
@@ -30,7 +30,6 @@ export const locales = {
     },
     en: {
         "new_chat": "+ New Chat",
-        "limit": "Limit",
         "beta": "🚀 Versatile AI — Beta Version",
         "sync": "Syncing...",
         "organizer_title": "📅 Progress Organizer",
@@ -51,7 +50,6 @@ export const locales = {
     },
     it: {
         "new_chat": "+ Nuova Chat",
-        "limit": "Limite",
         "beta": "🚀 Versatile AI — Versione Beta",
         "sync": "Sincronizzazione...",
         "organizer_title": "📅 Organizzatore",
@@ -118,7 +116,6 @@ export function applyUiLocalization(): void {
     const lang = getUserLang();
 
     const ids: Record<string, LocaleKey> = {
-        'limit-info': 'limit',
         'new-chat-btn': 'new_chat',
         'dialogs-label': 'dialogs',
         'fav-title-label': 'fav_title',
@@ -144,32 +141,6 @@ export function applyUiLocalization(): void {
 
     const userInput = document.getElementById('user-input') as HTMLInputElement;
     if (userInput) userInput.placeholder = getLangString('placeholder', lang);
-
-    if (typeof (window as any).updateLimitDisplay === 'function') {
-        (window as any).updateLimitDisplay();
-    }
-}
-
-/**
- * Обновление отображения лимита
- */
-export function updateLimitDisplay(): void {
-    const info = document.getElementById('limit-info');
-    if (!info) return;
-
-    const userStore = (window as any).userStore;
-    if (!userStore) return;
-
-    const total = userStore.dailyLimit || 0;
-    const used = userStore.usedToday || 0;
-
-    const limitLabel = getLangString('limit');
-
-    if (total >= 9999) {
-        info.innerText = `${limitLabel}: ∞`;
-    } else {
-        info.innerText = `${limitLabel}: ${used}/${total}`;
-    }
 }
 
 // ==========================================
@@ -178,6 +149,3 @@ export function updateLimitDisplay(): void {
 
 (window as any).getLangString = getLangString;
 (window as any).applyUiLocalization = applyUiLocalization;
-(window as any).updateLimitDisplay = updateLimitDisplay;
-
-console.log('✅ Locale v3.3.0 загружен');
