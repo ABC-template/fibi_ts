@@ -1,7 +1,8 @@
 // ============================================
 // src/ui/splash.ts
 // Минимальный сплэш: серая сова на чёрном фоне
-// Версия: 3.0.0
+// Версия: 3.0.1 - без console.log с устаревшим номером версии
+//          3.0.0
 // ============================================
 
 export function initSplash(): void {
@@ -30,5 +31,3 @@ export function hideSplash(): void {
 (window as any).initSplash = initSplash;
 (window as any).updateSplashProgress = updateSplashProgress;
 (window as any).hideSplash = hideSplash;
-
-console.log('✅ Splash v3.0.0 (minimal owl)');
