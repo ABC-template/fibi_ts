@@ -1,7 +1,8 @@
 // ============================================
 // src/services/subscription.ts
 // Сервис для работы с подписками
-// Версия: 1.3.0 — убраны activateTrial и is_trial (пробного периода больше нет)
+// Версия: 1.3.1 - без console.log с устаревшим номером версии
+//          1.3.0 — убраны activateTrial и is_trial (пробного периода больше нет)
 //          1.2.0 — подписка пользователя берётся из данных входа (эндпоинта
 //                  /subscription/user нет); убран cancelSubscription (эндпоинта нет)
 //          1.1.0 — после активации пробной подписки доступ перепроверяется на сервере:
@@ -11,7 +12,6 @@
 
 import { apiClient } from './api';
 import { userStore } from '@/store/UserStore';
-import { eventBus } from '@/core/event-bus';
 
 export interface ITier {
   id: string;
@@ -37,19 +37,6 @@ export interface IUserSubscription {
 }
 
 export class SubscriptionService {
-  private userId: number | null = null;
-
-  constructor() {
-    this.userId = userStore.userId;
-    this._subscribeToEvents();
-  }
-
-  private _subscribeToEvents(): void {
-    eventBus.on('user:changed', (data) => {
-      this.userId = data.userId;
-    }, this);
-  }
-
   /**
    * Получить все доступные тарифы
    */
@@ -128,4 +115,3 @@ export class SubscriptionService {
 }
 
 export const subscriptionService = new SubscriptionService();
-console.log('✅ SubscriptionService v1.0.0 загружен');
