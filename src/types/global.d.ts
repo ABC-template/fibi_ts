@@ -1,7 +1,9 @@
 // ============================================
 // src/types/global.d.ts
 // Расширение интерфейса Window для глобальных функций
-// Версия: 2.6.0 - убран downloadMultiPartArchive (локальный архив собирается на устройстве)
+// Версия: 2.7.0 - убраны неиспользуемые глобальные переменные config.ts, updateLimitDisplay,
+//                 событие economy:earn
+//          2.6.0 - убран downloadMultiPartArchive (локальный архив собирается на устройстве)
 //          2.5.0 - убраны события economy:spend и economy:error
 //          2.4.0 - убран chatListModule (модуль удалён)
 //          2.3.0 - добавлены questsStore и questsModule
@@ -45,7 +47,6 @@ declare global {
         refreshSyncToken: () => Promise<string | null>;
         updateRealtimeIndicator: (status: 'connected' | 'connecting' | 'offline' | 'syncing') => void;
         showBetaAlert: () => void;
-        showGuest: (data: { msg: string; joke: string }) => void;
         initExportButtons: () => void;
 
         // ==========================================
@@ -189,26 +190,13 @@ declare global {
         // ==========================================
         // CONFIG
         // ==========================================
-        config: any;
-        currentTopic: TopicId;
-        currentModel: string;
-        currentFilter: string;
-        usedToday: number;
-        allUserKeys: any;
         isSendingMessage: boolean;
-        mediaRecorder: MediaRecorder | null;
-        audioChunks: BlobPart[];
-        topicNames: Record<TopicId, string>;
-        topicShortNames: Record<TopicId, string>;
-        welcomeTexts: Record<TopicId, string>;
-        modelNames: Record<string, string>;
 
         // ==========================================
         // LOCALE
         // ==========================================
         getLangString: (key: string, lang?: string) => string;
         applyUiLocalization: () => void;
-        updateLimitDisplay: () => void;
 
         // ==========================================
         // HELPERS
@@ -251,10 +239,7 @@ declare global {
 // ECONOMY
 // ==========================================
 
-import type { 
-  IEconomyEarnEvent, 
-  IEconomyBalanceUpdatedEvent
-} from '@/economy/event-types';
+import type { IEconomyBalanceUpdatedEvent } from '@/economy/event-types';
 
 declare global {
   interface Window {
@@ -268,7 +253,6 @@ declare global {
 // Расширяем типы для EventBus
 declare module '@/core/event-bus' {
   interface EventBus {
-    emit<T = any>(event: 'economy:earn', data: IEconomyEarnEvent, sender?: any): void;
     emit<T = any>(event: 'economy:balance:updated', data: IEconomyBalanceUpdatedEvent, sender?: any): void;
   }
 }
