@@ -1,13 +1,14 @@
 // ============================================
 // api/admin/quests/index.ts
-// CRUD для всех типов квестов (админ-панель)
-// Версия: 1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
+// Список квестов и создание (админ-панель); один квест — [...path].ts
+// Версия: 2.0.0 — создание принимает только известные поля с проверкой (_lib/quest-fields);
+//                  раньше тело запроса уходило в quests почти как есть
+//          1.1.0 — доступ: админы из ADMIN_TELEGRAM_IDS / CREATOR_ID (isAdminTelegramId), без ID в коде
 //          1.0.1 - исправлена обработка ошибок
 // ============================================
 
 import {
   authenticate,
-  corsHeaders,
   handleCORS,
   jsonResponse,
   errorResponse,
@@ -15,6 +16,7 @@ import {
   supabaseFetch,
   isAdminTelegramId,
 } from '../../_lib/index';
+import { buildNewQuest, readQuestFields } from '../../_lib/quest-fields';
 
 export const config = { runtime: 'edge' };
 
@@ -51,51 +53,10 @@ export default async function handler(request: Request): Promise<Response> {
   // POST — создать квест
   if (request.method === 'POST') {
     try {
-      const body = await request.json();
-
-      // Проверяем обязательные поля
-      if (!body.title) {
-        return errorResponse('Missing title', 400);
-      }
-
-      if (!body.type || !['daily', 'sponsor', 'event'].includes(body.type)) {
-        return errorResponse('Invalid type. Allowed: daily, sponsor, event', 400);
-      }
-
-      // Формируем external_id если не указан
-      const externalId = body.external_id || `${body.type}_${Date.now()}`;
-
-      const questData = {
-        external_id: externalId,
-        type: body.type || 'daily',
-        category: body.category || body.type || 'daily',
-        title: typeof body.title === 'string' 
-          ? { ru: body.title, en: body.title }
-          : body.title,
-        description: body.description ? (
-          typeof body.description === 'string'
-            ? { ru: body.description, en: body.description }
-            : body.description
-        ) : null,
-        target: parseInt(body.target) || 1,
-        reward_coins: parseInt(body.reward_coins) || 0,
-        reset_type: body.reset_type || 'never',
-        cooldown_hours: parseInt(body.cooldown_hours) || 0,
-        max_completions: body.max_completions ? parseInt(body.max_completions) : null,
-        verification_type: body.verification_type || 'auto',
-        pseudo_hours: parseInt(body.pseudo_hours) || 12,
-        is_active: body.is_active !== undefined ? body.is_active : true,
-        starts_at: body.starts_at || new Date().toISOString(),
-        expires_at: body.expires_at || null,
-        sponsor_name: body.sponsor_name || null,
-        sponsor_logo: body.sponsor_logo || null,
-        sponsor_target: body.sponsor_target || null,
-        sponsor_action_required: body.sponsor_action_required || null,
-        event_banner: body.event_banner || null,
-        event_color: body.event_color || null,
-      };
-
-      console.log('📝 Создаём квест:', JSON.stringify(questData, null, 2));
+      const fields = readQuestFields(await request.json());
+      if (typeof fields === 'string') return errorResponse(fields, 400);
+      const questData = buildNewQuest(fields);
+      if (typeof questData === 'string') return errorResponse(questData, 400);
 
       // Пробуем вставить
       const result = await supabaseFetch(
