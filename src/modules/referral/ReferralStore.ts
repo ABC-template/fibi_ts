@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/referral/ReferralStore.ts
 // Локальное хранилище рефералов
-// Версия: 2.1.0 - sync заменяет список приглашённых серверным (сервер — источник правды)
+// Версия: 2.1.1 - без console.log с устаревшим номером версии
+//          2.1.0 - sync заменяет список приглашённых серверным (сервер — источник правды)
 //          2.0.0 - ИЗМЕНЕНО: экономика через EventBus
 // ============================================
 
@@ -220,4 +221,3 @@ export class ReferralStore extends BaseStore<IReferralStoreData> {
 }
 
 export const referralStore = new ReferralStore();
-console.log('✅ ReferralStore v2.0.0 загружен');
