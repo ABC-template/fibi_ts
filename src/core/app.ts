@@ -1,7 +1,10 @@
 // ============================================
 // src/core/app.ts
 // ТОЧКА ВХОДА — ТОЛЬКО ОРКЕСТРАЦИЯ
-// Версия: 13.6.0 — данные аккаунта в localStorage привязаны к Telegram ID (user-storage):
+// Версия: 13.7.0 — приложение открывается на «Главной» (было — «Агенты»); удалена повторная
+//                  регистрация модулей (их регистрирует ModuleLoader — здесь были одни
+//                  предупреждения «уже зарегистрирован»)
+//          13.6.0 — данные аккаунта в localStorage привязаны к Telegram ID (user-storage):
 //                  при запуске старые ключи переносятся к текущему аккаунту
 //          13.5.0 — история чатов загружается из IndexedDB (await chatStore.init())
 //                  до сайдбара и модулей
@@ -58,15 +61,6 @@ import { organizerUI } from '@/modules/ui/organizer-ui';
 // ✅ CHAT SEND
 import { chatSend } from '@/modules/chat/send';
 
-// ✅ МОДУЛИ
-import { DashboardModule } from '@/modules/dashboard/DashboardModule';
-import { ChatModule } from '@/modules/chat/ChatModule';
-import { OrganizerModule } from '@/modules/organizer/OrganizerModule';
-import { ProfileModule } from '@/modules/profile/ProfileModule';
-import { QuestsModule } from '@/modules/quests/QuestsModule';
-import { GamesModule } from '@/modules/games/GamesModule';
-import { EconomyModule } from '@/modules/economy/EconomyModule';
-
 // ✅ РЕКЛАМНЫЙ МОДУЛЬ
 import { adModule } from '@/modules/ad';
 import { showAccessGate } from '@/ui/access-gate';
@@ -74,23 +68,7 @@ import { showAccessGate } from '@/ui/access-gate';
 console.log('🚀 App v13.0.1 начал загрузку');
 
 // ==========================================
-// 1. РЕГИСТРАЦИЯ МОДУЛЕЙ
-// ==========================================
-
-function registerModules(): void {
-    console.log('📦 Регистрируем модули...');
-    moduleLoader.register('dashboard', DashboardModule);
-    moduleLoader.register('organizer', OrganizerModule);
-    moduleLoader.register('chat', ChatModule);
-    moduleLoader.register('games', GamesModule);
-    moduleLoader.register('quests', QuestsModule);
-    moduleLoader.register('profile', ProfileModule);
-    moduleLoader.register('economy', EconomyModule);
-    console.log('✅ Все модули зарегистрированы');
-}
-
-// ==========================================
-// 2. ПРИВЯЗКА К WINDOW
+// 1. ПРИВЯЗКА К WINDOW
 // ==========================================
 
 function bindUIToWindow(): void {
@@ -413,10 +391,6 @@ async function initApp(): Promise<void> {
     updateSplashProgress(5, '💾 Загрузка истории...');
     await chatStore.init();
 
-    // ✅ ШАГ 1
-    updateSplashProgress(10, '📦 Регистрация модулей...');
-    registerModules();
-
     // ✅ ШАГ 2
     updateSplashProgress(20, '🔗 Привязка UI...');
     bindUIToWindow();
@@ -633,16 +607,10 @@ async function initApp(): Promise<void> {
         console.log('📨 Push-подписка активирована');
     }
 
-    // ✅ ШАГ 12
+    // ✅ ШАГ 12: меню, затем стартовый экран — «Главная»
     updateSplashProgress(98, '🚀 Загрузка интерфейса...');
-    if (moduleLoader) {
-        await moduleLoader.load('agents', {}, { silent: true });
-    }
-
-    // ✅ ШАГ 13
-    if (navigation) {
-        navigation.render();
-    }
+    navigation.render();
+    await moduleLoader.load('dashboard', {}, { silent: true });
 
     // ✅ ШАГ 14
     setInterval(() => {
