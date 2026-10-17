@@ -1,7 +1,9 @@
 /* ============================================
    src/ui/drawer.css
    Стили сайдбара (полная адаптация под тему)
-   Версия: 2.0.0 - полная поддержка тем
+   Версия: 2.1.0 - фильтр по агентам (горизонтальная прокрутка без полосы), пустой список
+                   с кнопкой «Создать чат» / «Выбрать агента»
+   2.0.0 - полная поддержка тем
    ============================================ */
 
 #drawer-overlay {
@@ -421,6 +423,45 @@ body[data-theme="light"] .drawer-filter-chip.active {
     color: var(--app-text-inverse);
     border-color: var(--app-accent-primary);
 }
+
+.drawer-filter-wrapper {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.drawer-filter-wrapper::-webkit-scrollbar { display: none; }
+.drawer-filter-chip { flex-shrink: 0; white-space: nowrap; }
+
+/* ===== ПУСТОЙ СПИСОК ЧАТОВ ===== */
+.drawer-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 16px;
+    text-align: center;
+}
+.drawer-empty-text {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--app-text-tertiary);
+}
+.drawer-empty-btn {
+    padding: 9px 18px;
+    border-radius: 12px;
+    border: none;
+    background: var(--app-accent-primary);
+    color: var(--app-text-inverse);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--app-font-family, -apple-system, sans-serif);
+}
+.drawer-empty-btn:active { transform: scale(0.97); }
 
 /* ===== НИЖНЯЯ НАВИГАЦИЯ В САЙДБАРЕ ===== */
 .drawer-nav-bottom {
