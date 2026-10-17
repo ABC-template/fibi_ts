@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/admin/tabs/AdminAgentsTab.ts
 // Управление ИИ-агентами (вкладка в админ-панели)
-// Версия: 3.5.0 — мин. списание: целое ≥ 1 с проверкой (раньше 0 молча становился 50);
+// Версия: 3.6.0 — в таблице агентов название, slug и модель экранируются
+//          3.5.0 — мин. списание: целое ≥ 1 с проверкой (раньше 0 молча становился 50);
 //                  курс ⚡ за $1 приходит с GET /admin/agents и передаётся панели генерации
 //          3.4.0 — «Доступ по тарифам»: тариф trial выбрать нельзя (ничего не выбрано —
 //                  доступен всем, включая trial; выбраны тарифы — только им);
@@ -18,6 +19,7 @@
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { escapeHtml } from '@/utils/html';
 import type { IAiAgent, IAiAgentInput, AgentModality } from '../../../../types/agents';
 import type { IModelCapabilities } from '../../../../types/generation';
 import { GenerationSettingsPanel } from './generation-settings';
@@ -149,7 +151,7 @@ export class AdminAgentsTab implements IAdminTab {
               ${filtered.length === 0
                 ? `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--app-text-tertiary)">Нет агентов</td></tr>`
                 : filtered.map(a => {
-                    const title = a.name?.ru || a.slug;
+                    const title = this.esc(a.name?.ru || a.slug);
                     const modalityLabel: Record<string, string> = {
                       text: 'Текст',
                       image: 'Изобр.',
@@ -161,15 +163,15 @@ export class AdminAgentsTab implements IAdminTab {
                         <td style="padding:8px;font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${title}">
                           ${title}
                           ${a.is_system ? '<span style="font-size:10px;color:#d4af37;margin-left:4px">system</span>' : ''}
-                          <div style="font-size:10px;color:var(--app-text-tertiary)">${a.slug}</div>
+                          <div style="font-size:10px;color:var(--app-text-tertiary)">${this.esc(a.slug)}</div>
                         </td>
                         <td style="text-align:center;padding:6px 8px">
                           <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(52,152,219,0.15);color:#3498db">
                             ${modalityLabel[a.modality] || a.modality}
                           </span>
                         </td>
-                        <td style="text-align:center;padding:6px 8px;font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${a.model_id}">
-                          ${a.model_id}
+                        <td style="text-align:center;padding:6px 8px;font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${this.esc(a.model_id)}">
+                          ${this.esc(a.model_id)}
                         </td>
                         <td style="text-align:center;padding:6px 8px;font-weight:600">×${a.markup_coefficient}</td>
                         <td style="text-align:center;padding:6px 8px">${a.min_charge}</td>
@@ -181,8 +183,8 @@ export class AdminAgentsTab implements IAdminTab {
                           </span>
                         </td>
                         <td style="text-align:center;padding:6px 8px;white-space:nowrap">
-                          <button onclick="window.adminModule.editAgent('${a.id}')" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">✏️</button>
-                          <button onclick="window.adminModule.toggleAgent('${a.id}', ${!a.is_active})" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">${a.is_active ? '⏸' : '▶️'}</button>
+                          <button onclick="window.adminModule.editAgent('${this.esc(a.id)}')" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">✏️</button>
+                          <button onclick="window.adminModule.toggleAgent('${this.esc(a.id)}', ${!a.is_active})" style="padding:4px 8px;font-size:11px;border:none;border-radius:6px;background:var(--app-bg-tertiary);color:var(--app-text-primary);cursor:pointer;margin:0 2px">${a.is_active ? '⏸' : '▶️'}</button>
                         </td>
                       </tr>
                     `;
@@ -565,9 +567,8 @@ export class AdminAgentsTab implements IAdminTab {
     this.editingAgent = null;
   }
 
-  private esc(str: string): string {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  private esc(str: unknown): string {
+    return escapeHtml(str);
   }
 
   private slugify(text: string): string {
