@@ -1,7 +1,8 @@
 // ============================================
 // src/store/ChatStore.ts
 // Управление чатами и сообщениями
-// Версия: 7.2.0 — новый чат называется «Новый чат»; название берётся из первого сообщения
+// Версия: 7.2.1 - без console.log с устаревшим номером версии
+//          7.2.0 — новый чат называется «Новый чат»; название берётся из первого сообщения
 //                  пользователя (или первого запроса генерации — autoTitle), без
 //                  служебной пометки о прикреплённом файле; пользовательским
 //                  переименованием это больше не считается; смена названия сообщается
@@ -26,8 +27,6 @@ import { chatHasLiveGeneration } from './generation-live';
 import type {
   IChat,
   IMessage,
-  ICreateChatData,
-  ICreateMessageData,
   ITrash,
   IFavoriteItem,
   IChatStoreData,
@@ -362,9 +361,8 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 
   getAllChats(filter?: TopicId | 'all'): IChat[] {
     const allChats: IChat[] = [];
-    
-    const entries = Object.entries(this._data.histories || {}) as [TopicId, IChat[]][];
-    for (const [topic, chats] of entries) {
+
+    for (const chats of Object.values(this._data.histories || {}) as IChat[][]) {
       if (!chats) continue;
       for (const chat of chats) {
         if (chat.deleted_at) continue;
@@ -1131,4 +1129,3 @@ export class ChatStore extends BaseStore<IChatStoreData> {
 }
 
 export const chatStore = new ChatStore();
-console.log('✅ ChatStore v7.1.0 загружен');
