@@ -1,7 +1,10 @@
 // ============================================
 // src/core/modal-manager.ts
 // Универсальный менеджер модалок
-// Версия: 4.1.0 - добавлены window.showModal/closeModal
+// Версия: 4.2.0 - «Назад» закрывает модалку, только если в стеке навигации наверху была
+//                 именно она (по modalId); стек ведёт NavigationState.toggleModal —
+//                 дублирующие события modal:open / modal:close удалены
+//          4.1.0 - добавлены window.showModal/closeModal
 // ============================================
 
 import { eventBus } from './event-bus';
@@ -35,6 +38,8 @@ export class ModalManager {
     private _modalId: string | null = null;
     private _wasDrawerOpen: boolean = false;
     private _isClosing: boolean = false;
+    /** Растёт при каждом открытии: отложенное закрытие не трогает модалку, открытую после него */
+    private _openSeq: number = 0;
 
     constructor() {
         this._initElements();
@@ -83,7 +88,7 @@ export class ModalManager {
         }
 
         this.eventBus.on('modal:state_changed', (data) => {
-            if (data && data.action === 'back' && data.isOpen === false) {
+            if (data && data.action === 'back' && data.modalId === this._modalId) {
                 this._handleBackClose();
             }
         }, this);
@@ -109,6 +114,12 @@ export class ModalManager {
             modalId = 'default'
         } = options;
 
+        // Новая модалка поверх старой (или закрывающейся): старую убираем из стека навигации
+        if ((this._isOpen || this._isClosing) && this._modalId && this._modalId !== modalId && this.navigationState) {
+            this.navigationState.toggleModal(false, this._modalId);
+        }
+
+        this._openSeq++;
         this._isClosing = false;
         this._callbacks = { onOpen, onClose, onSave, onCancel };
         this._modalId = modalId;
@@ -177,7 +188,6 @@ export class ModalManager {
         }
 
         this._isOpen = true;
-        this.eventBus.emit('modal:open', { modalId: this._modalId });
 
         if (this.navigationState) {
             this.navigationState.toggleModal(true, this._modalId);
@@ -199,6 +209,9 @@ export class ModalManager {
     close(): void {
         if (this._isClosing || !this._isOpen) return;
         this._isClosing = true;
+        const seq = this._openSeq;
+        const closingId = this._modalId;
+        const callbacks = this._callbacks;
 
         if (this.content) {
             this.content.style.transition = 'all 0.25s cubic-bezier(0.1, 0.8, 0.25, 1)';
@@ -207,6 +220,12 @@ export class ModalManager {
         }
 
         setTimeout(() => {
+            // За время анимации открыли другую модалку — её не трогаем
+            if (seq !== this._openSeq) {
+                if (callbacks.onClose) callbacks.onClose();
+                return;
+            }
+
             if (this.modal) {
                 this.modal.style.display = 'none';
                 this.modal.style.visibility = 'hidden';
@@ -225,13 +244,8 @@ export class ModalManager {
             this._isOpen = false;
             this._isClosing = false;
 
-            this.eventBus.emit('modal:close', {
-                modalId: this._modalId,
-                action: 'close'
-            });
-
-            if (this.navigationState) {
-                this.navigationState.toggleModal(false, this._modalId);
+            if (this.navigationState && closingId) {
+                this.navigationState.toggleModal(false, closingId);
             }
 
             if (this.body) this.body.innerHTML = '';
@@ -240,8 +254,8 @@ export class ModalManager {
                 this.footer.classList.add('hidden');
             }
 
-            if (this._callbacks.onClose) {
-                this._callbacks.onClose();
+            if (callbacks.onClose) {
+                callbacks.onClose();
             }
 
             this._callbacks = {};
@@ -312,6 +326,7 @@ export class ModalManager {
 
     forceClose(): void {
         if (this._isOpen) {
+            this._openSeq++;
             if (this.modal) {
                 this.modal.style.display = 'none';
                 this.modal.style.visibility = 'hidden';
@@ -335,11 +350,6 @@ export class ModalManager {
                 this.footer.classList.add('hidden');
             }
             this._callbacks = {};
-
-            this.eventBus.emit('modal:close', {
-                modalId: this._modalId,
-                action: 'force'
-            });
 
             if (this.navigationState) {
                 this.navigationState.toggleModal(false, this._modalId);
