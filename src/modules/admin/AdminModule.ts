@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.9.0 — период «Расходов ИИ» на дашборде (setDashboardPeriod); шапку и нижнее
+// Версия: 7.9.1 - без console.log с устаревшим номером версии
+//          7.9.0 — период «Расходов ИИ» на дашборде (setDashboardPeriod); шапку и нижнее
 //                  меню больше не трогает (рамку экрана ведёт ModuleLoader: заголовка
 //                  нет, меню видно)
 //          7.8.0 — блокировка и заморозка монет из карточки пользователя
@@ -72,7 +73,6 @@ export class AdminModule {
 
     await this.tabs.get(this.activeTabId)?.init();
     this.isInitialized = true;
-    console.log('✅ AdminModule v7.4.0 готов');
   }
 
   private register(tab: IAdminTab): void {
@@ -348,5 +348,3 @@ function getInstance(): AdminModule | null {
     }
   },
 };
-
-console.log('✅ AdminModule v7.6.0 загружен');
