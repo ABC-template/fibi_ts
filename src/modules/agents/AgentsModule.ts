@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.3.0 — новый чат с агентом называется по первому сообщению (не именем агента);
+// Версия: 1.4.0 — новый чат открывает общий openNewAgentChat (как кнопка «Создать» в
+//                  сайдбаре); значки типов — общие (AGENT_MODALITY_EMOJI)
+//          1.3.0 — новый чат с агентом называется по первому сообщению (не именем агента);
 //                  агент и тип чата задаются при создании; модуль не скрывает себя сам
 //                  (это делает ModuleLoader)
 //          1.2.0 — тип IPublicAgent; наценка — agent.markup (для тарифа пользователя),
@@ -12,16 +14,14 @@
 // ============================================
 
 import { eventBus } from '@/core/event-bus';
-import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
-import { fetchAgentsWithAccess } from '@/services/agents';
+import { AGENT_MODALITY_EMOJI, fetchAgentsWithAccess, openNewAgentChat } from '@/services/agents';
 import type { IPublicAgent } from '@app-types/agents';
 import { escapeHtml } from '@/utils/html';
 
 export class AgentsModule {
   private container: HTMLElement;
   private eventBus = eventBus;
-  private chatStore = chatStore;
   private uiRenderer = uiRenderer;
 
   private _agents: IPublicAgent[] = [];
@@ -75,13 +75,6 @@ export class AgentsModule {
     const hasAccess = agent.has_access;
     const accessReason = agent.access_reason;
 
-    const modalityEmoji: Record<string, string> = {
-      text: '💬',
-      image: '🖼️',
-      video: '🎬',
-      audio: '🎧',
-    };
-
     let accessInfo = '';
     if (!hasAccess) {
       if (accessReason === 'inactive') {
@@ -114,7 +107,7 @@ export class AgentsModule {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
         <div style="flex:1;min-width:0;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-            <span style="font-size:20px;">${modalityEmoji[agent.modality] || '🤖'}</span>
+            <span style="font-size:20px;">${AGENT_MODALITY_EMOJI[agent.modality] || '🤖'}</span>
             <div style="font-weight:700;font-size:15px;color:var(--app-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
               ${escapeHtml(title)}
             </div>
@@ -165,17 +158,7 @@ export class AgentsModule {
       return;
     }
 
-    // Всегда новый чат (старые — сайдбар / избранное). Название — из первого сообщения
-    const chat = this.chatStore.createTempChat(agent.slug as any, {
-      agent_id: agentId,
-      modality: agent.modality,
-    });
-    if (chat) {
-      this.eventBus.emit('navigation:open_chat', {
-        chatId: chat.id,
-        topic: agent.slug,
-      });
-    } else {
+    if (!openNewAgentChat(agent)) {
       this.uiRenderer?.showToast('⚠️ Не удалось создать чат', 'error', 1500);
     }
   }
