@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/agents/AgentsModule.ts
 // Список ИИ-агентов для пользователя
-// Версия: 1.2.0 — тип IPublicAgent; наценка — agent.markup (для тарифа пользователя),
+// Версия: 1.3.0 — новый чат с агентом называется по первому сообщению (не именем агента);
+//                  агент и тип чата задаются при создании; модуль не скрывает себя сам
+//                  (это делает ModuleLoader)
+//          1.2.0 — тип IPublicAgent; наценка — agent.markup (для тарифа пользователя),
 //                  требуемые тарифы — allowed_tiers; имена/описания экранируются
 //          1.1.5 — тексты причины отказа переведены под новую схему доступа
 //                  (auth/tier/inactive вместо allowed_roles), см.
@@ -162,21 +165,16 @@ export class AgentsModule {
       return;
     }
 
-    // Всегда новый чат (старые — сайдбар / избранное)
-    const chat = this.chatStore.createTempChat(agent.slug as any);
+    // Всегда новый чат (старые — сайдбар / избранное). Название — из первого сообщения
+    const chat = this.chatStore.createTempChat(agent.slug as any, {
+      agent_id: agentId,
+      modality: agent.modality,
+    });
     if (chat) {
-      chat.agent_id = agentId;
-      chat.modality = agent.modality;
-      chat.title = agent.name?.ru || agent.slug;
-      this.chatStore.save();
-
-      console.log(`✅ [AgentsModule] Создан новый чат с агентом: ${chat.id}`);
-
       this.eventBus.emit('navigation:open_chat', {
         chatId: chat.id,
         topic: agent.slug,
       });
-      this.hide();
     } else {
       this.uiRenderer?.showToast('⚠️ Не удалось создать чат', 'error', 1500);
     }
