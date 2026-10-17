@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/admin/AdminStore.ts
 // Хранилище для админ-панели
-// Версия: 2.0.0 - ДОБАВЛЕНО: работа с заданиями
+// Версия: 2.0.1 - без console.log с устаревшим номером версии
+//          2.0.0 - ДОБАВЛЕНО: работа с заданиями
 // ============================================
 
 import { BaseStore } from '@/store/BaseStore';
@@ -120,4 +121,3 @@ export class AdminStore extends BaseStore<IAdminStoreData> {
 }
 
 export const adminStore = new AdminStore();
-console.log('✅ AdminStore v2.0.0 загружен');
