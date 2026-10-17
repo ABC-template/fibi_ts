@@ -1,7 +1,9 @@
 // ============================================
 // src/services/api.ts
 // Базовый API-клиент. Авторизация — только Telegram initData (заголовок X-Telegram-Init-Data)
-// Версия: 10.2.0 - удалён spendCoins (/economy/spend больше нет)
+// Версия: 10.3.0 - удалены неиспользуемые обёртки (getBalance, getTransactions, getQuests,
+//                 getMyQuests, claimQuestReward, submitQuestProof, verifyQuest, stream)
+//          10.2.0 - удалён spendCoins (/economy/spend больше нет)
 //          10.1.0 - 403 с кодом blocked / channel_required → событие fibi:access-denied
 //                  (заглушка src/ui/access-gate.ts); у каждой попытки свой таймаут (раньше
 //                  повтор получал уже сработавший сигнал и падал сразу); POST/PATCH/DELETE
@@ -251,113 +253,6 @@ export class ApiClient {
   async delete<T = any>(endpoint: string, options: IApiRequestOptions = {}): Promise<T> {
     return this.request<T>(endpoint, { ...options, method: 'DELETE' });
   }
-
-  // ==========================================
-  // МЕТОДЫ ДЛЯ ЭКОНОМИКИ
-  // ==========================================
-
-  async getBalance(): Promise<any> {
-    return this.get('/economy/balance');
-  }
-
-  async getTransactions(limit: number = 50, offset: number = 0): Promise<any> {
-    return this.get(`/economy/history?limit=${limit}&offset=${offset}`);
-  }
-
-  // ==========================================
-  // МЕТОДЫ ДЛЯ ЗАДАНИЙ
-  // ==========================================
-
-  async getQuests(): Promise<any> {
-    return this.get('/quests/list');
-  }
-
-  async getMyQuests(): Promise<any> {
-    return this.get('/quests/my');
-  }
-
-  async claimQuestReward(userQuestId: string): Promise<any> {
-    return this.post('/quests/claim', { userQuestId });
-  }
-
-  async submitQuestProof(userQuestId: string, proofData?: any): Promise<any> {
-    return this.post('/quests/submit', { userQuestId, proofData: proofData || {} });
-  }
-
-  async verifyQuest(userQuestId: string, approved: boolean): Promise<any> {
-    return this.post('/quests/verify', { userQuestId, approved });
-  }
-
-  // ==========================================
-  // СТРИМИНГ
-  // ==========================================
-
-  async stream(
-    endpoint: string,
-    body: any,
-    onChunk: (chunk: string, accumulated: string) => void
-  ): Promise<string> {
-    const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint}`;
-    const headers = this.authHeaders();
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body)
-    });
-
-    if (response.status === 401) {
-      this.notifySessionExpired();
-    }
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Stream error ${response.status}: ${text.substring(0, 200)}`);
-    }
-
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let accumulatedText = '';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (trimmedLine.startsWith('data: ')) {
-            const jsonStr = trimmedLine.slice(6).trim();
-            if (jsonStr === '[DONE]') continue;
-
-            try {
-              const data = JSON.parse(jsonStr);
-              const content = data.choices?.[0]?.delta?.content;
-              if (content) {
-                accumulatedText += content;
-                if (onChunk) {
-                  onChunk(content, accumulatedText);
-                }
-              }
-            } catch (e) {
-              // Игнорируем ошибки парсинга
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Stream reading error:', err);
-      throw err;
-    }
-
-    return accumulatedText;
-  }
 }
 
 export const apiClient = new ApiClient();
-console.log('✅ ApiClient v10.0.0 загружен');
