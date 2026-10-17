@@ -3,7 +3,8 @@
 // Медиа генераций: приватный бакет Supabase Storage + таблица media_files.
 // В БД (messages.metadata) хранится только storage_path — подписанные
 // ссылки генерируются на лету и нигде не сохраняются.
-// Версия: 2.0.0 — референсы в отдельном бакете generation-inputs (лимит 10 МБ и только
+// Версия: 2.1.0 — результат может быть FLAC (аудио-модели)
+//          2.0.0 — референсы в отдельном бакете generation-inputs (лимит 10 МБ и только
 //                  изображения на уровне Storage): путь вида in/<user>/<uuid>.<ext>, бакет
 //                  определяется по пути; результаты — по-прежнему generation-media.
 //                  media_files.confirmed_at: референс подтверждён /media/confirm; до этого
@@ -69,6 +70,7 @@ const MIME_TO_EXT: Record<string, string> = {
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
   'audio/ogg': 'ogg',
+  'audio/flac': 'flac',
 };
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -82,6 +84,7 @@ const EXT_TO_MIME: Record<string, string> = {
   mp3: 'audio/mpeg',
   wav: 'audio/wav',
   ogg: 'audio/ogg',
+  flac: 'audio/flac',
 };
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
