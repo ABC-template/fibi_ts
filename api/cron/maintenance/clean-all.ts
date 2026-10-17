@@ -1,7 +1,8 @@
 // ============================================
 // api/cron/maintenance/clean-all.ts
-// Описание: Объединенная очистка (корзина + логи + usage + медиа)
-// Версия: 2.7.0 - очистка журналов по срокам из настроек экономики (clean_old_logs)
+// Описание: Объединенная очистка (корзина, журналы, медиа, замки, задания)
+// Версия: 2.8.0 - убраны шаги очистки security_logs и usage (таблицы удалены: в них никто не писал)
+//          2.7.0 - очистка журналов по срокам из настроек экономики (clean_old_logs)
 //          2.6.0 - очистка отработавших окон лимита частоты (clean_rate_limits)
 //          2.5.0 - убраны шаги pending_deletions / pending_deletion_devices (таблиц в БД
 //                 нет — шаги каждый день падали с ошибкой); медиа без ссылок из
@@ -73,34 +74,6 @@ export default async function handler(request: Request): Promise<Response> {
       console.log(`✅ Очищено ${trashCleaned} чатов из корзины`);
     } catch (err) {
       console.error('Ошибка очистки корзины:', (err as Error).message);
-    }
-
-    // ==========================================
-    // 2. ОЧИСТКА ЛОГОВ БЕЗОПАСНОСТИ (30 дней)
-    // ==========================================
-    console.log('📋 Очистка логов безопасности (> 30 дней)...');
-    let logsDeleted = 0;
-
-    try {
-      const result = await supabaseRPC('clean_old_security_logs', {}, config);
-      logsDeleted = result || 0;
-      console.log(`✅ Удалено ${logsDeleted} логов безопасности`);
-    } catch (err) {
-      console.error('Ошибка очистки логов безопасности:', (err as Error).message);
-    }
-
-    // ==========================================
-    // 3. ОЧИСТКА СТАРЫХ ЗАПИСЕЙ USAGE (90 дней)
-    // ==========================================
-    console.log('📊 Очистка старых записей usage (> 90 дней)...');
-    let usageDeleted = 0;
-
-    try {
-      const result = await supabaseRPC('clean_old_usage', {}, config);
-      usageDeleted = result || 0;
-      console.log(`✅ Удалено ${usageDeleted} записей usage`);
-    } catch (err) {
-      console.error('Ошибка очистки usage:', (err as Error).message);
     }
 
     // ==========================================
@@ -218,8 +191,6 @@ export default async function handler(request: Request): Promise<Response> {
       success: true,
       timestamp: now.toISOString(),
       trash_cleaned: trashCleaned,
-      security_logs_deleted: logsDeleted,
-      usage_records_deleted: usageDeleted,
       notifications_cleaned: notificationsDeleted,
       media_files_removed: mediaRemoved,
       rate_limits_deleted: rateLimitsDeleted,
