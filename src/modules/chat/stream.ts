@@ -1,7 +1,10 @@
 // ============================================
 // src/modules/chat/stream.ts
 // Стриминг ответов от ИИ (с поддержкой агентов)
-// Версия: 4.7.0 — 403 «нет доступа к приложению» (блок / канал) открывает заглушку
+// Версия: 4.8.0 — блок ответа строится как в renderer: текст в .msg-content, кнопки
+//                  действий рядом (общий createMessageActions вместо двух копий кода);
+//                  эхо Realtime обновляет только текст и больше не стирает кнопки
+//          4.7.0 — 403 «нет доступа к приложению» (блок / канал) открывает заглушку
 //          4.6.0 — Markdown только через utils/html: если DOMPurify не загрузился,
 //                  ответ показывается текстом (раньше сырой HTML модели шёл в innerHTML)
 //          4.5.0 — «пульс» сервера вырезается, ошибка до первого слова показывается
@@ -19,7 +22,6 @@ import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { eventBus } from '@/core/event-bus';
-import { renderMarkdown } from '@/utils/html';
 import type { UUID, TopicId } from '@app-types';
 
 let streamCallCounter = 0;
@@ -59,8 +61,6 @@ const STREAM_ERROR_MARK = '\u0001';
   let finalizeCalled = false;
   let generatedAiMsgId: UUID | null = null;
 
-  const chatModule = (window as any).chatModule;
-  const patcher = chatModule?.getPatcher?.() || null;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
@@ -178,6 +178,9 @@ const STREAM_ERROR_MARK = '\u0001';
     msgDiv.className = 'msg ai-msg msg-animated';
     msgDiv.id = `msg-block-${Date.now()}-${callId}`;
     msgDiv.setAttribute('data-sanitized', 'true');
+    // Текст ответа — отдельный блок: кнопки действий добавляются рядом при финализации
+    const contentDiv = uiRendererInstance.createAIContent();
+    msgDiv.appendChild(contentDiv);
 
     function smartScroll(): void {
       if (!container) return;
@@ -227,16 +230,8 @@ const STREAM_ERROR_MARK = '\u0001';
         isFirstChunk = false;
       }
 
-      if (msgDiv && !isFirstChunk) {
-        if (patcher) {
-          if (generatedAiMsgId) {
-            patcher.updateMessageText(generatedAiMsgId, accumulatedText);
-          } else {
-            msgDiv.innerHTML = renderMarkdown(accumulatedText);
-          }
-        } else {
-          msgDiv.innerHTML = renderMarkdown(accumulatedText);
-        }
+      if (!isFirstChunk) {
+        uiRendererInstance.fillAIContent(contentDiv, accumulatedText);
         smartScroll();
       }
     }
@@ -270,42 +265,7 @@ const STREAM_ERROR_MARK = '\u0001';
 
       const safeFinalText = typeof accumulatedText === 'string' ? accumulatedText : String(accumulatedText);
 
-      const act = document.createElement('div');
-      act.className = 'msg-actions';
-      
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'action-btn';
-      copyBtn.dataset.action = 'copy-message';
-      copyBtn.dataset.msgId = generatedAiMsgId;
-      copyBtn.dataset.tooltip = '📋';
-      copyBtn.innerHTML = '<i data-lucide="copy"></i>';
-      act.appendChild(copyBtn);
-
-      const shareBtn = document.createElement('button');
-      shareBtn.className = 'action-btn';
-      shareBtn.dataset.action = 'share-message';
-      shareBtn.dataset.msgId = generatedAiMsgId;
-      shareBtn.dataset.tooltip = '🔗';
-      shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
-      act.appendChild(shareBtn);
-
-      const favBtn = document.createElement('button');
-      favBtn.className = 'action-btn';
-      favBtn.dataset.action = 'toggle-favorite';
-      favBtn.dataset.msgId = generatedAiMsgId;
-      favBtn.dataset.isFavorite = 'false';
-      favBtn.innerHTML = '<i data-lucide="heart"></i>';
-      act.appendChild(favBtn);
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'action-btn';
-      delBtn.dataset.action = 'delete-message';
-      delBtn.dataset.msgId = generatedAiMsgId;
-      delBtn.style.cssText = 'margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;';
-      delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
-      act.appendChild(delBtn);
-
-      msgDiv!.appendChild(act);
+      msgDiv!.appendChild(uiRendererInstance.createMessageActions(generatedAiMsgId, false));
 
       console.log(`💾 [СТРИМ #${callId}] СОХРАНЕНИЕ В ЧАТ ${chatId}`);
 
@@ -373,46 +333,13 @@ const STREAM_ERROR_MARK = '\u0001';
 
       const disconnectNotice = `${accumulatedText}\n\n[⚠️ Соединение разорвано]`;
 
-      msgDiv.innerHTML = renderMarkdown(disconnectNotice);
+      const brokenContent = (msgDiv.querySelector('.msg-content') as HTMLElement | null) || uiRendererInstance.createAIContent();
+      if (!brokenContent.parentNode) msgDiv.appendChild(brokenContent);
+      uiRendererInstance.fillAIContent(brokenContent, disconnectNotice);
 
       const safeFinalText = typeof disconnectNotice === 'string' ? disconnectNotice : String(disconnectNotice);
 
-      const act = document.createElement('div');
-      act.className = 'msg-actions';
-      
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'action-btn';
-      copyBtn.dataset.action = 'copy-message';
-      copyBtn.dataset.msgId = generatedAiMsgId;
-      copyBtn.dataset.tooltip = '📋';
-      copyBtn.innerHTML = '<i data-lucide="copy"></i>';
-      act.appendChild(copyBtn);
-
-      const shareBtn = document.createElement('button');
-      shareBtn.className = 'action-btn';
-      shareBtn.dataset.action = 'share-message';
-      shareBtn.dataset.msgId = generatedAiMsgId;
-      shareBtn.dataset.tooltip = '🔗';
-      shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
-      act.appendChild(shareBtn);
-
-      const favBtn = document.createElement('button');
-      favBtn.className = 'action-btn';
-      favBtn.dataset.action = 'toggle-favorite';
-      favBtn.dataset.msgId = generatedAiMsgId;
-      favBtn.dataset.isFavorite = 'false';
-      favBtn.innerHTML = '<i data-lucide="heart"></i>';
-      act.appendChild(favBtn);
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'action-btn';
-      delBtn.dataset.action = 'delete-message';
-      delBtn.dataset.msgId = generatedAiMsgId;
-      delBtn.style.cssText = 'margin-left:auto; background:rgba(231,76,60,0.05); color:#e74c3c;';
-      delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
-      act.appendChild(delBtn);
-
-      msgDiv.appendChild(act);
+      msgDiv.appendChild(uiRendererInstance.createMessageActions(generatedAiMsgId, false));
 
       const found = chatStoreInstance.findChatById(chatId);
       if (found) {
@@ -447,5 +374,3 @@ const STREAM_ERROR_MARK = '\u0001';
     return false;
   }
 };
-
-console.log('✅ ChatStream v4.4.0 загружен (с поддержкой агентов)');
