@@ -1,7 +1,8 @@
 // ============================================
 // src/store/SubscriptionStore.ts
 // Хранилище подписок
-// Версия: 1.0.0
+// Версия: 1.0.1 - без console.log с устаревшим номером версии
+//          1.0.0
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -138,4 +139,3 @@ export class SubscriptionStore extends BaseStore<ISubscriptionStoreData> {
 }
 
 export const subscriptionStore = new SubscriptionStore();
-console.log('✅ SubscriptionStore v1.0.0 загружен');
