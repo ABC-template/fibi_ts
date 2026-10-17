@@ -1,12 +1,12 @@
 // ============================================
 // src/modules/dashboard/DashboardModule.ts
 // Главная страница (заглушка)
-// Версия: 2.2.0 - плитки «Чат AI» → раздел «Агенты», «Избранное» → окно избранного
+// Версия: 2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+//          2.2.0 - плитки «Чат AI» → раздел «Агенты», «Избранное» → окно избранного
 //                 (вели в удалённый раздел chat-list)
 //          2.1.0 - исправлен импорт
 // ============================================
 
-import { headerManager } from '@/core/header-manager';
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { questsStore } from '@/store/QuestsStore';
@@ -16,7 +16,6 @@ export class DashboardModule {
   private isInitialized: boolean = false;
   private _subscriptions: Array<() => void> = [];
   private eventBus = eventBus;
-  private headerManager = headerManager;
   private chatStore = chatStore;
   private questsStore = questsStore;
 
@@ -27,12 +26,8 @@ export class DashboardModule {
   async init(): Promise<void> {
     if (this.isInitialized) return;
 
-    // Пустой заголовок для Dashboard
-    this.headerManager.setTitle(null);
-    this.headerManager.setActions([]);
-
     this.container.innerHTML = `
-      <div style="padding: 16px; flex:1; overflow-y:auto; padding-bottom: 80px;">
+      <div style="padding: 16px; flex:1; overflow-y:auto;">
         <h2 style="font-size:20px; font-weight:700; margin:0 0 4px 0; color:var(--app-text-primary);">
           🌤️ Добро пожаловать!
         </h2>
@@ -152,14 +147,8 @@ export class DashboardModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    this.headerManager.setTitle(null);
-    this.headerManager.setActions([]);
-
     this.updateStats();
 
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
   }
 
   hide(): void {
