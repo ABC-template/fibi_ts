@@ -1,9 +1,13 @@
 // ============================================
 // src/modules/admin/tabs/AdminSecurityTab.ts
+// Блокировки и белый список обмена
+// Версия: 1.1.0 — причина блокировки экранируется (её вводит админ, но выводится как HTML);
+//                  ID пользователей выводятся как числа
 // ============================================
 
 import { IAdminTab } from '../core/admin-tab.interface';
 import { apiClient } from '@/services/api';
+import { escapeHtml } from '@/utils/html';
 
 export class AdminSecurityTab implements IAdminTab {
   id = 'security';
@@ -64,10 +68,10 @@ export class AdminSecurityTab implements IAdminTab {
                 <tr><td colspan="3" style="text-align:center;padding:20px;color:var(--app-text-tertiary)">Нет блокировок</td></tr>
               ` : this.blocks.map(b => `
                 <tr style="border-bottom:1px solid var(--app-border-color-light)">
-                  <td style="padding:6px 8px">${b.user_id}</td>
-                  <td style="padding:6px 8px">${b.reason || '—'}</td>
+                  <td style="padding:6px 8px">${Number(b.user_id) || '—'}</td>
+                  <td style="padding:6px 8px">${b.reason ? escapeHtml(b.reason) : '—'}</td>
                   <td style="text-align:center;padding:6px 8px">
-                    <button onclick="window.adminModule.unblockUser(${b.user_id})" style="padding:4px 10px;font-size:11px;border:none;border-radius:6px;background:rgba(39,174,96,0.15);color:#27ae60;cursor:pointer">Разблокировать</button>
+                    <button onclick="window.adminModule.unblockUser(${Number(b.user_id) || 0})" style="padding:4px 10px;font-size:11px;border:none;border-radius:6px;background:rgba(39,174,96,0.15);color:#27ae60;cursor:pointer">Разблокировать</button>
                   </td>
                 </tr>
               `).join('')}
@@ -92,9 +96,9 @@ export class AdminSecurityTab implements IAdminTab {
                 <tr><td colspan="2" style="text-align:center;padding:20px;color:var(--app-text-tertiary)">Whitelist пуст</td></tr>
               ` : this.whitelist.map(w => `
                 <tr style="border-bottom:1px solid var(--app-border-color-light)">
-                  <td style="padding:6px 8px">${w.user_id || w}</td>
+                  <td style="padding:6px 8px">${Number(w.user_id) || '—'}</td>
                   <td style="text-align:center;padding:6px 8px">
-                    <button onclick="window.adminModule.removeFromWhitelist(${w.user_id || w})" style="padding:4px 10px;font-size:11px;border:none;border-radius:6px;background:rgba(231,76,60,0.15);color:#e74c3c;cursor:pointer">Удалить</button>
+                    <button onclick="window.adminModule.removeFromWhitelist(${Number(w.user_id) || 0})" style="padding:4px 10px;font-size:11px;border:none;border-radius:6px;background:rgba(231,76,60,0.15);color:#e74c3c;cursor:pointer">Удалить</button>
                   </td>
                 </tr>
               `).join('')}
