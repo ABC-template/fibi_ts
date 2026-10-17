@@ -1,7 +1,8 @@
 // ============================================
 // api/auth/check.ts
 // Проверка канала + подписки + дневной бонус
-// Версия: 9.3.0 — лимиты тарифа без выдуманных значений: если get_user_tier_limits не
+// Версия: 9.4.0 — в ответе нет полей старого лимита запросов (dailyLimit, usedToday)
+//          9.3.0 — лимиты тарифа без выдуманных значений: если get_user_tier_limits не
 //                  ответил, бонус дня не начисляется (раньше подставлялись 5 ⚡)
 //          9.2.0 — лимит частоты (auth_check)
 //          9.1.0 — без trial_used (пробного периода больше нет)
@@ -331,8 +332,6 @@ export default async function handler(request: Request): Promise<Response> {
       {
         isMember,
         role,
-        dailyLimit: limits.bonus_tokens_per_day || 0,
-        usedToday: 0,
         syncEnabled,
         syncToken: finalSyncToken,
         realtime,
