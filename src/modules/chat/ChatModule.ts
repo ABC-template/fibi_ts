@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/chat/ChatModule.ts
 // Страница чата (с проверкой доступа к агенту)
-// Версия: 9.4.0 — в шапке только название чата (без 🤖); нижнее меню не трогает (его прячет
+// Версия: 9.4.1 - без console.log с устаревшим номером версии
+//          9.4.0 — в шапке только название чата (без 🤖); нижнее меню не трогает (его прячет
 //                  ModuleLoader на время чата); удалён неиспользуемый _redirectIfEmpty
 //                  (слал событие, которого никто не слушал: пустой чат удаляется при уходе)
 //          9.3.2 — окно «Доступ ограничен»: название чата экранируется (самоXSS); текст про
@@ -35,9 +36,6 @@ import { economyStore } from '@/economy/EconomyStore';
 import { userStore } from '@/store/UserStore';
 import { 
   getWelcomeText, 
-  getTopic, 
-  isValidTopic,
-  type IChat, 
   type TopicId, 
   type UUID 
 } from '@/config';
@@ -64,8 +62,6 @@ export class ChatModule {
   private _subscriptions: Array<() => void> = [];
   private _rendered: boolean = false;
   private _isShowing: boolean = false;
-  private _voiceLoaded: boolean = false;
-  private _mediaLoaded: boolean = false;
   
   private _patcher: ChatPatcher | null = null;
   private _delegationHandler: ((e: Event) => void) | null = null;
@@ -89,7 +85,6 @@ export class ChatModule {
     this._subscribeToEvents();
     this.isInitialized = true;
 
-    console.log('✅ ChatModule v8.11.1 инициализирован (исправлен импорт)');
   }
 
   private async _ensureVoiceFunction(): Promise<void> {
@@ -108,7 +103,6 @@ export class ChatModule {
         throw new Error('toggleVoiceRecording не определена после импорта');
       }
 
-      this._voiceLoaded = true;
       console.log('✅ voice.ts успешно загружен динамически');
     } catch (err) {
       console.error('❌ Ошибка загрузки voice.ts:', err);
@@ -131,7 +125,6 @@ export class ChatModule {
         throw new Error('triggerMediaSelector не определена после импорта');
       }
 
-      this._mediaLoaded = true;
       console.log('✅ media.ts успешно загружен динамически');
     } catch (err) {
       console.error('❌ Ошибка загрузки media.ts:', err);
@@ -647,8 +640,6 @@ export class ChatModule {
 
   private _render(): void {
     if (this._rendered) return;
-
-    const tokens = this.economyStore.getTokenBalances();
 
     this.container.innerHTML = `
       <div id="chat-page" style="
