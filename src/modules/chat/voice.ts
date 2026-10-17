@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/chat/voice.ts
 // Голосовой ввод
-// Версия: 3.2.1 - без console.log с устаревшим номером версии
+// Версия: 3.3.0 - быстрая голосовая отправка — только в открытый на экране чат (open-chat),
+//                 а не в «активный чат темы» (после удаления он указывал на другой чат)
+//          3.2.1 - без console.log с устаревшим номером версии
 //          3.2.0 - формат записи — первый поддерживаемый браузером (webm/ogg/mp4);
 //                 раньше на iOS Safari new MediaRecorder({ mimeType: 'audio/webm' }) падал;
 //                 тип Blob — фактический тип записи
@@ -11,6 +13,7 @@
 
 import { chatStore } from '@/store/ChatStore';
 import { uiRenderer } from '@/modules/ui/renderer';
+import { getOpenChatId } from './open-chat';
 
 // Состояние голосовой записи
 let isVoiceRecording = false;
@@ -205,21 +208,23 @@ function pickRecorderMime(): string | null {
           }
           if (clearBtn) clearBtn.classList.add('hidden');
 
-          const activeChat = chatStore.getActiveChat();
-          if (activeChat) {
-            const { messageService } = await import('@/services/messages');
-            await messageService.sendMessage(activeChat.id, finalCleanText, 'user-msg');
+          const openId = getOpenChatId();
+          const targetChat = openId ? chatStore.findChatById(openId)?.chat : null;
+          if (!targetChat || targetChat.deleted_at) {
+            uiRenderer.showToast('Этот чат удалён — откройте другой', 'warning', 2500);
+            return;
           }
+
+          const { messageService } = await import('@/services/messages');
+          await messageService.sendMessage(targetChat.id, finalCleanText, 'user-msg');
 
           uiRenderer.showSkeleton();
 
-          const activeChatForStream = chatStore.getActiveChat();
-          const maxLimit = activeChatForStream ? (activeChatForStream.maxContext || 15) : 15;
-          const cleanHist = activeChatForStream ?
-            chatStore.getContextMessages(activeChatForStream.id, maxLimit).map(m => ({
-              type: String(m.type),
-              text: String(m.text)
-            })) : [];
+          const maxLimit = targetChat.maxContext || 15;
+          const cleanHist = chatStore.getContextMessages(targetChat.id, maxLimit).map(m => ({
+            type: String(m.type),
+            text: String(m.text)
+          }));
 
           (window as any).isSendingMessage = true;
           if (userInput) userInput.disabled = true;
@@ -230,22 +235,16 @@ function pickRecorderMime(): string | null {
           if (typeof (window as any).streamAiResponse !== 'function') {
             await import('./stream');
           }
-          if (activeChatForStream) {
-            const userLang = activeChatForStream.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
-            // chatId и агент чата — как при обычной отправке (раньше уходил объект
-            // чата вместо id, и ответ не находил свой чат)
-            await (window as any).streamAiResponse(
-              cleanHist,
-              activeChatForStream.topic || chatStore.currentTopic,
-              userLang,
-              null,
-              activeChatForStream.id,
-              activeChatForStream.agent_id || null,
-              null
-            );
-          } else {
-            uiRenderer.hideSkeleton();
-          }
+          const userLang = targetChat.language || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.language_code || 'ru';
+          await (window as any).streamAiResponse(
+            cleanHist,
+            targetChat.topic || chatStore.currentTopic,
+            userLang,
+            null,
+            targetChat.id,
+            targetChat.agent_id || null,
+            null
+          );
 
           (window as any).isSendingMessage = false;
           if (userInput) userInput.disabled = false;
