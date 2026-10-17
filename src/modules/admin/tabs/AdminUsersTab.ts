@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/admin/tabs/AdminUsersTab.ts
 // Админ-панель → «Пользователи»: поиск, смена роли, монеты и энергия
-// Версия: 2.1.0
+// Версия: 2.1.1 — список тарифов без проверки устаревшего is_trial
+//          2.1.0
 //   - полная блокировка (закрывает всё API) и заморозка монет — кнопками в карточке;
 //     в карточке видно: заблокирован (причина, до какого числа), монеты заморожены,
 //     подписка на канал
@@ -62,7 +63,7 @@ export class AdminUsersTab implements IAdminTab {
   private async loadTiers(): Promise<void> {
     try {
       const res = await apiClient.get('/admin/economy/subscriptions');
-      this.tiers = (res?.tiers || []).filter((t: any) => t.is_active && t.tier_key !== 'trial' && !t.is_trial);
+      this.tiers = (res?.tiers || []).filter((t: any) => t.is_active && t.tier_key !== 'trial');
     } catch {
       this.tiers = [];
     }
