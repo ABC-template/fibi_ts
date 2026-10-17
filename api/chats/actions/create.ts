@@ -1,7 +1,9 @@
 // ============================================
 // api/chats/actions/create.ts
 // Описание: Создание нового чата (с user_uuid, sync_token и agent_id)
-// Версия: 5.3.0 — название чата: строка до 200 символов (как в rename)
+// Версия: 5.4.0 — право на синхронизацию — общая проверка canUserSync (RPC can_sync), без
+//                  своей копии правила
+//          5.3.0 — название чата: строка до 200 символов (как в rename)
 //          5.2.0 — повторное создание того же чата (id уже есть у этого пользователя)
 //                  считается успехом: повтор после сбоя сети больше не падает;
 //                  первое сообщение проверяется по длине и не дублируется
@@ -12,13 +14,14 @@
 // ============================================
 
 import { authenticate } from '../../_lib/auth';
-import { corsHeaders, handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
+import { handleCORS, jsonResponse, errorResponse } from '../../_lib/cors';
 import {
   getSupabaseConfig,
   supabaseFetch,
   getUserUuid,
   updateSyncToken,
-  getSyncToken
+  getSyncToken,
+  canUserSync,
 } from '../../_lib/supabase-client';
 import { isValidUUID, isValidTopic, validateTopic, validateUserId, validateMessageLength } from '../../_lib/validators';
 
@@ -84,23 +87,7 @@ async function createChat(
       validateTopic(topic);
     }
 
-    const canSync = await supabaseFetch(
-      `users?telegram_id=eq.${userId}&select=role,premium_until`,
-      { method: 'GET' },
-      config
-    );
-
-    let syncAllowed = false;
-    if (canSync && Array.isArray(canSync) && canSync.length > 0) {
-      const user = canSync[0];
-      if (['admin', 'creator'].includes(user.role)) {
-        syncAllowed = true;
-      } else if (user.role === 'premium' && user.premium_until && new Date(user.premium_until) > new Date()) {
-        syncAllowed = true;
-      }
-    }
-
-    if (!syncAllowed) {
+    if (!(await canUserSync(userId, config))) {
       return {
         success: false,
         error: 'Синхронизация недоступна для вашего тарифного плана'
