@@ -1,7 +1,9 @@
 // ============================================
 // src/services/sync.ts
 // Realtime синхронизация для PRO
-// Версия: 5.1.0 - роль читается с привязкой к Telegram ID (user-storage)
+// Версия: 5.2.0 - Realtime — по решению сервера о синхронизации (userStore.canSync), а не по
+//                 списку ролей с устаревшей ролью «pro»
+//          5.1.0 - роль читается с привязкой к Telegram ID (user-storage)
 //          5.0.0 - свой токен Realtime (auth/check или /auth/realtime-token) передаётся
 //                 в websocket через realtime.setAuth: раньше токен уходил только в
 //                 REST-заголовки, канал подключался анонимно и RLS не пропускал события;
@@ -19,7 +21,7 @@ import { apiClient } from './api';
 import { chatStore } from '@/store/ChatStore';
 import { eventBus } from '@/core/event-bus';
 import { chatService } from './chats';
-import { userStorage } from '@/utils/user-storage';
+import { userStore } from '@/store/UserStore';
 import type { IMessage, MessageType, TopicId, UUID } from '@app-types';
 
 export class SyncService {
@@ -41,7 +43,6 @@ export class SyncService {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _isConnecting: boolean = false;
   private _showTimeout: ReturnType<typeof setTimeout> | null = null;
-  private _wasSubscribedBeforeHide: boolean = false;
 
   private isTabVisible: boolean = true;
 
@@ -90,8 +91,6 @@ export class SyncService {
   private handleTabHide(): void {
     console.log('📡 [handleTabHide] Вкладка ушла в фон');
     
-    this._wasSubscribedBeforeHide = this.isSubscribed;
-
     if (this.isSubscribed) {
       this.unsubscribe();
     }
@@ -129,9 +128,8 @@ export class SyncService {
       return;
     }
 
-    const role = userStorage.get('user_role');
-    if (role !== 'pro' && role !== 'premium' && role !== 'admin' && role !== 'creator') {
-      console.log(`📡 [handleTabShow] Realtime только для PRO, текущая роль: ${role}`);
+    if (!userStore.canSync()) {
+      console.log('📡 [handleTabShow] Realtime — только с синхронизацией');
       return;
     }
 
@@ -354,9 +352,8 @@ export class SyncService {
       return;
     }
 
-    const role = userStorage.get('user_role');
-    if (role !== 'pro' && role !== 'premium' && role !== 'admin' && role !== 'creator') {
-      console.warn(`⚠️ [subscribe] Realtime только для PRO, текущая роль: ${role}`);
+    if (!userStore.canSync()) {
+      console.warn('⚠️ [subscribe] Realtime — только с синхронизацией');
       return;
     }
 
@@ -697,4 +694,3 @@ export class SyncService {
 }
 
 export const syncService = new SyncService();
-console.log('✅ SyncService v5.0.0 загружен');
