@@ -1,7 +1,8 @@
 // ============================================
 // src/utils/global.ts
 // Глобальные функции для window
-// Версия: 1.3.0 - sync_token с привязкой к Telegram ID (user-storage)
+// Версия: 1.4.0 - удалён неиспользуемый showGuest (экран гостя заменён заглушкой access-gate)
+//          1.3.0 - sync_token с привязкой к Telegram ID (user-storage)
 //          1.2.0 - добавлен questsStore
 // ============================================
 
@@ -33,7 +34,6 @@ import { updateCoinsDisplay, updateDrawerUserInfo, updateDrawerRole, updateRealt
 import { updateThemeLabel } from '@/ui/drawer';
 import { showFavoritesModal, showTrashModal, showContextModal, initExportButtons } from '@/ui/modals';
 import { showOfflineBanner, hideOfflineBanner } from '@/services/network';
-import { hideSplash } from '@/ui/splash';
 
 export function setupGlobalFunctions(): void {
     // ==========================================
@@ -250,25 +250,6 @@ export function setupGlobalFunctions(): void {
                 window.openChat(newChat.id, topic);
             }
         }
-    };
-
-    window.showGuest = function(data: { msg: string; joke: string }): void {
-        const guestScreen = document.getElementById('guest-screen');
-        const errorTitle = document.getElementById('error-title');
-        const jokeText = document.getElementById('joke-text');
-        const appScreen = document.getElementById('app-screen');
-
-        if (guestScreen) {
-            guestScreen.classList.remove('hidden');
-            guestScreen.style.display = 'flex';
-        }
-        if (appScreen) {
-            appScreen.style.display = 'none';
-        }
-        if (errorTitle) errorTitle.textContent = `⚠️ ${data.msg || 'Доступ ограничен'}`;
-        if (jokeText) jokeText.textContent = data.joke || 'Пожалуйста, подпишитесь на канал для доступа.';
-        
-        hideSplash();
     };
 }
 
