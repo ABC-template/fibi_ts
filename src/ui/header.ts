@@ -1,12 +1,12 @@
 // ============================================
 // src/ui/header.ts
 // Управление хедером, монетами, пользователем
-// Версия: 1.2.0 - используем questsStore.getBalance()
+// Версия: 1.2.1 - без неиспользуемых импортов и переменных
+//          1.2.0 - используем questsStore.getBalance()
 // ============================================
 
 import './header.css';
 import { questsStore } from '@/store/QuestsStore';
-import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
 
 export function updateCoinsDisplay(): void {
