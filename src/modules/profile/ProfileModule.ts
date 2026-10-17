@@ -1,27 +1,25 @@
 // ============================================
 // src/modules/profile/ProfileModule.ts
 // Полноценная страница профиля
-// Версия: 4.5.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+// Версия: 4.6.0 - удалён блок «Ежедневный лимит» (старый лимит запросов; энергия — в «Экономике»)
+//          4.5.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          4.4.0 - очистка кэша через общую clearLocalCache (история чатов в IndexedDB)
 //          4.3.0 - очистка кэша без clearJWT (JWT больше нет)
 //          4.2.0 - используем questsStore.getBalance()
 // ============================================
 
 import './profile.css';
-import { navigationState } from '@/core/navigation-state';
 import { eventBus } from '@/core/event-bus';
 import { chatStore } from '@/store/ChatStore';
 import { userStore } from '@/store/UserStore';
 import { questsStore } from '@/store/QuestsStore';
 import { clearLocalCache, confirmClearCache } from '@/utils/clear-cache';
 import { themeManager } from '@/core/theme-manager';
-import type { ThemeType } from '@/core/theme-manager';
 
 export class ProfileModule {
   private container: HTMLElement;
   private isInitialized: boolean = false;
   private _subscriptions: Array<() => void> = [];
-  private navigationState = navigationState;
   private eventBus = eventBus;
   private chatStore = chatStore;
   private userStore = userStore;
@@ -197,33 +195,6 @@ export class ProfileModule {
             </div>
           </div>
 
-          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--app-border-color-light);">
-            <div style="
-              display: flex;
-              justify-content: space-between;
-              font-size: 12px;
-              color: var(--app-text-secondary);
-              margin-bottom: 4px;
-            ">
-              <span>Ежедневный лимит</span>
-              <span id="profile-limit-text">0/0</span>
-            </div>
-            <div style="
-              width: 100%;
-              height: 6px;
-              background: var(--app-bg-tertiary);
-              border-radius: 3px;
-              overflow: hidden;
-            ">
-              <div id="profile-limit-bar" style="
-                width: 0%;
-                height: 100%;
-                background: var(--app-gradient-primary);
-                border-radius: 3px;
-                transition: width 0.3s ease;
-              "></div>
-            </div>
-          </div>
         </div>
 
         <!-- БЛОК 3: НАСТРОЙКИ -->
@@ -390,7 +361,6 @@ export class ProfileModule {
     }, 200);
 
     this.isInitialized = true;
-    console.log('✅ ProfileModule v4.2.0 инициализирован');
   }
 
   // ==========================================
@@ -409,11 +379,6 @@ export class ProfileModule {
       this.updateStats();
     }, this);
     this._subscriptions.push(unsubRole);
-
-    const unsubUsage = this.eventBus.on('user:usage_incremented', (data) => {
-      this._updateLimits(data.used, data.limit);
-    }, this);
-    this._subscriptions.push(unsubUsage);
 
     const unsubChats = this.eventBus.on('chat:all_updated', () => {
       this.updateStats();
@@ -437,7 +402,6 @@ export class ProfileModule {
     const avatarEl = document.getElementById('profile-avatar') as HTMLImageElement;
     const nameEl = document.getElementById('profile-name');
     const usernameEl = document.getElementById('profile-username');
-    const roleEl = document.getElementById('profile-role');
     const coinsEl = document.getElementById('profile-coins');
 
     if (user) {
@@ -451,9 +415,6 @@ export class ProfileModule {
     if (coinsEl) {
       coinsEl.textContent = String(this.questsStore.getBalance() || 0);
     }
-
-    // request-quota удалён — лимиты токенов в Economy
-    // this._updateLimits(0, 0);
   }
 
   private _updateRole(role: string): void {
@@ -468,27 +429,9 @@ export class ProfileModule {
     roleEl.textContent = roleMap[role] || role;
   }
 
-  private _updateLimits(used: number, limit: number): void {
-    const limitText = document.getElementById('profile-limit-text');
-    const limitBar = document.getElementById('profile-limit-bar');
-
-    if (limitText) {
-      if (limit >= 9999) {
-        limitText.textContent = '∞ (безлимит)';
-      } else {
-        limitText.textContent = `${used}/${limit}`;
-      }
-    }
-
-    if (limitBar) {
-      const percent = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
-      limitBar.style.width = limit >= 9999 ? '100%' : `${percent}%`;
-    }
-  }
-
   updateStats(): void {
     const allChats: any[] = [];
-    for (const [topic, chats] of Object.entries(this.chatStore.histories || {})) {
+    for (const chats of Object.values(this.chatStore.histories || {})) {
       if (!chats) continue;
       for (const chat of chats) {
         if (chat.deleted_at) continue;
@@ -577,5 +520,3 @@ export class ProfileModule {
     void clearLocalCache();
   });
 };
-
-console.log('✅ ProfileModule v4.4.0 загружен');
