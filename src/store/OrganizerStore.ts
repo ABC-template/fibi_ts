@@ -1,7 +1,8 @@
 // ============================================
 // src/store/OrganizerStore.ts
 // To-Do, напоминания, трекеры
-// Версия: 4.0.1 - FIXED TYPES
+// Версия: 4.0.2 - без console.log с устаревшим номером версии
+//          4.0.1 - FIXED TYPES
 // ============================================
 
 import { BaseStore } from './BaseStore';
@@ -194,4 +195,3 @@ export class OrganizerStore extends BaseStore<IOrganizerStoreData> {
 
 // Создаем экземпляр
 export const organizerStore = new OrganizerStore();
-console.log('✅ OrganizerStore v4.0.1 загружен');
