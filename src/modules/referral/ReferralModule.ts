@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/referral/ReferralModule.ts
 // Модуль реферальной системы
-// Версия: 2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
+// Версия: 2.4.0 - имя приглашённого (его Telegram username) экранируется; сумма — числом
+//          2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.2.0 - ссылка и список приглашённых загружаются с сервера при открытии
 //          2.1.0 - награду за реферала начисляет только сервер (убрано клиентское начисление),
 //                 баланс — getCoinBalance
@@ -13,6 +14,7 @@ import { eventBus } from '@/core/event-bus';
 import { userStore } from '@/store/UserStore';
 import { uiRenderer } from '@/modules/ui/renderer';
 import { apiClient } from '@/services/api';
+import { escapeHtml } from '@/utils/html';
 
 export class ReferralModule {
   private container: HTMLElement;
@@ -394,10 +396,10 @@ export class ReferralModule {
         ">
           <div style="flex: 1; min-width: 0;">
             <div style="font-size: 13px; color: var(--app-text-primary);">
-              ${r.referred_username || 'Пользователь'}
+              ${r.referred_username ? escapeHtml(r.referred_username) : 'Пользователь'}
             </div>
             <div style="font-size: 10px; color: var(--app-text-tertiary);">
-              ${dateStr} • ${r.reward_amount ? `+${r.reward_amount} 🪙` : ''}
+              ${dateStr} • ${Number(r.reward_amount) ? `+${Number(r.reward_amount)} 🪙` : ''}
             </div>
           </div>
           <div style="font-size: 12px; font-weight: 600; color: ${status.color};">
