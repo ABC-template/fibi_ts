@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/dashboard/DashboardModule.ts
 // Главная страница (заглушка)
-// Версия: 2.3.1 - без console.log с устаревшим номером версии
+// Версия: 2.4.0 - корень раздела прокручивается под «парящими» шапкой и меню (.app-scroll)
+//          2.3.1 - без console.log с устаревшим номером версии
 //          2.3.0 - шапку и нижнее меню не трогает (рамку экрана ведёт ModuleLoader: заголовка нет, меню видно и не закрывает контент)
 //          2.2.0 - плитки «Чат AI» → раздел «Агенты», «Избранное» → окно избранного
 //                 (вели в удалённый раздел chat-list)
@@ -26,7 +27,7 @@ export class DashboardModule {
     if (this.isInitialized) return;
 
     this.container.innerHTML = `
-      <div style="padding: 16px; flex:1; overflow-y:auto;">
+      <div class="app-scroll" style="padding: 16px; flex:1; overflow-y:auto;">
         <h2 style="font-size:20px; font-weight:700; margin:0 0 4px 0; color:var(--app-text-primary);">
           🌤️ Добро пожаловать!
         </h2>
