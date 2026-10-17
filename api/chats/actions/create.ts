@@ -1,7 +1,8 @@
 // ============================================
 // api/chats/actions/create.ts
 // Описание: Создание нового чата (с user_uuid, sync_token и agent_id)
-// Версия: 5.4.0 — право на синхронизацию — общая проверка canUserSync (RPC can_sync), без
+// Версия: 5.4.1 - без неиспользуемых импортов и переменных
+//          5.4.0 — право на синхронизацию — общая проверка canUserSync (RPC can_sync), без
 //                  своей копии правила
 //          5.3.0 — название чата: строка до 200 символов (как в rename)
 //          5.2.0 — повторное создание того же чата (id уже есть у этого пользователя)
@@ -23,7 +24,7 @@ import {
   getSyncToken,
   canUserSync,
 } from '../../_lib/supabase-client';
-import { isValidUUID, isValidTopic, validateTopic, validateUserId, validateMessageLength } from '../../_lib/validators';
+import { isValidUUID, isValidTopic, validateTopic, validateMessageLength } from '../../_lib/validators';
 
 export const config = { runtime: 'edge' };
 
@@ -249,7 +250,7 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { chat, firstMessage, action } = body;
+    const { chat, firstMessage } = body;
 
     if (!chat) {
       return errorResponse('Missing chat data', 400);
