@@ -1,7 +1,9 @@
 // ============================================
 // src/modules/admin/AdminModule.ts
 // Тонкий контейнер админ-панели
-// Версия: 7.9.0 — период «Расходов ИИ» на дашборде (setDashboardPeriod)
+// Версия: 7.9.0 — период «Расходов ИИ» на дашборде (setDashboardPeriod); шапку и нижнее
+//                  меню больше не трогает (рамку экрана ведёт ModuleLoader: заголовка
+//                  нет, меню видно)
 //          7.8.0 — блокировка и заморозка монет из карточки пользователя
 //                  (blockUserFromList, toggleUserEconomyLock)
 //          7.7.0 — проверка заданий (verifySubmission); убрана пустая вкладка «Лимиты»
@@ -14,7 +16,6 @@
 //                  «призрачному» инстансу, у которого никогда не вызывался init()
 // ============================================
 
-import { headerManager } from '@/core/header-manager';
 import { userStore } from '@/store/UserStore';
 import { IAdminTab } from './core/admin-tab.interface';
 
@@ -123,7 +124,6 @@ export class AdminModule {
       padding: 16px;
       flex: 1;
       overflow-y: auto;
-      padding-bottom: 80px;
       display: flex;
       flex-direction: column;
       height: 100%;
@@ -199,13 +199,6 @@ export class AdminModule {
     this.container.style.height = '100%';
     this.container.style.width = '100%';
 
-    headerManager.setTitle('👑 Админ-панель');
-    headerManager.setActions([]);
-
-    if ((window as any).navigation) {
-      (window as any).navigation.hide();
-    }
-
     await this.init();
     this.render();
   }
@@ -213,10 +206,6 @@ export class AdminModule {
   hide(): void {
     this.container.classList.add('hidden');
     this.container.style.display = 'none';
-
-    if ((window as any).navigation) {
-      (window as any).navigation.show();
-    }
   }
 
   destroy(): void {
