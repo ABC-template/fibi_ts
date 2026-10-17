@@ -1,7 +1,9 @@
 // ============================================
 // api/generations/create.ts
 // Создание генерации (image / video)
-// Версия: 3.5.0 — энергия по общему курсу ⚡ за $1 из настроек экономики (energy_per_usd
+// Версия: 3.6.0 — пока идёт генерация фото, замок чата и резерв энергии продлеваются
+//                  раз в минуту
+//          3.5.0 — энергия по общему курсу ⚡ за $1 из настроек экономики (energy_per_usd
 //                  у агента больше не используется); мин. списание без умножения на
 //                  коэффициент; расход пишется в журнал ai_usage
 //          3.4.0 — лимит частоты (generation_create)
@@ -58,9 +60,11 @@ import {
 } from '../_lib/media';
 import type { IMediaFileRow } from '../_lib/media';
 import {
+  CHAT_LOCK_TTL,
   VIDEO_LOCK_TTL_SEC,
   acquireChatLock,
   chatBusyResponse,
+  startLeaseRenewal,
 } from '../_lib/chat-lock';
 
 /** Заморозка энергии живёт дольше задания: видео — замок + 5 минут, фото — 10 минут */
@@ -363,6 +367,14 @@ export default async function handler(request: Request): Promise<Response> {
 
     return keepAliveJson(
       async () => {
+      const stopLease = startLeaseRenewal({
+        userId,
+        chatId: body.chat_id,
+        lockToken: imageLock.token,
+        holdId: imageHoldId,
+        ttlSeconds: CHAT_LOCK_TTL.generation,
+        config,
+      });
       try {
         return await runImageGeneration({
           userId,
@@ -380,6 +392,7 @@ export default async function handler(request: Request): Promise<Response> {
           config,
         });
       } finally {
+        stopLease();
         // Списание (settle) уже сняло заморозку; иначе — снимаем без списания
         await releaseEnergy(imageHoldId, config);
         await imageLock.release();
