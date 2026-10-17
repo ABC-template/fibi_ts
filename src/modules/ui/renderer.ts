@@ -1,7 +1,8 @@
 // ============================================
 // src/modules/ui/renderer.ts
 // Базовый рендеринг UI-элементов
-// Версия: 4.3.0 - текст сообщения лежит в .msg-content, кнопки действий — рядом, отдельно:
+// Версия: 4.4.0 - удалены остатки старого лимита запросов (_updateLimitDisplay и подписки)
+//          4.3.0 - текст сообщения лежит в .msg-content, кнопки действий — рядом, отдельно:
 //                 обновление текста (стрим, Realtime) их больше не стирает;
 //                 fillAIContent / createMessageActions — общие для чата, стрима и патчера
 //          4.2.0 - Markdown только через utils/html (без DOMPurify — текст, а не сырой
@@ -11,19 +12,16 @@
 import './ui.css';
 import { renderMarkdown, sanitizeRichHtml, escapeHtml } from '@/utils/html';
 import { chatStore } from '@/store/ChatStore';
-import { userStore } from '@/store/UserStore';
 import { eventBus } from '@/core/event-bus';
 import type { MessageType, UUID } from '@app-types';
 
 export class UIRenderer {
   private chatStore = chatStore;
-  private userStore = userStore;
   private eventBus = eventBus;
   private _subscriptions: Array<() => void> = [];
 
   constructor() {
     this._subscribeToEvents();
-    console.log('✅ UIRenderer v4.2.0 загружен (EventBus-based)');
   }
 
   private _subscribeToEvents(): void {
@@ -36,16 +34,6 @@ export class UIRenderer {
       this._updateTokensDisplay(data.newTokens);
     }, this);
     this._subscriptions.push(unsubTokens);
-
-    const unsubUsage = this.eventBus.on('user:usage_incremented', (data) => {
-      this._updateLimitDisplay({ used: data.used, limit: data.limit ?? 0 });
-    }, this);
-    this._subscriptions.push(unsubUsage);
-
-    const unsubRole = this.eventBus.on('user:role_changed', (data) => {
-      this._updateLimitDisplay({ used: data.used ?? 0, limit: data.limit ?? data.dailyLimit ?? 0 });
-    }, this);
-    this._subscriptions.push(unsubRole);
 
     console.log('📡 UIRenderer подписан на события');
   }
@@ -65,14 +53,6 @@ export class UIRenderer {
   private _updateTokensDisplay(tokens: number): void {
     const tokensEl = document.getElementById('tasks-tokens');
     if (tokensEl) tokensEl.textContent = String(tokens || 0);
-  }
-
-  private _updateLimitDisplay(_data: { used: number; limit: number }): void {
-    // Старый лимит «запросов в сутки» удалён — скрываем UI, если остался в DOM.
-    const limitInfo = document.getElementById('limit-info');
-    if (limitInfo) limitInfo.style.display = 'none';
-    const barEl = document.getElementById('profile-limit-bar');
-    if (barEl) (barEl as HTMLElement).style.display = 'none';
   }
 
   // ==========================================
@@ -376,4 +356,3 @@ export class UIRenderer {
 }
 
 export const uiRenderer = new UIRenderer();
-console.log('✅ UIRenderer v4.1.1 загружен (стиль welcome-msg по центру)');
