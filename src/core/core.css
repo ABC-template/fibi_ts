@@ -1,7 +1,11 @@
 /* ============================================
    src/core/core.css
    Глобальные стили приложения
-   Версия: 2.3.0 - удалены стили экрана гостя (#guest-screen)
+   Версия: 2.4.0 - «парящие» шапка и нижнее меню: экран занимает всё окно, контент
+                   прокручивается под ними (отступы — у прокручиваемого корня модуля,
+                   класс .app-scroll: сверху --app-header-space, снизу --app-nav-space);
+                   нижнее меню поднято на 10px
+   2.3.0 - удалены стили экрана гостя (#guest-screen)
    2.2.0 - #app-screen отступает снизу на высоту нижнего меню (--app-nav-space):
                    меню больше не закрывает контент
    2.1.0 - добавлена нижняя навигация
@@ -220,14 +224,21 @@ body {
     position: relative;
     flex: 1;
     box-sizing: border-box;
-    /* Место под нижнее меню (высота + отступ снизу, считает navigation.ts; 0 — меню скрыто) */
-    padding-bottom: var(--app-nav-space, 0px);
+}
+
+/* Прокручиваемый корень раздела: контент уходит под шапку и меню, но в начале и в конце
+   не закрыт ими (--app-header-space считает header.ts, --app-nav-space — navigation.ts) */
+.app-scroll {
+    padding-top: calc(var(--app-header-space, 0px) + 8px) !important;
+    padding-bottom: calc(var(--app-nav-space, 0px) + 16px) !important;
+    scroll-padding-top: calc(var(--app-header-space, 0px) + 8px);
+    -webkit-overflow-scrolling: touch;
 }
 
 /* ===== НИЖНЯЯ НАВИГАЦИЯ (стиль как в Telegram) ===== */
 .bottom-nav {
     position: fixed;
-    bottom: 12px;
+    bottom: 22px;
     left: 12px;
     right: 12px;
     background: rgba(10, 10, 10, 0.75);
@@ -364,7 +375,7 @@ body[data-theme="amoled"] .bottom-nav {
 /* Маленькие телефоны (до 400px) */
 @media (max-width: 400px) {
     .bottom-nav {
-        bottom: 8px;
+        bottom: 18px;
         left: 8px;
         right: 8px;
         border-radius: 22px;
@@ -408,7 +419,7 @@ body[data-theme="amoled"] .bottom-nav {
 /* Средние телефоны (400-600px) */
 @media (min-width: 401px) and (max-width: 600px) {
     .bottom-nav {
-        bottom: 10px;
+        bottom: 20px;
         left: 10px;
         right: 10px;
         border-radius: 24px;
@@ -420,7 +431,7 @@ body[data-theme="amoled"] .bottom-nav {
 /* Большие телефоны и планшеты (600px+) */
 @media (min-width: 601px) {
     .bottom-nav {
-        bottom: 16px;
+        bottom: 26px;
         left: 16px;
         right: 16px;
         border-radius: 32px;
@@ -444,7 +455,7 @@ body[data-theme="amoled"] .bottom-nav {
 @media (min-width: 768px) {
     .bottom-nav {
         max-width: 480px;
-        bottom: 24px;
+        bottom: 34px;
         border-radius: 36px;
         padding: 6px 14px;
         padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
