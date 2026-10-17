@@ -1,7 +1,12 @@
 // ============================================
 // src/modules/ui/profile-ui.ts
 // Работа с модалками (Избранное, Корзина) + История чатов
-// Версия: 7.3.0 - текст сообщений, названия чатов и превью экранируются; кнопки
+// Версия: 7.4.0 - кнопки в «Избранном» и «Корзине» снова работают: обработчик на фазе
+//                 перехвата (модалка останавливает всплытие кликов, и обработчик на
+//                 document их не получал); переход из избранного к сообщению без правки
+//                 внутреннего состояния навигации; стек слоёв ведёт ModalManager
+//                 (ручные toggleModal удалены — из стека снималась чужая модалка)
+//          7.3.0 - текст сообщений, названия чатов и превью экранируются; кнопки
 //                 избранного и корзины — через делегирование (id больше не
 //                 вставляются в onclick)
 //          7.2.0 - с использованием конфига
@@ -43,7 +48,10 @@ export class ProfileUI {
     console.log('✅ ProfileUI v7.2.0 загружен');
   }
 
-  /** Кнопки в модалках «Избранное» и «Корзина»: один обработчик на документ */
+  /**
+   * Кнопки в модалках «Избранное» и «Корзина»: один обработчик на документ, на фазе
+   * перехвата — модалка останавливает всплытие кликов внутри себя
+   */
   private _bindModalActions(): void {
     document.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement | null)?.closest?.('[data-pui-action]') as HTMLElement | null;
@@ -66,28 +74,22 @@ export class ProfileUI {
           void this._permanentDelete(chatId as UUID);
           break;
       }
-    });
+    }, true);
   }
 
   private _subscribeToEvents(): void {
     const unsubFav = this.eventBus.on('chat:favorite_toggled', () => {
-      if (this.modalManager.isOpen()) {
-        this.renderFavoritesModal();
-      }
+      this.renderFavoritesModal();
     }, this);
     this._subscriptions.push(unsubFav);
 
     const unsubTrash = this.eventBus.on('chat:deleted', () => {
-      if (this.modalManager.isOpen()) {
-        this.renderTrashModal();
-      }
+      this.renderTrashModal();
     }, this);
     this._subscriptions.push(unsubTrash);
 
     const unsubRestore = this.eventBus.on('chat:restored', () => {
-      if (this.modalManager.isOpen()) {
-        this.renderTrashModal();
-      }
+      this.renderTrashModal();
     }, this);
     this._subscriptions.push(unsubRestore);
 
@@ -119,21 +121,10 @@ export class ProfileUI {
   // ==========================================
 
   showFavoritesModal(): void {
-    const content = this._renderFavoritesContent();
-
-    if (this.navigationState) {
-      this.navigationState.toggleModal(true, 'favorites');
-    }
-
     this.modalManager.open({
       title: '⭐ Избранное',
-      content: content,
+      content: this._renderFavoritesContent(),
       modalId: 'favorites',
-      onClose: () => {
-        if (this.navigationState) {
-          this.navigationState.toggleModal(false, 'favorites');
-        }
-      }
     });
   }
 
@@ -197,35 +188,11 @@ export class ProfileUI {
   }
 
   private _openChatFromFavorite(chatId: UUID, topic: TopicId, msgId: UUID): void {
-    console.log(`⭐ [favorite] Открываем чат из избранного: ${chatId}, msg: ${msgId}`);
-
+    // Модалка и сайдбар закрываются сразу; messageId уходит в ChatModule —
+    // прокрутка к сообщению после отрисовки чата
     this.modalManager.forceClose();
-
-    if ((window as any).closeDrawer) {
-      (window as any).closeDrawer();
-    } else {
-      const drawer = document.getElementById('drawer');
-      const overlay = document.getElementById('drawer-overlay');
-      if (drawer?.classList.contains('active')) {
-        drawer.classList.remove('active');
-        overlay?.classList.remove('active');
-        document.body.style.overflow = '';
-      }
-    }
-
-    if (this.navigationState) {
-      (this.navigationState as any)._state.isDrawerOpen = false;
-      (this.navigationState as any)._state.modalStack = [];
-      (this.navigationState as any)._state.isModalOpen = false;
-      (this.navigationState as any)._updateBackButton();
-    }
-
-    // messageId уходит в ChatModule → скролл ПОСЛЕ renderAll (не здесь)
-    if (this.navigationState) {
-      this.navigationState.openChat(chatId, topic, msgId);
-    } else {
-      this.eventBus.emit('navigation:open_chat', { chatId, topic, messageId: msgId });
-    }
+    (window as any).closeDrawer?.({ instant: true });
+    this.navigationState.openChat(chatId, topic, msgId);
   }
 
 
@@ -237,7 +204,7 @@ export class ProfileUI {
   }
 
   renderFavoritesModal(): void {
-    if (this.modalManager.isOpen()) {
+    if (this.modalManager.isOpen() && this.modalManager.getModalId() === 'favorites') {
       const content = this._renderFavoritesContent();
       this.modalManager.updateContent(content);
     }
@@ -248,15 +215,9 @@ export class ProfileUI {
   // ==========================================
 
   showTrashModal(): void {
-    const content = this._renderTrashContent();
-
-    if (this.navigationState) {
-      this.navigationState.toggleModal(true, 'trash');
-    }
-
     this.modalManager.open({
       title: '🗑️ Корзина',
-      content: content,
+      content: this._renderTrashContent(),
       modalId: 'trash',
       footer: `
         <button id="modal-save-btn" class="btn btn-danger" style="width:100%;">
@@ -267,11 +228,6 @@ export class ProfileUI {
       onSave: () => {
         this._clearAllTrash();
       },
-      onClose: () => {
-        if (this.navigationState) {
-          this.navigationState.toggleModal(false, 'trash');
-        }
-      }
     });
   }
 
@@ -409,7 +365,7 @@ export class ProfileUI {
   }
 
   renderTrashModal(): void {
-    if (this.modalManager.isOpen()) {
+    if (this.modalManager.isOpen() && this.modalManager.getModalId() === 'trash') {
       const content = this._renderTrashContent();
       this.modalManager.updateContent(content);
 
@@ -435,10 +391,6 @@ export class ProfileUI {
 
     const chat = found.chat;
     const currentValue = chat.maxContext || 15;
-
-    if (this.navigationState) {
-      this.navigationState.toggleModal(true, 'context');
-    }
 
     const content = `
       <div style="padding:4px 0;">
@@ -488,11 +440,6 @@ export class ProfileUI {
           this._saveChatContext(chatId, newValue);
         }
       },
-      onClose: () => {
-        if (this.navigationState) {
-          this.navigationState.toggleModal(false, 'context');
-        }
-      }
     });
   }
 
